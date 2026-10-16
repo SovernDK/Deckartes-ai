@@ -1,0 +1,236 @@
+Button {
+    width: 1fr;
+}
+
+Input {
+    width: 1fr;
+    height: 4;
+    background: $panel;
+    border: none;
+}
+
+Input:focus {
+    background: $panel;
+}
+
+Input > .input--selection {
+    background: transparent;
+}
+
+Screen > .screen--selection {
+    background: $accent 40%;
+}
+
+#banner {
+    width: 100%;
+    height: auto;
+    padding-top: 1;
+    content-align: center middle;
+    color: $accent;
+    text-style: bold;
+}
+
+Chat {
+    height: 1fr;
+    padding: 1;
+}
+
+#chat
+{
+    background: $panel;
+}
+
+#chat_in {
+    width: 1fr;
+    dock: bottom;
+    border: round $accent;
+}
+
+#spinner {
+    display: none;
+    width: 1fr;
+    height: 4;
+    padding: 0 2;
+    background: $panel;
+    color: $text-muted;
+}
+
+#response {
+    background: $panel;
+    border: round $accent;
+}
+
+#response, #chat_in {
+    border-title-align: left;
+    border-title-color: $accent;
+    border-title-style: bold;
+}
+
+.usage {
+    display: none;
+    padding-left: 2;
+    color: $text-muted;
+    text-style: italic;
+}
+
+Chat.show-usage .usage {
+    display: block;
+}
+
+.user-row {
+    align-horizontal: right;
+    margin-top: 1;
+}
+
+.user-msg {
+    width: auto;
+    max-width: 80%;
+    padding: 0 1;
+    background: $accent 30%;
+}
+
+.ai-msg {
+    max-width: 90%;
+    margin-top: 1;
+    background: transparent;
+}
+
+FileExplorerScreen {
+    align: center middle;
+}
+
+#explorer {
+    width: 80%;
+    height: 80%;
+    background: $panel;
+    border: round $accent;
+}
+
+#explorer DirectoryTree {
+    height: 1fr;
+    background: $panel;
+}
+
+#explorer_details {
+    height: 1;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+ModelChangeScreen {
+    align: center middle;
+}
+
+ConfigScreen {
+    align: center middle;
+}
+
+#config {
+    width: 70;
+    height: auto;
+    padding: 1 2;
+    background: $panel;
+    border: round $accent;
+}
+
+#config Label {
+    margin-top: 1;
+    text-style: bold;
+}
+
+#config Input, #config SelectCurrent {
+    height: 3;
+    background: $panel;
+    border: round $panel-lighten-2;
+}
+
+#config Input:focus, #config Select:focus > SelectCurrent {
+    background: $panel;
+    background-tint: transparent;
+    border: round $accent;
+}
+
+#config SelectOverlay, #config SelectOverlay:focus {
+    background: $panel;
+    background-tint: transparent;
+    border: round $accent;
+}
+
+#config SelectOverlay > .option-list--option-highlighted,
+#config SelectOverlay:focus > .option-list--option-highlighted,
+#config SelectOverlay > .option-list--option-hover {
+    color: black;
+    background: $accent;
+    text-style: bold;
+}
+
+#prompt_description {
+    color: $text-muted;
+}
+
+#config_error {
+    margin-top: 1;
+    color: $error;
+}
+
+#config_buttons {
+    height: auto;
+    margin-top: 1;
+    align-horizontal: right;
+}
+
+#config_buttons Button {
+    width: auto;
+    margin-left: 1;
+}
+
+#save, #save:hover, #save:focus, #save.-active,
+#cancel, #cancel:hover, #cancel:focus, #cancel.-active {
+    background: transparent;
+    background-tint: transparent;
+    tint: transparent;
+    text-style: bold;
+}
+
+#save, #save:hover, #save:focus, #save.-active {
+    color: $primary;
+    border: round $primary;
+}
+
+#cancel, #cancel:hover, #cancel:focus, #cancel.-active {
+    color: $error;
+    border: round $error;
+}
+
+HelpScreen, ConfirmScreen {
+    align: center middle;
+}
+
+#confirm {
+    width: auto;
+    max-width: 70%;
+    height: auto;
+    padding: 1 2;
+    background: $panel;
+    border: round $accent;
+}
+
+#help {
+    width: auto;
+    height: auto;
+    padding: 1 2;
+    background: $panel;
+    border: round $accent;
+}
+
+#model_menu {
+    width: auto;
+    height: auto;
+    background: $panel;
+    border: round $accent;
+}
+
+#model_menu ListView, #model_menu ListItem {
+    width: auto;
+    height: auto;
+}

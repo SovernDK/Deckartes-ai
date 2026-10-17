@@ -1,5 +1,13 @@
 # Deckartes
 
+<p align="center">
+  <img src="screnshots/1.png" alt="Chat answering questions about the home server" width="800">
+</p>
+<p align="center">
+  <img src="screnshots/2.png" alt="Config popup with system prompt, temperature and context limit" width="395">
+  <img src="screnshots/3.png" alt="File explorer for loading a file into the chat" width="395">
+</p>
+
 A terminal chat app ([Textual](https://textual.textualize.io/)) for local [Ollama](https://ollama.com/) models, with tools the model can call:
 
 - **Home server**: CPU, RAM, disk, temperatures and Docker containers of the home server (through its Glances API).

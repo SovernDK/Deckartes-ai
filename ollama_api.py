@@ -5,9 +5,8 @@ from dataclasses import dataclass
 import ollama
 
 from config import config
-from prompts import allowed_tool_names
-from tool_router import route
-from tools import TOOL_GROUPS, run_tool, tools_for
+from tool_router import select_tools
+from tools import run_tool
 
 _clients = {}
 
@@ -84,34 +83,6 @@ def model_options() -> dict:
         options["temperature"] = config.temperature
     return options
 
-def _user_texts(messages) -> list[str]:
-    return [m["content"] for m in messages if m.get("role") == "user" and isinstance(m.get("content"), str)]
-
-async def active_tools(messages, usage: Usage | None = None) -> list | None:
-    """Tools for this request: those the current prompt preset allows, if the model supports tools,
-    narrowed by the router to the groups the question needs. Routing is skipped when the preset's
-    tools are all in one group, and falls back to every allowed tool if the router fails."""
-    tools = tools_for(allowed_tool_names())
-    if not tools or not await supports_tools():
-        return None
-
-    names = {tool.__name__ for tool in tools}
-    groups = [name for name, group in TOOL_GROUPS.items() if names & set(group["tools"])]
-    texts = _user_texts(messages)
-    if not config.tool_routing or len(groups) < 2 or not texts:
-        return tools
-    try:
-        chosen = await route(texts[-1], texts[-2] if len(texts) > 1 else None, groups)
-    except Exception:
-        return tools
-    if usage is not None:
-        usage.tool_groups = chosen
-    keep = {name for group in chosen for name in TOOL_GROUPS[group]["tools"]}
-    grouped = {name for group in TOOL_GROUPS.values() for name in group["tools"]}
-    # Tools in no group are always sent
-    routed = [tool for tool in tools if tool.__name__ in keep or tool.__name__ not in grouped]
-    return routed or None
-
 def add_tool_results(messages, content, tool_calls, results) -> None:
     """Append the model's tool calls and their results so the next request sees them."""
     messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
@@ -136,7 +107,12 @@ async def stream_response(messages, on_tool: ToolCallback = None, usage: Usage |
     on failure yield an error message. Tokens used are added to usage."""
     messages = list(messages)
     try:
-        tools = await active_tools(messages, usage)
+        tools = None
+        if await supports_tools():
+            selection = await select_tools(messages)
+            tools = selection.tools
+            if usage is not None:
+                usage.tool_groups = selection.groups
         for _ in range(MAX_TOOL_ROUNDS):
             stream = await get_async_client().chat(
                 model=config.model,

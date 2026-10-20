@@ -13,9 +13,11 @@ like "and next week?" keeps its topic. Thresholds were tuned on all-minilm; anot
 """
 
 import math
+from dataclasses import dataclass
 
 from config import config
-from tools import TOOL_GROUPS
+from prompts import allowed_tool_names
+from tools import TOOL_GROUPS, tools_for
 
 CONFIDENT = 0.45
 # "What anime airs tomorrow?" scores 0.95 for anime but also 0.46 for cs
@@ -59,7 +61,7 @@ def _scores(vector: list[float], examples: dict) -> dict:
     """Best similarity to each group's examples (None = the no-tools examples)."""
     return {name: max(cosine(vector, e) for e in vectors) for name, vectors in examples.items()}
 
-async def route(query: str, previous: str | None, groups: list[str]) -> list[str]:
+async def _route(query: str, previous: str | None, groups: list[str]) -> list[str]:
     """Names of the groups (among groups) to send for query; [] means no tools.
     Raises if the embedding model can't be reached."""
     examples = {name: vectors for name, vectors in (await _example_vectors()).items()
@@ -87,3 +89,35 @@ async def route(query: str, previous: str | None, groups: list[str]) -> list[str
     if best < MIN_SCORE:
         return []
     return ranked[:UNSURE_GROUPS]
+
+@dataclass
+class Selection:
+    # Tools to send with the question; None for none
+    tools: list | None
+    # Groups the router chose; None when it didn't run
+    groups: list[str] | None
+
+def _user_texts(messages) -> list[str]:
+    return [m["content"] for m in messages if m.get("role") == "user" and isinstance(m.get("content"), str)]
+
+async def select_tools(messages) -> Selection:
+    """Tools for the latest question in messages: those the current prompt preset allows, narrowed
+    to the groups the question needs. Routing is skipped when the preset's tools are all in one
+    group, and falls back to every allowed tool if the router fails. Tools in no group are always sent."""
+    tools = tools_for(allowed_tool_names())
+    if not tools:
+        return Selection(None, None)
+
+    names = {tool.__name__ for tool in tools}
+    groups = [name for name, group in TOOL_GROUPS.items() if names & set(group["tools"])]
+    texts = _user_texts(messages)
+    if not config.tool_routing or len(groups) < 2 or not texts:
+        return Selection(tools, None)
+    try:
+        chosen = await _route(texts[-1], texts[-2] if len(texts) > 1 else None, groups)
+    except Exception:
+        return Selection(tools, None)
+    keep = {name for group in chosen for name in TOOL_GROUPS[group]["tools"]}
+    grouped = {name for group in TOOL_GROUPS.values() for name in group["tools"]}
+    routed = [tool for tool in tools if tool.__name__ in keep or tool.__name__ not in grouped]
+    return Selection(routed or None, chosen)

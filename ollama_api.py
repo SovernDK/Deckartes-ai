@@ -40,6 +40,8 @@ class Usage:
     A reply with tool calls makes several calls, each re-sending the conversation so far."""
     input: int = 0
     output: int = 0
+    # Nanoseconds spent generating the output tokens, without model loading or prompt evaluation
+    output_ns: int = 0
     # Tool groups the router sent with the question; None when it didn't run
     tool_groups: list[str] | None = None
     # What was sent from the loaded file: "whole" or "5 excerpts"; None without a file
@@ -49,10 +51,17 @@ class Usage:
         """Add a finished chat response's token counts."""
         self.input += response.prompt_eval_count or 0
         self.output += response.eval_count or 0
+        self.output_ns += response.eval_duration or 0
 
     def add(self, other: "Usage") -> None:
         self.input += other.input
         self.output += other.output
+        self.output_ns += other.output_ns
+
+    @property
+    def tokens_per_second(self) -> float | None:
+        """Generation speed; None when Ollama reported no generation time."""
+        return self.output / self.output_ns * 1e9 if self.output_ns else None
 
     @property
     def total(self) -> int:

@@ -246,6 +246,8 @@ class Chat(VerticalGroup):
         usage = self.conversation.last_usage
         if usage.total:
             text = f"{usage.input:,} in · {usage.output:,} out · {usage.total:,} tokens"
+            if usage.tokens_per_second is not None:
+                text += f" · {usage.tokens_per_second:.1f} tok/s"
             if usage.tool_groups is not None:
                 text += f" · tools: {', '.join(usage.tool_groups) or 'none'}"
             if usage.file_context:

@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Callable
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import ollama
@@ -22,13 +22,27 @@ def get_async_client() -> ollama.AsyncClient:
         _clients[("async", config.host)] = ollama.AsyncClient(host=config.host)
     return _clients[("async", config.host)]
 
-ERROR_PREFIX = "**Error:**"
+# What a turn yields (stream_response, then Conversation.stream_reply), in order
+@dataclass
+class Text:
+    """Part of the reply."""
+    text: str
 
-def error_message(e) -> str:
-    return f"{ERROR_PREFIX} {e}"
+@dataclass
+class ToolStarted:
+    """A tool the model called is about to run."""
+    name: str
 
-def is_error(text: str) -> bool:
-    return text.startswith(ERROR_PREFIX)
+@dataclass
+class ToolsDone:
+    """The tools of one round have run; the model is answering again."""
+
+@dataclass
+class Failed:
+    """The turn failed; always the last event. The reply so far isn't saved."""
+    message: str
+
+Event = Text | ToolStarted | ToolsDone | Failed
 
 # Stop a model that keeps calling tools instead of answering
 MAX_TOOL_ROUNDS = 10
@@ -89,22 +103,9 @@ def add_tool_results(messages, content, tool_calls, results) -> None:
     for call, result in zip(tool_calls, results):
         messages.append({"role": "tool", "tool_name": call.function.name, "content": result})
 
-# Called with a tool's name before it runs, and with None when the model's tools are done
-ToolCallback = Callable[[str | None], None] | None
-
-async def run_tools(tool_calls, on_tool: ToolCallback) -> list[str]:
-    results = []
-    for call in tool_calls:
-        if on_tool:
-            on_tool(call.function.name)
-        results.append(await run_tool(call.function.name, call.function.arguments))
-    if on_tool:
-        on_tool(None)
-    return results
-
-async def stream_response(messages, on_tool: ToolCallback = None, usage: Usage | None = None):
-    """Yield the reply text chunk by chunk, running any tools the model calls;
-    on failure yield an error message. Tokens used are added to usage."""
+async def stream_response(messages, usage: Usage | None = None) -> AsyncIterator[Event]:
+    """Yield the reply as events, running any tools the model calls. Never raises: a failure
+    is yielded as Failed, last. Tokens used are added to usage as each model call finishes."""
     messages = list(messages)
     try:
         tools = None
@@ -126,7 +127,7 @@ async def stream_response(messages, on_tool: ToolCallback = None, usage: Usage |
             async for chunk in stream:
                 if chunk.message.content:
                     content += chunk.message.content
-                    yield chunk.message.content
+                    yield Text(chunk.message.content)
                 if chunk.message.tool_calls:
                     tool_calls.extend(chunk.message.tool_calls)
                 if chunk.done and usage is not None:
@@ -135,13 +136,17 @@ async def stream_response(messages, on_tool: ToolCallback = None, usage: Usage |
             if not tool_calls:
                 return
             if content:
-                yield "\n\n"
-            results = await run_tools(tool_calls, on_tool)
+                yield Text("\n\n")
+            results = []
+            for call in tool_calls:
+                yield ToolStarted(call.function.name)
+                results.append(await run_tool(call.function.name, call.function.arguments))
+            yield ToolsDone()
             add_tool_results(messages, content, tool_calls, results)
 
-        yield error_message(f"model still calling tools after {MAX_TOOL_ROUNDS} rounds")
+        yield Failed(f"model still calling tools after {MAX_TOOL_ROUNDS} rounds")
     except Exception as e:
-        yield error_message(e)
+        yield Failed(str(e))
 
 async def fetch_models() -> list[str]:
     """Return the names of locally available models, or [] on failure."""

@@ -13,7 +13,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 
-from ollama_api import ToolCallback, Usage, error_message, is_error, stream_response
+from ollama_api import Event, Failed, Text, Usage, stream_response
 from prompts import system_message
 import rag
 
@@ -57,34 +57,34 @@ class Conversation:
         return rag.excerpts_prompt(document, chunks)
 
     def remember(self, query: str, reply: str) -> None:
-        if reply and not is_error(reply):
+        if reply:
             self.history.append({"role": "user", "content": query})
             self.history.append({"role": "assistant", "content": reply})
 
-    async def stream_reply(self, query: str, on_tool: ToolCallback = None) -> AsyncIterator[str]:
-        """Yield the reply as text to display. An error ends the reply as its own paragraph."""
+    async def stream_reply(self, query: str) -> AsyncIterator[Event]:
+        """Yield the turn's events (see ollama_api). A Failed comes last and the turn isn't saved."""
         self.last_usage = usage = Usage()
         try:
             excerpts = await self.file_excerpts(query, usage)
         except Exception as e:
-            yield error_message(f"could not search the loaded file: {e}")
+            yield Failed(f"could not search the loaded file: {e}")
             return
         try:
             messages = self.messages_for(query, excerpts)
         except Exception as e:
             # e.g. a broken prompts.json
-            yield error_message(f"could not load the system prompt: {e}")
+            yield Failed(f"could not load the system prompt: {e}")
             return
         reply = ""
         try:
             # aclosing: closing this generator also closes the model stream right away
-            async with aclosing(stream_response(messages, on_tool, usage)) as chunks:
-                async for chunk in chunks:
-                    if is_error(chunk):
-                        yield f"\n\n{chunk}" if reply else chunk
+            async with aclosing(stream_response(messages, usage)) as events:
+                async for event in events:
+                    yield event
+                    if isinstance(event, Failed):
                         return
-                    reply += chunk
-                    yield chunk
+                    if isinstance(event, Text):
+                        reply += event.text
         finally:
             self.total_usage.add(usage)
         self.remember(query, reply)

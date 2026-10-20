@@ -15,7 +15,7 @@ import rag
 import tools
 from config import config
 from conversation import Conversation
-from ollama_api import fetch_models, unload_models
+from ollama_api import Failed, Text, ToolsDone, ToolStarted, fetch_models, unload_models
 
 class Spinner(Static):
     """Text spinner made of slashes, shown while the model is answering."""
@@ -272,12 +272,24 @@ class Chat(VerticalGroup):
         await self.add_user_message(query)
         markdown = await self.add_ai_message()
 
+        spinner = self.query_one(Spinner)
         interrupted = False
+        wrote = False
         markdown_stream = Markdown.get_stream(markdown)
         try:
-            async with aclosing(self.conversation.stream_reply(query, self.query_one(Spinner).show_tool)) as chunks:
-                async for chunk in chunks:
-                    await markdown_stream.write(chunk)
+            async with aclosing(self.conversation.stream_reply(query)) as events:
+                async for event in events:
+                    if isinstance(event, Text):
+                        await markdown_stream.write(event.text)
+                        wrote = True
+                    elif isinstance(event, ToolStarted):
+                        spinner.show_tool(event.name)
+                    elif isinstance(event, ToolsDone):
+                        spinner.show_tool(None)
+                    elif isinstance(event, Failed):
+                        # An error ends the reply as its own paragraph
+                        error = f"**Error:** {event.message}"
+                        await markdown_stream.write(f"\n\n{error}" if wrote else error)
         except asyncio.CancelledError:
             interrupted = True
             raise

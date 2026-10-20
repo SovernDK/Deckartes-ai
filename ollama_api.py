@@ -167,32 +167,6 @@ async def stream_response(messages, on_tool: ToolCallback = None, usage: Usage |
     except Exception as e:
         yield error_message(e)
 
-def fetch_response(messages, on_tool: ToolCallback = None, usage: Usage | None = None) -> str:
-    """Return the reply text, running any tools the model calls; on failure return an error message.
-    Tokens used are added to usage. Blocking: call it from a thread."""
-    messages = list(messages)
-    try:
-        tools = asyncio.run(active_tools(messages, usage))
-        for _ in range(MAX_TOOL_ROUNDS):
-            response = get_client().chat(
-                model=config.model,
-                messages=messages,
-                tools=tools,
-                options=model_options(),
-                stream=False,
-            )
-            if usage is not None:
-                usage.count(response)
-            tool_calls = response.message.tool_calls
-            if not tool_calls:
-                return response.message.content
-            results = asyncio.run(run_tools(tool_calls, on_tool))
-            add_tool_results(messages, response.message.content or "", tool_calls, results)
-    except Exception as e:
-        return error_message(e)
-
-    return error_message(f"model still calling tools after {MAX_TOOL_ROUNDS} rounds")
-
 async def fetch_models() -> list[str]:
     """Return the names of locally available models, or [] on failure."""
     try:

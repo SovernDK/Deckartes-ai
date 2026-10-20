@@ -13,7 +13,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 
-from ollama_api import ToolCallback, Usage, error_message, fetch_response, is_error, stream_response
+from ollama_api import ToolCallback, Usage, error_message, is_error, stream_response
 from prompts import system_message
 import rag
 
@@ -88,27 +88,3 @@ class Conversation:
         finally:
             self.total_usage.add(usage)
         self.remember(query, reply)
-
-    async def reply(self, query: str, on_tool: ToolCallback = None) -> str:
-        """The whole reply at once (no streaming). The blocking request runs in a thread;
-        if this is cancelled the thread finishes on its own and its result is dropped."""
-        self.last_usage = usage = Usage()
-        try:
-            excerpts = await self.file_excerpts(query, usage)
-        except Exception as e:
-            return error_message(f"could not search the loaded file: {e}")
-        try:
-            messages = self.messages_for(query, excerpts)
-        except Exception as e:
-            return error_message(f"could not load the system prompt: {e}")
-        thread_callback = None
-        if on_tool:
-            # on_tool is called from the worker thread; run it on this event loop instead
-            loop = asyncio.get_running_loop()
-            thread_callback = lambda name: loop.call_soon_threadsafe(on_tool, name)
-        try:
-            reply = await asyncio.to_thread(fetch_response, messages, thread_callback, usage)
-        finally:
-            self.total_usage.add(usage)
-        self.remember(query, reply)
-        return reply

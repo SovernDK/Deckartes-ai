@@ -12,7 +12,6 @@ When no group is confident, the previous question counts at PREVIOUS_WEIGHT, so 
 like "and next week?" keeps its topic. Thresholds were tuned on all-minilm; another embedding model may need new ones.
 """
 
-import asyncio
 import math
 
 from config import config
@@ -37,10 +36,9 @@ NO_TOOL_EXAMPLES = [
 _examples: dict[tuple[str, str], dict[str, list[list[float]]]] = {}
 
 async def _embed(texts: list[str]) -> list[list[float]]:
-    # The sync client in a thread: fetch_response runs this under a new event loop each time,
-    # which the cached async client (bound to the first loop) can't serve
-    from ollama_api import get_client
-    response = await asyncio.to_thread(get_client().embed, model=config.embed_model, input=texts)
+    # Imported here: ollama_api imports this module
+    from ollama_api import get_async_client
+    response = await get_async_client().embed(model=config.embed_model, input=texts)
     return response.embeddings
 
 async def _example_vectors() -> dict[str, list[list[float]]]:

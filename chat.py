@@ -1,5 +1,4 @@
 import asyncio
-import concurrent.futures
 import threading
 from contextlib import aclosing
 from pathlib import Path
@@ -99,7 +98,6 @@ class Chat(VerticalGroup):
     def on_mount(self) -> None:
         self.query_one("#chat_in").border_title = "Input"
         self.update_usage()
-        self.app_loop = asyncio.get_running_loop()
         tools.confirm_handler = self.confirm
 
     def on_unmount(self) -> None:
@@ -107,16 +105,15 @@ class Chat(VerticalGroup):
 
     async def confirm(self, question: str) -> bool:
         """Ask the user yes or no in a popup, for tools that change something (e.g. add a calendar
-        event). Tools run on the app's loop when streaming, but on fetch_response's own loop in a
-        thread otherwise, so the answer comes back through a thread-safe future."""
-        answer = concurrent.futures.Future()
+        event)."""
+        answer = asyncio.get_running_loop().create_future()
         screen = ConfirmScreen(question)
-        self.app_loop.call_soon_threadsafe(self.app.push_screen, screen, answer.set_result)
+        self.app.push_screen(screen, answer.set_result)
         try:
-            return bool(await asyncio.wrap_future(answer))
+            return bool(await answer)
         except asyncio.CancelledError:
             # Interrupted while asking: close the popup without answering
-            self.app_loop.call_soon_threadsafe(self.close_confirm, screen)
+            self.close_confirm(screen)
             raise
 
     def close_confirm(self, screen: "ConfirmScreen") -> None:
@@ -268,23 +265,6 @@ class Chat(VerticalGroup):
     def interrupt(self) -> None:
         """Stop the reply being generated; the worker removes its message."""
         self.workers.cancel_node(self)
-
-    @work(exclusive=True)
-    async def fetch_response(self, query) -> None:
-        """Show the whole reply at once (no streaming)."""
-        self.set_busy(True)
-        try:
-            await self.add_user_message(query)
-            markdown = await self.add_ai_message()
-            reply = await self.conversation.reply(query, self.query_one(Spinner).show_tool)
-            await markdown.update(reply)
-            await self.add_usage(markdown)
-        except asyncio.CancelledError:
-            # Interrupted: drop the unfinished reply from the screen
-            await markdown.remove()
-            raise
-        finally:
-            self.set_busy(False)
 
     @work(exclusive=True)
     async def fetch_stream(self, query) -> None:

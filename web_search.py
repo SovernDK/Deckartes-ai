@@ -4,8 +4,7 @@ Needs an API key from https://ollama.com/settings/keys in config.ollama_api_key
 (read from the OLLAMA_API_KEY environment variable or the .env file).
 """
 
-import httpx
-
+import http_client
 from config import config
 
 API_URL = "https://ollama.com/api"
@@ -15,22 +14,8 @@ class WebSearchError(Exception):
 
 async def _post(endpoint: str, payload: dict) -> dict:
     """POST to Ollama's web API; raise WebSearchError on any failure."""
-    if not config.ollama_api_key:
-        raise WebSearchError("No Ollama API key: set OLLAMA_API_KEY in the environment or .env")
-
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            res = await client.post(
-                f"{API_URL}/{endpoint}",
-                json=payload,
-                headers={"Authorization": f"Bearer {config.ollama_api_key}"},
-            )
-    except httpx.HTTPError as e:
-        raise WebSearchError(f"Could not reach the Ollama web API: {e}") from e
-
-    if res.status_code != 200:
-        raise WebSearchError(f"Ollama web API responded with status {res.status_code}: {res.text[:200]}")
-
+    res = await http_client.request("POST", f"{API_URL}/{endpoint}", name="Ollama web API", error=WebSearchError,
+                                    json=payload, token=config.ollama_api_key, token_env="OLLAMA_API_KEY")
     return res.json()
 
 async def web_search(query: str, max_results: int = 5) -> list[dict]:

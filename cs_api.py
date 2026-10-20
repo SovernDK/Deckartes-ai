@@ -15,11 +15,9 @@ matches of teams in Valve's top MAJOR_TEAM_RANK, which also play smaller events.
 
 import datetime as dt
 import re
-import time
 from zoneinfo import ZoneInfo
 
-import httpx
-
+import http_client
 from config import config
 
 API_URL = "https://api.pandascore.co/csgo"
@@ -47,34 +45,15 @@ TEAM_NAME_FILLER = {"team", "gaming", "esports", "esport", "club", "gg"}
 class CsError(Exception):
     pass
 
-_cache: dict = {}
-
-async def _fetch(url: str, params: dict, headers: dict, max_age: float) -> httpx.Response:
-    """GET url, cached for max_age seconds; raises CsError when unreachable or not 200."""
-    key = (url, tuple(sorted(params.items())))
-    cached = _cache.get(key)
-    if cached and time.monotonic() - cached[0] < max_age:
-        return cached[1]
-    try:
-        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-            res = await client.get(url, params=params, headers=headers)
-    except httpx.HTTPError as e:
-        raise CsError(f"Could not reach {httpx.URL(url).host}: {e}") from e
-    if res.status_code == 403:
-        raise CsError("Access denied: this data isn't included in the PandaScore plan")
-    if res.status_code == 429:
-        raise CsError("Rate limit reached, try again later")
-    if res.status_code != 200:
-        raise CsError(f"{httpx.URL(url).host} responded with status {res.status_code}: {res.text[:200]}")
-    _cache[key] = (time.monotonic(), res)
-    return res
-
 async def _get(path: str, params: dict, max_age: float = CACHE_SECONDS) -> list:
-    if not config.pandascore_token:
-        raise CsError("No PandaScore token: set PANDA_SCORE_API_TOKEN in the environment or .env")
-    res = await _fetch(f"{API_URL}{path}", params,
-                       {"Authorization": f"Bearer {config.pandascore_token}"}, max_age)
+    res = await http_client.request(
+        "GET", f"{API_URL}{path}", name="PandaScore", error=CsError, params=params,
+        token=config.pandascore_token, token_env="PANDA_SCORE_API_TOKEN", max_age=max_age,
+        status_messages={403: "Access denied: this data isn't included in the PandaScore plan"})
     return res.json()
+
+async def _github(url: str):
+    return await http_client.request("GET", url, name="GitHub", error=CsError, max_age=CACHE_SECONDS)
 
 def _normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
@@ -99,7 +78,7 @@ async def _standings(region: str) -> tuple[str, list[dict]]:
     current year has no file yet (early January)."""
     year = dt.date.today().year
     for folder in (year, year - 1):
-        res = await _fetch(f"{STANDINGS_FILES_URL}/{folder}", {}, {}, CACHE_SECONDS)
+        res = await _github(f"{STANDINGS_FILES_URL}/{folder}")
         names = sorted(item["name"] for item in res.json()
                        if item["name"].startswith(f"standings_{region}_"))
         if names:
@@ -109,7 +88,7 @@ async def _standings(region: str) -> tuple[str, list[dict]]:
 
     latest = names[-1]
     date = latest.removeprefix(f"standings_{region}_").removesuffix(".md").replace("_", "-")
-    text = (await _fetch(f"{STANDINGS_RAW_URL}/{folder}/{latest}", {}, {}, CACHE_SECONDS)).text
+    text = (await _github(f"{STANDINGS_RAW_URL}/{folder}/{latest}")).text
     rows = []
     for match in re.finditer(r"^\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|", text, re.M):
         rows.append({"rank": int(match[1]), "team": match[3], "points": int(match[2]),

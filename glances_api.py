@@ -10,36 +10,20 @@ Glances runs in a container on the server, so file systems are listed once per d
 import asyncio
 from typing import Any
 
-import httpx
-
+import http_client
 from config import config
 
 GB = 1024 ** 3
 # Containers listed in the overview, busiest first
 OVERVIEW_CONTAINERS = 3
 
-class GlancesUnreachableError(Exception):
-    def __init__(self, cause: Exception) -> None:
-        super().__init__("Could not reach the Glances API")
-        self.__cause__ = cause
-
-class GlancesStatusError(Exception):
-    def __init__(self, status: int) -> None:
-        super().__init__(f"Glances API responded with status {status}")
-        self.status = status
+class GlancesError(Exception):
+    pass
 
 async def _get(endpoint: str) -> Any:
-    """GET {config.glances_host}/api/4/{endpoint} as JSON; raise a Glances error on failure."""
-    url = f"{config.glances_host}/api/4/{endpoint}"
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            res = await client.get(url)
-    except httpx.HTTPError as e:
-        raise GlancesUnreachableError(e) from e
-
-    if res.status_code != 200:
-        raise GlancesStatusError(res.status_code)
-
+    """GET {config.glances_host}/api/4/{endpoint} as JSON; raises GlancesError on failure."""
+    res = await http_client.request("GET", f"{config.glances_host}/api/4/{endpoint}",
+                                    name="Glances", error=GlancesError, timeout=10)
     return res.json()
 
 def _gb(value: float) -> str:

@@ -10,11 +10,9 @@ episodes and date. Shows rated at or below config.anime_min_rating are dropped; 
 
 import datetime as dt
 import re
-import time
 from zoneinfo import ZoneInfo
 
-import httpx
-
+import http_client
 from config import config
 
 API_URL = "https://animeschedule.net/api/v3"
@@ -31,38 +29,12 @@ LIST_PAGE_SIZE = 200
 class AnimeScheduleError(Exception):
     pass
 
-_cache: dict = {}
-
 async def _get(path: str, params: dict, max_age: float = CACHE_SECONDS) -> dict | list:
     """GET from the API with the app token; cached for max_age seconds, raises AnimeScheduleError on failure."""
-    key = (path, tuple(sorted(params.items())))
-    cached = _cache.get(key)
-    if cached and time.monotonic() - cached[0] < max_age:
-        return cached[1]
-
-    if not config.animeschedule_token:
-        raise AnimeScheduleError("No AnimeSchedule token: set ANIMESCHEDULE_TOKEN in the environment or .env")
-
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            res = await client.get(
-                f"{API_URL}{path}",
-                params=params,
-                headers={"Authorization": f"Bearer {config.animeschedule_token}"},
-            )
-    except httpx.HTTPError as e:
-        raise AnimeScheduleError(f"Could not reach AnimeSchedule: {e}") from e
-
-    if res.status_code == 429:
-        reset = res.headers.get("x-ratelimit-reset")
-        when = dt.datetime.fromtimestamp(int(reset)).strftime("%H:%M:%S") if reset else "soon"
-        raise AnimeScheduleError(f"AnimeSchedule rate limit reached, resets at {when}")
-    if res.status_code != 200:
-        raise AnimeScheduleError(f"AnimeSchedule responded with status {res.status_code}: {res.text[:200]}")
-
-    data = res.json()
-    _cache[key] = (time.monotonic(), data)
-    return data
+    res = await http_client.request("GET", f"{API_URL}{path}", name="AnimeSchedule", error=AnimeScheduleError,
+                                    params=params, token=config.animeschedule_token,
+                                    token_env="ANIMESCHEDULE_TOKEN", max_age=max_age)
+    return res.json()
 
 def season_of(date: dt.date) -> tuple[str, int]:
     """Anime season for a date: Jan-Mar winter, Apr-Jun spring, Jul-Sep summer, Oct-Dec fall."""

@@ -32,6 +32,7 @@ NO_TOOL_EXAMPLES = [
     "what is 12 times 7", "translate this sentence to Spanish", "fix this python code",
     "what is the capital of France", "how are you?", "summarize what we talked about",
     "give me a recipe for pancakes", "explain quantum physics simply",
+    "what is 20 percent of 150", "calculate 7% of 300", "how many minutes are in a day",
 ]
 
 # Example embeddings per (host, model); computed once, on first use

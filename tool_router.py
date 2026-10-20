@@ -8,8 +8,8 @@ compares it with each group's example questions and with examples that need no t
 - otherwise no tools when the no-tools examples match better or nothing scores MIN_SCORE;
 - otherwise the UNSURE_GROUPS best groups, since unknown names (a player, a show) score low.
 
-When no group is confident, the previous question counts at PREVIOUS_WEIGHT, so a follow-up
-like "and next week?" keeps its topic. Thresholds were tuned on all-minilm; another embedding model may need new ones.
+When no group is confident, or the question is a short follow-up ("and tomorrow?", which can
+still match calendar on its own), the previous question counts at PREVIOUS_WEIGHT, so it keeps its topic. Thresholds were tuned on all-minilm; another embedding model may need new ones.
 """
 
 import math
@@ -25,6 +25,9 @@ MARGIN = 0.2
 MIN_SCORE = 0.2
 UNSURE_GROUPS = 2
 PREVIOUS_WEIGHT = 0.8
+# A question this short starting like this is a follow-up to the previous one
+FOLLOW_UP_WORDS = 4
+FOLLOW_UP_STARTS = ("and ", "what about ", "how about ")
 
 # Questions the model answers from its own knowledge
 NO_TOOL_EXAMPLES = [
@@ -62,6 +65,10 @@ def _scores(vector: list[float], examples: dict) -> dict:
     """Best similarity to each group's examples (None = the no-tools examples)."""
     return {name: max(cosine(vector, e) for e in vectors) for name, vectors in examples.items()}
 
+def _is_follow_up(query: str) -> bool:
+    text = query.strip().lower()
+    return text.startswith(FOLLOW_UP_STARTS) and len(text.split()) <= FOLLOW_UP_WORDS
+
 async def _route(query: str, previous: str | None, groups: list[str]) -> list[str]:
     """Names of the groups (among groups) to send for query; [] means no tools.
     Raises if the embedding model can't be reached."""
@@ -73,16 +80,15 @@ async def _route(query: str, previous: str | None, groups: list[str]) -> list[st
     if not scores:
         return []
     best = max(scores.values())
-    if best < CONFIDENT:
-        # Small talk ("thanks!") needs no tools, whatever the previous topic was
-        if no_tools > best:
-            return []
-        # A vague question (a follow-up) borrows the previous question's topic
-        if previous:
-            for name, score in _scores(vectors[1], examples).items():
-                if name is not None:
-                    scores[name] = max(scores[name], PREVIOUS_WEIGHT * score)
-            best = max(scores.values())
+    # Small talk ("thanks!") needs no tools, whatever the previous topic was
+    if best < CONFIDENT and no_tools > best:
+        return []
+    # A vague question or a short follow-up borrows the previous question's topic
+    if previous and (best < CONFIDENT or _is_follow_up(query)):
+        for name, score in _scores(vectors[1], examples).items():
+            if name is not None:
+                scores[name] = max(scores[name], PREVIOUS_WEIGHT * score)
+        best = max(scores.values())
 
     ranked = sorted(scores, key=scores.get, reverse=True)
     if best >= CONFIDENT:

@@ -12,6 +12,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from config import config
+from tools import TOOLS_BY_NAME
 
 PROMPTS_FILE = Path(__file__).with_name("prompts.json")
 
@@ -37,8 +38,12 @@ def system_message() -> str:
     return f"{current_date_line()}\n\n{prompt['prompt']}"
 
 def allowed_tool_names() -> list[str] | None:
-    """Tool names the current preset allows; None means all tools."""
+    """Tool names the current preset allows; None means all tools.
+    Raises ValueError for a name that isn't a tool, so a typo in prompts.json shows as an error."""
     prompt = current_prompt()
     if prompt is None or prompt.get("tools", "all") == "all":
         return None
+    for name in prompt["tools"]:
+        if name not in TOOLS_BY_NAME:
+            raise ValueError(f"preset {prompt['name']!r} names unknown tool {name!r}")
     return list(prompt["tools"])

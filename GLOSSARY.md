@@ -8,6 +8,10 @@ A terminal chat for local models that can answer from tools: a home server, the 
 One question from the user and everything done to answer it, including any tool rounds.
 _Avoid_: exchange, request
 
+**Conversation**:
+The finished turns so far and the file loaded for them.
+_Avoid_: chat, session
+
 **Tool text**:
 What a tool hands back to the model: short plain text whose exact wording and order are chosen so a small model can't misread it.
 _Avoid_: tool output, formatted result

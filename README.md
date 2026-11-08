@@ -231,8 +231,8 @@ Small models sometimes answer from their own knowledge instead of the file, or n
 | `file_explorer.py` | File explorer popup |
 | `rag.py` | Loading a file: reading, chunking, embedding and searching it |
 | `chat.tcss` | Styles |
-| `conversation.py` | Conversation history and turns, no UI |
-| `ollama_api.py` | Model calls, the tool-calling loop, token counting |
+| `conversation.py` | Conversation history, turns, the tool-calling loop and token counting, no UI |
+| `ollama_api.py` | Listing and unloading models |
 | `tool_router.py` | Picks which tool groups to send with a question |
 | `tools.py` | Tool functions, `TOOLS` and `TOOL_GROUPS` |
 | `prompts.py`, `prompts.json` | System prompt presets |

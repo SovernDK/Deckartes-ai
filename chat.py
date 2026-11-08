@@ -14,8 +14,8 @@ from textual.containers import VerticalScroll, VerticalGroup, HorizontalGroup
 import rag
 import tools
 from config import config
-from conversation import Conversation
-from ollama_api import Failed, Text, ToolsDone, ToolStarted, fetch_models, unload_models
+from conversation import Conversation, Failed, Text, ToolsDone, ToolStarted
+from ollama_api import fetch_models, unload_models
 
 class Spinner(Static):
     """Text spinner made of slashes, shown while the model is answering."""

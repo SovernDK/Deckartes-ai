@@ -103,11 +103,8 @@ class Selection:
     # Groups the router chose; None when it didn't run
     groups: list[str] | None
 
-def _user_texts(messages) -> list[str]:
-    return [m["content"] for m in messages if m.get("role") == "user" and isinstance(m.get("content"), str)]
-
-async def select_tools(messages) -> Selection:
-    """Tools for the latest question in messages: those the current prompt preset allows, narrowed
+async def select_tools(question: str, previous: str | None) -> Selection:
+    """Tools for a question (previous is the one before it, if any): those the current prompt preset allows, narrowed
     to the groups the question needs. Routing is skipped when the preset's tools are all in one
     group, and falls back to every allowed tool if the router fails. Tools in no group are always sent."""
     tools = tools_for(allowed_tool_names())
@@ -116,11 +113,10 @@ async def select_tools(messages) -> Selection:
 
     names = {tool.__name__ for tool in tools}
     groups = [name for name, group in TOOL_GROUPS.items() if names & set(group["tools"])]
-    texts = _user_texts(messages)
-    if not config.tool_routing or len(groups) < 2 or not texts:
+    if not config.tool_routing or len(groups) < 2:
         return Selection(tools, None)
     try:
-        chosen = await _route(texts[-1], texts[-2] if len(texts) > 1 else None, groups)
+        chosen = await _route(question, previous, groups)
     except Exception:
         return Selection(tools, None)
     keep = {name for group in chosen for name in TOOL_GROUPS[group]["tools"]}

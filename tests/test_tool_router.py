@@ -25,13 +25,9 @@ def group_tools(*groups: str) -> list[str]:
     return [tool.__name__ for tool in TOOLS
             if tool.__name__ not in grouped or any(tool.__name__ in TOOL_GROUPS[g]["tools"] for g in groups)]
 
-def ask(*questions: str) -> list[dict]:
-    """Messages as Conversation sends them: system first, earlier turns, then the question."""
-    messages = [{"role": "system", "content": "Current date: ..."}]
-    for question in questions:
-        messages.append({"role": "user", "content": question})
-        messages.append({"role": "assistant", "content": "..."})
-    return messages[:-1]
+def ask(*questions: str) -> tuple[str, str | None]:
+    """The arguments of select_tools for the last of these questions."""
+    return questions[-1], questions[-2] if len(questions) > 1 else None
 
 class FakeEmbeddings:
     """Embeds every example as a unit vector on its group's axis (None = no-tools examples), and
@@ -78,24 +74,24 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_confident_group(self):
         self.embed({"Is Vitality playing?": {"cs": 0.8, "anime": 0.3, None: 0.2}})
-        selection = await tool_router.select_tools(ask("Is Vitality playing?"))
+        selection = await tool_router.select_tools(*ask("Is Vitality playing?"))
         self.assertEqual(selection.groups, ["cs"])
         self.assertEqual(names(selection.tools), group_tools("cs"))
 
     async def test_groups_within_margin(self):
         self.embed({"q": {"calendar": 0.7, "anime": 0.55, "cs": 0.45}})
-        selection = await tool_router.select_tools(ask("q"))
+        selection = await tool_router.select_tools(*ask("q"))
         self.assertEqual(selection.groups, ["calendar", "anime"])
         self.assertEqual(names(selection.tools), group_tools("anime", "calendar"))
 
     async def test_group_outside_margin_left_out(self):
         self.embed({"q": {"anime": 0.8, "cs": 0.5}})
-        selection = await tool_router.select_tools(ask("q"))
+        selection = await tool_router.select_tools(*ask("q"))
         self.assertEqual(selection.groups, ["anime"])
 
     async def test_small_talk_gets_no_tools(self):
         self.embed({"Is NAVI on?": {"cs": 0.9}, "thanks!": {None: 0.7, "cs": 0.3}})
-        selection = await tool_router.select_tools(ask("Is NAVI on?", "thanks!"))
+        selection = await tool_router.select_tools(*ask("Is NAVI on?", "thanks!"))
         self.assertEqual(selection.groups, [])
         self.assertEqual(names(selection.tools) or [], group_tools())
 
@@ -104,7 +100,7 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
             "When is NAVI's next game?": {"cs": 0.8},
             "and the week after?": {"calendar": 0.3, "anime": 0.25, None: 0.1},
         })
-        selection = await tool_router.select_tools(ask("When is NAVI's next game?", "and the week after?"))
+        selection = await tool_router.select_tools(*ask("When is NAVI's next game?", "and the week after?"))
         # cs: 0.8 * PREVIOUS_WEIGHT = 0.64, confident
         self.assertEqual(selection.groups, ["cs"])
 
@@ -113,7 +109,7 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
             "Which anime air today?": {"anime": 0.8},
             "and tomorrow?": {"calendar": 0.5, None: 0.1},
         })
-        selection = await tool_router.select_tools(ask("Which anime air today?", "and tomorrow?"))
+        selection = await tool_router.select_tools(*ask("Which anime air today?", "and tomorrow?"))
         # anime: 0.8 * PREVIOUS_WEIGHT = 0.64; calendar 0.5 is within MARGIN
         self.assertEqual(selection.groups, ["anime", "calendar"])
 
@@ -122,17 +118,17 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
             "Which anime air today?": {"anime": 0.8},
             "Do I have plans tomorrow?": {"calendar": 0.5, None: 0.1},
         })
-        selection = await tool_router.select_tools(ask("Which anime air today?", "Do I have plans tomorrow?"))
+        selection = await tool_router.select_tools(*ask("Which anime air today?", "Do I have plans tomorrow?"))
         self.assertEqual(selection.groups, ["calendar"])
 
     async def test_unsure_question_gets_top_groups(self):
         self.embed({"Who is donk?": {"anime": 0.35, "cs": 0.3, "web": 0.25, None: 0.1}})
-        selection = await tool_router.select_tools(ask("Who is donk?"))
+        selection = await tool_router.select_tools(*ask("Who is donk?"))
         self.assertEqual(selection.groups, ["anime", "cs"])
 
     async def test_nothing_close_gets_no_tools(self):
         self.embed({"q": {"anime": 0.1, None: 0.05}})
-        selection = await tool_router.select_tools(ask("q"))
+        selection = await tool_router.select_tools(*ask("q"))
         self.assertEqual(selection.groups, [])
         self.assertEqual(names(selection.tools) or [], group_tools())
 
@@ -140,7 +136,7 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         self.embed({"q": {"cs": 0.8}})
         groups = {name: group for name, group in TOOL_GROUPS.items() if name != "web"}
         with mock.patch.dict(TOOL_GROUPS, groups, clear=True):
-            selection = await tool_router.select_tools(ask("q"))
+            selection = await tool_router.select_tools(*ask("q"))
         self.assertEqual(selection.groups, ["cs"])
         self.assertEqual(names(selection.tools), [
             name for name in names(TOOLS) if name in group_tools("cs") or name in ["search_web", "fetch_web_page"]])
@@ -149,7 +145,7 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         embed = mock.AsyncMock()
         with mock.patch.object(tool_router, "_embed", embed), \
              mock.patch.object(tool_router, "allowed_tool_names", return_value=group_tools("cs")):
-            selection = await tool_router.select_tools(ask("hello"))
+            selection = await tool_router.select_tools(*ask("hello"))
         embed.assert_not_called()
         self.assertIsNone(selection.groups)
         self.assertEqual(names(selection.tools), group_tools("cs"))
@@ -158,31 +154,26 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         self.embed({"q": {"anime": 0.9, "cs": 0.3, "calendar": 0.25}})
         allowed = ["get_cs_team", "get_calendar_events"]
         with mock.patch.object(tool_router, "allowed_tool_names", return_value=allowed):
-            selection = await tool_router.select_tools(ask("q"))
+            selection = await tool_router.select_tools(*ask("q"))
         # anime isn't allowed, so the best of cs and calendar wins, unsure
         self.assertEqual(selection.groups, ["cs", "calendar"])
         self.assertEqual(names(selection.tools), allowed)
 
     async def test_preset_without_tools(self):
         with mock.patch.object(tool_router, "allowed_tool_names", return_value=[]):
-            selection = await tool_router.select_tools(ask("hello"))
+            selection = await tool_router.select_tools(*ask("hello"))
         self.assertIsNone(selection.tools)
         self.assertIsNone(selection.groups)
 
     async def test_routing_off_sends_every_allowed_tool(self):
         with mock.patch.object(config, "tool_routing", False):
-            selection = await tool_router.select_tools(ask("hello"))
+            selection = await tool_router.select_tools(*ask("hello"))
         self.assertEqual(names(selection.tools), names(TOOLS))
         self.assertIsNone(selection.groups)
 
     async def test_router_error_sends_every_allowed_tool(self):
         with mock.patch.object(tool_router, "_embed", mock.AsyncMock(side_effect=ConnectionError("down"))):
-            selection = await tool_router.select_tools(ask("hello"))
-        self.assertEqual(names(selection.tools), names(TOOLS))
-        self.assertIsNone(selection.groups)
-
-    async def test_no_question_sends_every_allowed_tool(self):
-        selection = await tool_router.select_tools([{"role": "system", "content": "..."}])
+            selection = await tool_router.select_tools(*ask("hello"))
         self.assertEqual(names(selection.tools), names(TOOLS))
         self.assertIsNone(selection.groups)
 
@@ -267,7 +258,7 @@ class LiveRoutingTest(unittest.IsolatedAsyncioTestCase):
              mock.patch.object(tool_router, "allowed_tool_names", return_value=None):
             for questions, expected in LIVE_CASES:
                 with self.subTest(questions[-1]):
-                    groups = (await tool_router.select_tools(ask(*questions))).groups
+                    groups = (await tool_router.select_tools(*ask(*questions))).groups
                     detail = f"chose {groups}; scores: {await self.scores(questions[-1])}"
                     if expected:
                         self.assertLessEqual(set(expected), set(groups), detail)

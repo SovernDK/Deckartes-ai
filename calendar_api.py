@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 import EventKit
 from Foundation import NSDate
 
+import clock
 from config import config
 
 # How far find_events looks back and ahead
@@ -35,7 +36,7 @@ def _tz() -> ZoneInfo:
     return ZoneInfo(config.timezone)
 
 def today() -> dt.date:
-    return dt.datetime.now(_tz()).date()
+    return clock.now().date()
 
 def _request_access(store) -> bool:
     """Show macOS's calendar permission prompt and wait for the answer."""
@@ -169,7 +170,7 @@ def find_events(query: str) -> dict:
     needle = query.strip().casefold()
     if not needle:
         raise ValueError("Give a word to search for")
-    now = dt.datetime.now(_tz())
+    now = clock.now()
     events = _events_between(now - dt.timedelta(days=SEARCH_PAST_DAYS), now + dt.timedelta(days=SEARCH_FUTURE_DAYS))
     matches = [_slim(e) for e in events
                if any(needle in (text or "").casefold() for text in (e.title(), e.location(), e.notes()))]
@@ -204,16 +205,16 @@ def new_event(title: str, date: str, start_time: str, duration_minutes: int) -> 
         start, end, all_day = _midnight(day), _midnight(day + dt.timedelta(days=1)), True
     else:
         try:
-            clock = dt.time.fromisoformat(start_time.strip())
+            at = dt.time.fromisoformat(start_time.strip())
         except ValueError:
             raise ValueError(f"Start time {start_time!r} must be HH:MM (24-hour) or \"all-day\"")
         if not 0 < duration_minutes <= 24 * 60:
             raise ValueError("duration_minutes must be between 1 and 1440")
-        start = dt.datetime.combine(day, clock, tzinfo=_tz())
+        start = dt.datetime.combine(day, at, tzinfo=_tz())
         end = start + dt.timedelta(minutes=duration_minutes)
         all_day = False
     # A past date is almost always a wrong year or day from the model
-    if (end if all_day else start) <= dt.datetime.now(_tz()):
+    if (end if all_day else start) <= clock.now():
         raise ValueError(f"{start:%A %Y-%m-%d %H:%M} is in the past; today is {today():%A %Y-%m-%d}")
     return {"title": title, "start": start, "end": end, "all_day": all_day,
             "calendar": _target_calendar().title()}

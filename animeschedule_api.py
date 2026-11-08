@@ -12,6 +12,7 @@ import datetime as dt
 import re
 from zoneinfo import ZoneInfo
 
+import clock
 import http_client
 from config import config
 
@@ -41,7 +42,7 @@ def season_of(date: dt.date) -> tuple[str, int]:
     return SEASONS[(date.month - 1) // 3], date.year
 
 def today() -> dt.date:
-    return dt.datetime.now(ZoneInfo(config.timezone)).date()
+    return clock.now().date()
 
 def rating(anime: dict) -> float | None:
     """Average user score converted from the API's 1-100 to a 0-10 scale; None when nobody rated it yet."""
@@ -174,7 +175,7 @@ async def _upcoming_episodes() -> dict[str, tuple[dt.datetime, dict]]:
     """Next upcoming subtitled (config.anime_air_type) episode per anime route, as
     (local airing time, timetable entry), from this week's and next week's timetables."""
     tz = ZoneInfo(config.timezone)
-    now = dt.datetime.now(tz)
+    now = clock.now()
     upcoming = {}
     for day in (now.date(), now.date() + dt.timedelta(days=7)):
         year, week, _ = day.isocalendar()
@@ -411,7 +412,8 @@ def _relative_day(airs: str) -> str:
         return "today"
     if day == now + dt.timedelta(days=1):
         return "tomorrow"
-    weeks = day.isocalendar()[1] - now.isocalendar()[1] + 52 * (day.isocalendar()[0] - now.isocalendar()[0])
+    # Counted between Mondays, since an ISO year can have 52 or 53 weeks
+    weeks = ((day - dt.timedelta(days=day.weekday())) - (now - dt.timedelta(days=now.weekday()))).days // 7
     return {0: "this week", 1: "next week"}.get(weeks, "later")
 
 def user_list_text(status: str, shows: list[dict]) -> str:

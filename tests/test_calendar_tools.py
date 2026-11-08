@@ -1,0 +1,183 @@
+"""The text the calendar tools give the model, with EventKit faked as docs/calendar-tests.md describes."""
+
+import datetime as dt
+import unittest
+from unittest import mock
+from zoneinfo import ZoneInfo
+
+import calendar_api as cal
+import tools
+from frozen_clock import TIMEZONE, freeze
+
+def local(when: str) -> dt.datetime:
+    return dt.datetime.fromisoformat(when).replace(tzinfo=ZoneInfo(TIMEZONE))
+
+class FakeCalendar:
+    def __init__(self, name: str):
+        self.name = name
+
+    def title(self) -> str:
+        return self.name
+
+class FakeEvent:
+    """The parts of an EKEvent the backend reads."""
+
+    def __init__(self, title: str, start: str, end: str, *, all_day: bool = False, location: str | None = None,
+                 notes: str | None = None):
+        self.start, self.end = local(start), local(end)
+        self.values = (title, location, notes)
+        self.all_day = all_day
+
+    def title(self):
+        return self.values[0]
+
+    def location(self):
+        return self.values[1]
+
+    def notes(self):
+        return self.values[2]
+
+    def startDate(self):
+        return cal._nsdate(self.start)
+
+    def endDate(self):
+        return cal._nsdate(self.end)
+
+    def isAllDay(self) -> bool:
+        return self.all_day
+
+    def calendar(self) -> FakeCalendar:
+        return FakeCalendar("Home")
+
+class CalendarToolTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        freeze(self, "2026-11-11 12:00")  # a Wednesday
+        self.events: list[FakeEvent] = []
+        self.questions: list[str] = []
+        self.answer = True
+        self.save = mock.Mock()
+        for target, name, value in ((cal, "_events_between", self.between),
+                                    (cal, "_target_calendar", lambda: FakeCalendar("Home")),
+                                    (cal, "save_event", self.save),
+                                    (tools, "confirm_handler", self.confirm)):
+            patcher = mock.patch.object(target, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def between(self, start: dt.datetime, end: dt.datetime) -> list[FakeEvent]:
+        return sorted((e for e in self.events if e.start < end and e.end > start), key=lambda e: e.start)
+
+    async def confirm(self, question: str) -> bool:
+        self.questions.append(question)
+        return self.answer
+
+class ReadTest(CalendarToolTest):
+    async def test_one_day(self):
+        self.events = [FakeEvent("Dentist", "2026-11-12 14:30", "2026-11-12 15:00", location="Clinic\nMain St"),
+                       FakeEvent("Elsewhere", "2026-11-13 09:00", "2026-11-13 10:00")]
+        self.assertEqual(await tools.get_calendar_events("tomorrow"),
+                         "Calendar events for Thursday 2026-11-12 (local time):\n"
+                         "- Dentist: 14:30-15:00 (calendar Home; at Clinic, Main St)")
+
+    async def test_empty_day(self):
+        self.assertEqual(await tools.get_calendar_events("tomorrow"),
+                         "No events in the calendar for Thursday 2026-11-12.")
+
+    async def test_all_day(self):
+        self.events = [FakeEvent("Holiday", "2026-11-12 00:00", "2026-11-12 23:59:59", all_day=True)]
+        self.assertEqual(await tools.get_calendar_events("thursday"),
+                         "Calendar events for Thursday 2026-11-12 (local time):\n"
+                         "- Holiday: all day (calendar Home)")
+
+    async def test_same_weekday_is_today_unless_next(self):
+        self.assertEqual(await tools.get_calendar_events("wednesday"),
+                         "No events in the calendar for Wednesday 2026-11-11.")
+        self.assertEqual(await tools.get_calendar_events("next wednesday"),
+                         "No events in the calendar for Wednesday 2026-11-18.")
+
+    async def test_unknown_day(self):
+        self.assertEqual(await tools.run_tool("get_calendar_events", {"date": "soon"}),
+                         "Tool get_calendar_events failed: Date 'soon' must be today, tomorrow, yesterday, "
+                         "a weekday or YYYY-MM-DD")
+
+    async def test_rest_of_the_week_grouped_by_day(self):
+        self.events = [FakeEvent("Trip", "2026-11-09 08:00", "2026-11-12 18:00"),
+                       FakeEvent("Gym", "2026-11-14 10:00", "2026-11-14 11:00"),
+                       FakeEvent("Next week", "2026-11-16 10:00", "2026-11-16 11:00")]
+        self.assertEqual(await tools.get_calendar_period("this week"),
+                         "Calendar events for the rest of this week, Wednesday 2026-11-11 to Sunday 2026-11-15 "
+                         "(local time; days not listed have no events):\n"
+                         "Wednesday 2026-11-11:\n"
+                         "- Trip: 08:00 to Thursday 2026-11-12 18:00 (calendar Home)\n"
+                         "Saturday 2026-11-14:\n"
+                         "- Gym: 10:00-11:00 (calendar Home)")
+
+    async def test_periods_name_their_days(self):
+        expected = {"next week": "next week, Monday 2026-11-16 to Sunday 2026-11-22",
+                    "this month": "the rest of this month, Wednesday 2026-11-11 to Monday 2026-11-30",
+                    "next month": "next month, Tuesday 2026-12-01 to Thursday 2026-12-31",
+                    "january": "January 2027, Friday 2027-01-01 to Sunday 2027-01-31",
+                    "2026-12": "December 2026, Tuesday 2026-12-01 to Thursday 2026-12-31"}
+        for period, span in expected.items():
+            with self.subTest(period):
+                self.assertEqual(await tools.get_calendar_period(period), f"No events in the calendar for {span}.")
+
+    async def test_search_gives_upcoming_and_the_latest_past_one(self):
+        self.events = [FakeEvent("Dentist", "2026-11-01 09:00", "2026-11-01 10:00"),
+                       FakeEvent("Dentist check", "2026-11-05 09:00", "2026-11-05 10:00"),
+                       FakeEvent("Checkup", "2026-11-20 09:00", "2026-11-20 10:00", notes="at the dentist"),
+                       FakeEvent("Gym", "2026-11-21 09:00", "2026-11-21 10:00")]
+        self.assertEqual(await tools.find_calendar_events("DENTIST"),
+                         "Upcoming calendar events matching 'DENTIST', soonest first (local time):\n"
+                         "- Checkup: Friday 2026-11-20 09:00-10:00 (calendar Home)\n"
+                         "Most recent past one: Dentist check: Thursday 2026-11-05 09:00-10:00 (calendar Home)")
+
+    async def test_search_finds_nothing(self):
+        self.assertEqual(await tools.find_calendar_events("dentist"),
+                         "No calendar events matching 'dentist' between Monday 2026-10-12 and Thursday 2027-11-11.")
+
+class AddTest(CalendarToolTest):
+    SUMMARY = "Dentist: Friday 2026-11-13 14:30-15:30 (calendar Home)"
+
+    async def add(self, date: str = "2026-11-13", start: str = "14:30", minutes: int = 60) -> str:
+        return await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": date, "start_time": start,
+                                                           "duration_minutes": minutes})
+
+    async def test_confirmed_is_saved(self):
+        self.assertEqual(await self.add(), f"Added to the calendar: {self.SUMMARY}")
+        self.assertEqual(self.questions, [f"Add this event to your calendar?\n\n{self.SUMMARY}"])
+        saved = self.save.call_args.args[0]
+        self.assertEqual((saved["title"], saved["start"], saved["end"], saved["all_day"]),
+                         ("Dentist", local("2026-11-13 14:30"), local("2026-11-13 15:30"), False))
+
+    async def test_declined_is_not_saved(self):
+        self.answer = False
+        self.assertEqual(await self.add(), f"The user declined, so the event was NOT added: {self.SUMMARY}")
+        self.save.assert_not_called()
+
+    async def test_duplicate_is_not_asked_about_or_saved(self):
+        self.events = [FakeEvent("dentist", "2026-11-13 14:30", "2026-11-13 15:00")]
+        self.assertEqual(await self.add(), f"Not added, it's already in the calendar: {self.SUMMARY}")
+        self.assertEqual(self.questions, [])
+        self.save.assert_not_called()
+
+    async def test_past_time_is_refused(self):
+        self.assertEqual(await self.add("today", "09:00"),
+                         "Tool add_calendar_event failed: Wednesday 2026-11-11 09:00 is in the past; "
+                         "today is Wednesday 2026-11-11")
+        self.assertEqual(self.questions, [])
+
+    async def test_all_day_today_is_allowed(self):
+        self.assertEqual(await self.add("today", "all-day", 0),
+                         "Added to the calendar: Dentist: Wednesday 2026-11-11, all day (calendar Home)")
+
+    async def test_bad_start_time(self):
+        self.assertEqual(await self.add(start="noon"),
+                         "Tool add_calendar_event failed: Start time 'noon' must be HH:MM (24-hour) or \"all-day\"")
+
+    async def test_bad_duration(self):
+        self.assertEqual(await self.add(minutes=0),
+                         "Tool add_calendar_event failed: duration_minutes must be between 1 and 1440")
+
+if __name__ == "__main__":
+    unittest.main()

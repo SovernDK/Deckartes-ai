@@ -118,6 +118,8 @@ def _problem(c: dict) -> bool:
     return c["status"] not in ("running", "healthy")
 
 def _containers_summary(containers: list) -> str:
+    if not containers:
+        return "No containers reported"
     counts = {}
     for c in containers:
         counts[c["status"]] = counts.get(c["status"], 0) + 1
@@ -175,7 +177,8 @@ async def overview() -> str:
         _format_fs(fs_data), _format_gpu(gpu_data), _format_sensors(sensor_data),
         _containers_summary(container_data),
         *(f"Not running: {_container_line(c, common)}" for c in problems),
-        "Most CPU: " + "; ".join(f"{c['name']} {c.get('cpu_percent') or 0:.1f}%" for c in busiest),
-        "Most RAM: " + "; ".join(f"{c['name']} {_size(c.get('memory_usage') or 0)}" for c in biggest),
     ]
+    if container_data:
+        lines += ["Most CPU: " + "; ".join(f"{c['name']} {c.get('cpu_percent') or 0:.1f}%" for c in busiest),
+                  "Most RAM: " + "; ".join(f"{c['name']} {_size(c.get('memory_usage') or 0)}" for c in biggest)]
     return "\n".join(lines)

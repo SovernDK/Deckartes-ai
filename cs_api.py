@@ -17,6 +17,7 @@ import datetime as dt
 import re
 from zoneinfo import ZoneInfo
 
+import clock
 import http_client
 from config import config
 
@@ -76,9 +77,16 @@ def _top_tier(item: dict) -> bool:
 async def _standings(region: str) -> tuple[str, list[dict]]:
     """Latest Valve standings for region, as (date, rows); looks back a year when the
     current year has no file yet (early January)."""
-    year = dt.date.today().year
+    year = clock.now().year
     for folder in (year, year - 1):
-        res = await _github(f"{STANDINGS_FILES_URL}/{folder}")
+        try:
+            res = await _github(f"{STANDINGS_FILES_URL}/{folder}")
+        except CsError:
+            # A year's folder is a 404 until its first standings. Any other failure
+            # repeats on last year's folder and is reported from there.
+            if folder == year:
+                continue
+            raise
         names = sorted(item["name"] for item in res.json()
                        if item["name"].startswith(f"standings_{region}_"))
         if names:
@@ -141,7 +149,7 @@ def _age(player: dict) -> int | None:
         return player["age"]
     if not player.get("birthday"):
         return None
-    born, today = dt.date.fromisoformat(player["birthday"]), dt.date.today()
+    born, today = dt.date.fromisoformat(player["birthday"]), clock.now().date()
     return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
 # Teams and players
@@ -193,7 +201,7 @@ def _match(match: dict) -> dict:
         result["stream"] = streams[0] if streams else None
     else:
         result["winner"] = teams.get(match.get("winner_id"))
-        result["date"] = _format_time(match.get("end_at") or match.get("begin_at"))
+        result["date"] = _format_time(_when(match))
         if match.get("forfeit"):
             result["note"] = "Forfeit"
     return result
@@ -297,7 +305,7 @@ async def _team_matches(kind: str, team: str) -> dict:
                                  MATCH_CACHE_SECONDS) + matches
         return {"team": found["name"], "matches": [_match(m) for m in matches] or empty}
 
-    cutoff = dt.datetime.now(dt.timezone.utc) - MAX_RESULT_AGE
+    cutoff = clock.now() - MAX_RESULT_AGE
     ranked = await _ranked_teams()
     top = []
     for page in range(1, MAX_PAGES + 1):
@@ -424,12 +432,12 @@ def team_text(team: dict) -> str:
     lines.append("Playing now: " + ("; ".join(match_line(m, name) for m in live)
                                     if isinstance(live, list) else live))
     upcoming = team["next_match"]
-    lines.append("Next match: " + (f"{upcoming['starts']} {match_line(upcoming, name)}"
+    lines.append("Next match: " + (f"{upcoming['starts'] or 'time not announced,'} {match_line(upcoming, name)}"
                                    if isinstance(upcoming, dict) else upcoming))
     results = team["recent_results"]
     if isinstance(results, list):
         lines.append("Recent results (newest first):")
-        lines += [f"- {m['date']}: {match_line(m, name)}" for m in results]
+        lines += [f"- {m['date'] or 'date unknown'}: {match_line(m, name)}" for m in results]
     else:
         lines.append(f"Recent results: {results}")
     return "\n".join(lines)

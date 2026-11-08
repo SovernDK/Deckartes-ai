@@ -11,6 +11,8 @@ once a month: https://github.com/ValveSoftware/counter-strike_regional_standings
 Lists of all matches or tournaments keep only events of tier config.cs_min_tier or better
 (PandaScore tiers s, a, b, c, d), since most of PandaScore's matches are small leagues, plus
 matches of teams in Valve's top MAJOR_TEAM_RANK, which also play smaller events.
+
+The public functions at the bottom take a tool's arguments and return tool text.
 """
 
 import datetime as dt
@@ -59,10 +61,6 @@ async def _github(url: str):
 def _local(timestamp: str | None) -> dt.datetime | None:
     return clock.to_local(timestamp) if timestamp else None
 
-def _format_time(timestamp: str | None) -> str | None:
-    when = _local(timestamp)
-    return when.strftime("%A %Y-%m-%d %H:%M") if when else None
-
 def _top_tier(item: dict) -> bool:
     tier = (item.get("tournament") or item).get("tier") or "d"
     return TIERS.index(tier) <= TIERS.index(config.cs_min_tier)
@@ -98,7 +96,7 @@ async def _standings(region: str) -> tuple[str, list[dict]]:
                      "roster": match[4]})
     return date, rows
 
-async def ranking(region: str, count: int) -> dict:
+async def _ranking(region: str, count: int) -> dict:
     region = region.strip().lower()
     region = {"world": "global", "america": "americas", "north america": "americas",
               "south america": "americas", "eu": "europe"}.get(region, region)
@@ -174,38 +172,37 @@ def _event(match: dict) -> str:
     return f"{league} {serie}".strip()
 
 def _match(match: dict) -> dict:
-    """Slim match: teams by full name, event, stage, format, and score/winner or start time."""
+    """Slim match: team names, event, stage, format, status, and scores/winner or start time (local)."""
     teams = {o["opponent"]["id"]: o["opponent"]["name"] for o in match.get("opponents") or []}
     names = list(teams.values()) + ["TBD"] * (2 - len(teams))
     stage = match["name"].split(":")[0] if ":" in match.get("name", "") else None
     result = {
-        "teams": f"{names[0]} vs {names[1]}",
+        "teams": names,
         "event": _event(match),
         "stage": stage,
         "format": f"BO{match.get('number_of_games')}",
+        "status": match.get("status"),
+        "scores": [],
     }
     if match.get("status") == "not_started":
-        result["starts"] = _format_time(match.get("scheduled_at") or match.get("begin_at"))
+        result["starts"] = _local(match.get("scheduled_at") or match.get("begin_at"))
         return result
 
     scores = {r["team_id"]: r["score"] for r in match.get("results") or []}
-    result["score"] = "-".join(str(scores.get(team_id, 0)) for team_id in teams)
+    result["scores"] = [scores.get(team_id, 0) for team_id in teams]
     if match.get("status") == "running":
-        result["live_now"] = True
         streams = [s["raw_url"] for s in match.get("streams_list") or [] if s.get("main")]
         result["stream"] = streams[0] if streams else None
     else:
         result["winner"] = teams.get(match.get("winner_id"))
-        result["date"] = _format_time(_when(match))
-        if match.get("forfeit"):
-            result["note"] = "Forfeit"
+        result["date"] = _local(_when(match))
+        result["forfeit"] = bool(match.get("forfeit"))
     return result
 
-async def team_info(name: str) -> dict:
+async def _team_info(name: str) -> dict | None:
     team = await _find_team(name)
     if team is None:
-        return {"searched_for": name, "note": "No team found with that name. Check the spelling "
-                                              "or try the full name (e.g. Natus Vincere)."}
+        return None
     players = [{
         "name": p["name"],
         "real_name": " ".join(filter(None, [p.get("first_name"), p.get("last_name")])) or None,
@@ -223,23 +220,19 @@ async def team_info(name: str) -> dict:
         "name": team["name"],
         "acronym": team.get("acronym"),
         "country": team.get("location") or None,
-        "valve_rank": await _valve_rank(team["name"], [p["name"] for p in players])
-                      or "Not in Valve's global standings",
-        "players": players or "No roster listed",
-        "recent_results": [_match(m) for m in past] or "No finished matches found",
-        "playing_now": [_match(m) for m in live] or "Not playing right now",
-        "next_match": _match(upcoming[0]) if upcoming else "No upcoming match scheduled",
+        "valve_rank": await _valve_rank(team["name"], [p["name"] for p in players]),
+        "players": players,
+        "recent_results": [_match(m) for m in past],
+        "playing_now": [_match(m) for m in live],
+        "next_match": _match(upcoming[0]) if upcoming else None,
     }
 
-async def player_info(name: str) -> dict:
+async def _player_info(name: str) -> list[dict]:
     if not normalize(name):
         raise CsError("Give the name of a player")
     players = _best_match(await _get("/players", {"search[name]": name.strip(), "per_page": 20}),
                           name, ("name",))
     players = [p for p in players if (p.get("current_videogame") or {}).get("slug") in (None, "cs-go")]
-    if not players:
-        return {"searched_for": name, "note": "No player found with that nickname."}
-
     results = []
     for p in players[:3]:
         team = p.get("current_team") or {}
@@ -253,27 +246,19 @@ async def player_info(name: str) -> dict:
             "real_name": " ".join(filter(None, [p.get("first_name"), p.get("last_name")])) or None,
             "nationality": p.get("nationality"),
             "age": _age(p),
-            "team": team.get("name") or "No current team",
-            "team_valve_rank": (await _valve_rank(team["name"]) if team.get("name") else None)
-                               or "Not ranked",
+            "team": team.get("name"),
+            "team_valve_rank": await _valve_rank(team["name"]) if team.get("name") else None,
         })
-    return {"searched_for": name, "matches": results,
-            "note": "Performance stats (rating, K/D, ADR) aren't available from this data source."}
+    return results
 
 # Matches and tournaments
 
-async def live_matches() -> dict:
+async def _live_matches() -> tuple[list[dict], int]:
+    """Live major matches, and how many smaller-league ones were left out."""
     matches = await _get("/matches/running", {"per_page": PAGE_SIZE}, MATCH_CACHE_SECONDS)
     ranked = await _ranked_teams()
     top = [_match(m) for m in matches if _major(m, ranked)]
-    result = {"matches": top}
-    skipped = len(matches) - len(top)
-    if not top:
-        result["note"] = "No major matches are being played right now."
-    if skipped:
-        count = "1 smaller-league match is" if skipped == 1 else f"{skipped} smaller-league matches are"
-        result["note"] = (result.get("note", "") + f" {count} live but not listed.").strip()
-    return result
+    return top, len(matches) - len(top)
 
 def _when(match: dict) -> str | None:
     """Start time of an upcoming match, end time of a finished one (ISO, UTC)."""
@@ -281,24 +266,25 @@ def _when(match: dict) -> str | None:
         return match.get("scheduled_at") or match.get("begin_at")
     return match.get("end_at") or match.get("begin_at") or match.get("scheduled_at")
 
-async def _team_matches(kind: str, team: str) -> dict:
-    """Upcoming or past ("upcoming"/"past") matches, of one team or all top-tier ones."""
+async def _team_matches(kind: str, team: str) -> dict | None:
+    """Upcoming or past ("upcoming"/"past") matches, of one team or all top-tier ones;
+    None when there's no team with that name."""
     if kind == "upcoming":
-        params, empty = {"sort": "scheduled_at"}, "No upcoming matches scheduled"
+        params = {"sort": "scheduled_at"}
     else:
-        params, empty = {"sort": "-end_at", "filter[status]": "finished"}, "No finished matches found"
+        params = {"sort": "-end_at", "filter[status]": "finished"}
 
     if normalize(team) not in ("", "all"):
         found = await _find_team(team)
         if found is None:
-            return {"searched_for": team, "note": "No team found with that name."}
+            return None
         matches = await _get(f"/matches/{kind}", {**params, "filter[opponent_id]": found["id"],
                                                   "per_page": MAX_MATCHES}, MATCH_CACHE_SECONDS)
         if kind == "upcoming":
             # A match that has started is no longer "upcoming" in PandaScore
             matches = await _get("/matches/running", {"filter[opponent_id]": found["id"]},
                                  MATCH_CACHE_SECONDS) + matches
-        return {"team": found["name"], "matches": [_match(m) for m in matches] or empty}
+        return {"team": found["name"], "matches": [_match(m) for m in matches]}
 
     cutoff = clock.now() - MAX_RESULT_AGE
     ranked = await _ranked_teams()
@@ -312,20 +298,16 @@ async def _team_matches(kind: str, team: str) -> dict:
         if len(top) >= MAX_MATCHES:
             break
     top.sort(key=lambda m: _when(m) or "", reverse=kind == "past")
-    return {"matches": [_match(m) for m in top[:MAX_MATCHES]] or f"{empty} in major events"}
+    return {"team": None, "matches": [_match(m) for m in top[:MAX_MATCHES]]}
 
-async def upcoming_matches(team: str) -> dict:
-    return await _team_matches("upcoming", team)
-
-async def match_results(team: str) -> dict:
-    return await _team_matches("past", team)
-
-async def tournaments(status: str) -> dict:
+def _tournament_status(status: str) -> str:
     status = status.strip().lower()
     status = {"ongoing": "running", "live": "running", "current": "running", "next": "upcoming"}.get(status, status)
     if status not in ("running", "upcoming"):
         raise CsError("Status must be running or upcoming")
+    return status
 
+async def _tournaments(status: str) -> list[dict]:
     # PandaScore tournaments are stages (groups, playoffs); group them by event
     events = {}
     for stage in await _get(f"/tournaments/{status}", {"per_page": PAGE_SIZE}):
@@ -343,7 +325,7 @@ async def tournaments(status: str) -> dict:
     for event in found:
         event["begins"] = (_local(event["begins"]).date().isoformat() if event["begins"] else None)
         event["ends"] = (_local(event["ends"]).date().isoformat() if event["ends"] else None)
-    return {"status": status, "events": found or f"No {status} major events found"}
+    return found
 
 # Text for the model: one line per match or team, shared context in headers, no null fields.
 # A team's matches read from its side ("won 3-0 vs MOUZ"), so a small model can't mix up
@@ -352,63 +334,63 @@ async def tournaments(status: str) -> dict:
 def _details(match: dict) -> str:
     return ", ".join(filter(None, [match["format"], match["event"], match.get("stage")]))
 
-def _sides(match: dict) -> tuple[list[str], list[str]]:
-    """Team names and their scores, in the same order."""
-    names = match["teams"].split(" vs ")
-    scores = match.get("score", "").split("-") if match.get("score") else []
-    return names, scores
+def _versus(match: dict) -> str:
+    return " vs ".join(match["teams"])
 
-def match_line(match: dict, team: str | None = None) -> str:
+def _time(when: dt.datetime) -> str:
+    return f"{when:%A %Y-%m-%d %H:%M}"
+
+def _match_line(match: dict, team: str | None = None) -> str:
     """One match. For a team's own matches (team given), the result and opponent are from its side."""
-    names, scores = _sides(match)
+    names, scores = match["teams"], match["scores"]
     details = _details(match)
+    upcoming, live = match["status"] == "not_started", match["status"] == "running"
+    stream = f", stream {match['stream']}" if live and match.get("stream") else ""
+    forfeit = ", forfeit" if match.get("forfeit") else ""
     if team in names and len(names) == 2:
         mine = names.index(team)
         opponent = names[1 - mine]
-        if "starts" in match:
+        if upcoming:
             return f"vs {opponent} ({details})"
         score = f"{scores[mine]}-{scores[1 - mine]}" if len(scores) == 2 else "?"
-        if match.get("live_now"):
-            stream = f", stream {match['stream']}" if match.get("stream") else ""
+        if live:
             return f"LIVE NOW vs {opponent}, score {score} ({details}{stream})"
         outcome = "won" if match.get("winner") == team else "lost" if match.get("winner") else "drew"
-        forfeit = ", forfeit" if match.get("note") == "Forfeit" else ""
         return f"{outcome} {score} vs {opponent} ({details}{forfeit})"
 
-    if "starts" in match:
-        return f"{match['teams']} ({details})"
-    if match.get("live_now"):
-        stream = f", stream {match['stream']}" if match.get("stream") else ""
-        return f"LIVE NOW {names[0]} {match.get('score', '?')} {names[-1]} ({details}{stream})"
+    if upcoming:
+        return f"{_versus(match)} ({details})"
+    score = "-".join(map(str, scores))
+    if live:
+        return f"LIVE NOW {names[0]} {score} {names[-1]} ({details}{stream})"
     winner = match.get("winner")
     if winner in names and len(names) == 2 and len(scores) == 2:
         w = names.index(winner)
-        forfeit = ", forfeit" if match.get("note") == "Forfeit" else ""
         return f"{winner} beat {names[1 - w]} {scores[w]}-{scores[1 - w]} ({details}{forfeit})"
-    return f"{match['teams']} {match.get('score', '')} ({details})"
+    return f"{_versus(match)} {score} ({details})"
 
 def _by_day(matches: list[dict], team: str | None = None) -> list[str]:
     """Match lines under a header per day ("Thursday 2026-10-15:"), each starting with its time."""
     lines, day = [], None
     for match in matches:
         when = match.get("starts") or match.get("date")
-        if match.get("live_now") or not when:
-            lines.append(f"- {match_line(match, team)}")
+        if not when:
+            lines.append(f"- {_match_line(match, team)}")
             continue
-        this_day, time = when.rsplit(" ", 1)
+        this_day = f"{when:%A %Y-%m-%d}"
         if this_day != day:
             day = this_day
             lines.append(f"{day}:")
-        lines.append(f"- {time} {match_line(match, team)}")
+        lines.append(f"- {when:%H:%M} {_match_line(match, team)}")
     return lines
 
-def ranking_text(result: dict) -> str:
+def _ranking_text(result: dict) -> str:
     lines = [f"{result['ranking']}, as of {result['as_of']}:"]
     lines += [f"{t['rank']}. {t['team']}: {t['points']} points ({t['roster']})" for t in result["teams"]]
     return "\n".join(lines)
 
-def _rank_text(rank) -> str:
-    if isinstance(rank, dict):
+def _rank_text(rank: dict | None) -> str:
+    if rank:
         return f"Valve rank {rank['rank']} ({rank['points']} points, as of {rank['as_of']})"
     return "not in Valve's global standings"
 
@@ -416,71 +398,98 @@ def _person(p: dict) -> str:
     about = ", ".join(str(x) for x in (p.get("real_name"), p.get("nationality"), p.get("age")) if x)
     return f"{p['name']} ({about})" if about else p["name"]
 
-def team_text(team: dict) -> str:
-    if "note" in team:
-        return f"{team['searched_for']}: {team['note']}"
+def _team_text(name: str, team: dict | None) -> str:
+    if team is None:
+        return f"{name}: No team found with that name. Check the spelling or try the full name (e.g. Natus Vincere)."
     name = team["name"]
     about = ", ".join(filter(None, [team.get("acronym"), team.get("country")]))
     lines = [f"{name} ({about}), {_rank_text(team['valve_rank'])}"]
-    players = team["players"]
-    lines.append("Players: " + (", ".join(map(_person, players)) if isinstance(players, list) else players))
-    live = team["playing_now"]
-    lines.append("Playing now: " + ("; ".join(match_line(m, name) for m in live)
-                                    if isinstance(live, list) else live))
+    lines.append("Players: " + (", ".join(map(_person, team["players"])) or "No roster listed"))
+    lines.append("Playing now: " + ("; ".join(_match_line(m, name) for m in team["playing_now"]) or "Not playing right now"))
     upcoming = team["next_match"]
-    lines.append("Next match: " + (f"{upcoming['starts'] or 'time not announced,'} {match_line(upcoming, name)}"
-                                   if isinstance(upcoming, dict) else upcoming))
-    results = team["recent_results"]
-    if isinstance(results, list):
-        lines.append("Recent results (newest first):")
-        lines += [f"- {m['date'] or 'date unknown'}: {match_line(m, name)}" for m in results]
+    if upcoming:
+        when = _time(upcoming["starts"]) if upcoming["starts"] else "time not announced,"
+        lines.append(f"Next match: {when} {_match_line(upcoming, name)}")
     else:
-        lines.append(f"Recent results: {results}")
+        lines.append("Next match: No upcoming match scheduled")
+    results = team["recent_results"]
+    if results:
+        lines.append("Recent results (newest first):")
+        lines += [f"- {_time(m['date']) if m['date'] else 'date unknown'}: {_match_line(m, name)}" for m in results]
+    else:
+        lines.append("Recent results: No finished matches found")
     return "\n".join(lines)
 
-def player_text(result: dict) -> str:
-    if not result.get("matches"):
-        return f"{result['searched_for']}: {result['note']}"
+def _player_text(name: str, players: list[dict]) -> str:
+    if not players:
+        return f"{name}: No player found with that nickname."
     lines = []
-    for p in result["matches"]:
-        rank = p["team_valve_rank"]
-        team = p["team"]
-        rank_part = f", {_rank_text(rank)}" if isinstance(rank, dict) else ""
-        plays = f"plays for {team}{rank_part}" if team != "No current team" else "has no current team"
+    for p in players:
+        rank_part = f", {_rank_text(p['team_valve_rank'])}" if p["team_valve_rank"] else ""
+        plays = f"plays for {p['team']}{rank_part}" if p["team"] else "has no current team"
         lines.append(f"{_person(p)}: {plays}")
-    lines.append(result["note"])
+    lines.append("Performance stats (rating, K/D, ADR) aren't available from this data source.")
     return "\n".join(lines)
 
-def live_text(result: dict) -> str:
-    lines = ["Live CS matches now:", *(f"- {match_line(m)}" for m in result["matches"])] if result["matches"] else []
-    if result.get("note"):
-        lines.append(result["note"])
+def _live_text(matches: list[dict], skipped: int) -> str:
+    lines = ["Live CS matches now:", *(f"- {_match_line(m)}" for m in matches)] if matches else []
+    note = "" if matches else "No major matches are being played right now."
+    if skipped:
+        count = "1 smaller-league match is" if skipped == 1 else f"{skipped} smaller-league matches are"
+        note = f"{note} {count} live but not listed.".strip()
+    if note:
+        lines.append(note)
     return "\n".join(lines)
 
-def matches_text(kind: str, result: dict) -> str:
+def _matches_text(kind: str, searched: str, result: dict | None) -> str:
     """Upcoming ("upcoming") or finished ("past") matches, of one team or of major events."""
-    if "searched_for" in result:
-        return f"{result['searched_for']}: {result['note']}"
-    team = result.get("team")
+    if result is None:
+        return f"{searched}: No team found with that name."
+    team, matches = result["team"], result["matches"]
     what = "Upcoming matches" if kind == "upcoming" else "Recent results"
     header = f"{what} of {team}" if team else f"{what} in major CS events"
     order = "soonest first" if kind == "upcoming" else "newest first"
-    if not isinstance(result["matches"], list):
-        return f"{header}: {result['matches']}"
-    return "\n".join([f"{header}, {order} (local time):", *_by_day(result["matches"], team)])
+    if not matches:
+        empty = "No upcoming matches scheduled" if kind == "upcoming" else "No finished matches found"
+        return f"{header}: {empty}" + ("" if team else " in major events")
+    return "\n".join([f"{header}, {order} (local time):", *_by_day(matches, team)])
 
 def _prize(text: str | None) -> str | None:
     if not text:
         return None
     return text.replace(" United States Dollar", " USD").replace(" Euro", " EUR")
 
-def tournaments_text(result: dict) -> str:
-    title = "Running" if result["status"] == "running" else "Upcoming"
-    if not isinstance(result["events"], list):
-        return result["events"]
+def _tournaments_text(status: str, events: list[dict]) -> str:
+    title = "Running" if status == "running" else "Upcoming"
+    if not events:
+        return f"No {status} major events found"
     lines = [f"{title} major CS events (tier S is the biggest):"]
-    for e in result["events"]:
+    for e in events:
         dates = f"{e['begins']} to {e['ends']}" if e["begins"] else "dates not announced"
         prize = f", prize pool {_prize(e['prize_pool'])}" if e["prize_pool"] else ""
         lines.append(f"- {e['name']} (tier {e['tier']}): {dates}{prize}, stages: {', '.join(e['stages'])}")
     return "\n".join(lines)
+
+# For the tools
+
+async def ranking(region: str, count: int) -> str:
+    return _ranking_text(await _ranking(region, count))
+
+async def team_info(name: str) -> str:
+    return _team_text(name, await _team_info(name))
+
+async def player_info(name: str) -> str:
+    return _player_text(name, await _player_info(name))
+
+async def live_matches() -> str:
+    return _live_text(*await _live_matches())
+
+async def upcoming_matches(team: str) -> str:
+    return _matches_text("upcoming", team, await _team_matches("upcoming", team))
+
+async def match_results(team: str) -> str:
+    return _matches_text("past", team, await _team_matches("past", team))
+
+async def tournaments(status: str) -> str:
+    status = _tournament_status(status)
+    return _tournaments_text(status, await _tournaments(status))

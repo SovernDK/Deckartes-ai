@@ -2,7 +2,8 @@
 
 To add a tool: write an async function with type hints and a docstring, decorated with
 @tool("<group>") (a TOOL_GROUPS key; add a group with example questions if none fits). Ollama builds the tool definition the model sees from the function name,
-parameters and docstring, so describe clearly what it returns and when to use it.
+parameters and docstring, so describe clearly what it returns and when to use it. Its body is one
+call to the backend, which takes the tool's arguments and returns the tool text.
 """
 
 import json
@@ -296,7 +297,7 @@ async def get_cs_ranking(region: str, count: int) -> str:
         region: "global", "europe", "americas" or "asia"
         count: How many teams to return, e.g. 10
     """
-    return cs.ranking_text(await cs.ranking(region, count))
+    return await cs.ranking(region, count)
 
 @tool("cs")
 async def get_cs_team(name: str) -> str:
@@ -306,7 +307,7 @@ async def get_cs_team(name: str) -> str:
     Args:
         name: Team name or acronym, e.g. "Vitality" or "NAVI"
     """
-    return cs.team_text(await cs.team_info(name))
+    return await cs.team_info(name)
 
 @tool("cs")
 async def get_cs_player(name: str) -> str:
@@ -316,14 +317,14 @@ async def get_cs_player(name: str) -> str:
     Args:
         name: The player's nickname, e.g. "ZywOo"
     """
-    return cs.player_text(await cs.player_info(name))
+    return await cs.player_info(name)
 
 @tool("cs")
 async def get_cs_live_matches() -> str:
     """Get Counter-Strike (CS2) esports matches being played right now in major events or by
     top-ranked teams, with teams, current score in maps, event, stage, format (BO1/BO3) and
     stream link."""
-    return cs.live_text(await cs.live_matches())
+    return await cs.live_matches()
 
 @tool("cs")
 async def get_cs_upcoming_matches(team: str) -> str:
@@ -334,7 +335,7 @@ async def get_cs_upcoming_matches(team: str) -> str:
     Args:
         team: A team name to get only its matches, or "all" for upcoming major-event matches
     """
-    return cs.matches_text("upcoming", await cs.upcoming_matches(team))
+    return await cs.upcoming_matches(team)
 
 @tool("cs")
 async def get_cs_match_results(team: str) -> str:
@@ -344,7 +345,7 @@ async def get_cs_match_results(team: str) -> str:
     Args:
         team: A team name to get only its results, or "all" for recent major-event results
     """
-    return cs.matches_text("past", await cs.match_results(team))
+    return await cs.match_results(team)
 
 @tool("cs")
 async def get_cs_tournaments(status: str) -> str:
@@ -354,7 +355,7 @@ async def get_cs_tournaments(status: str) -> str:
     Args:
         status: "running" or "upcoming"
     """
-    return cs.tournaments_text(await cs.tournaments(status))
+    return await cs.tournaments(status)
 
 @tool("calendar")
 async def get_calendar_events(date: str) -> str:

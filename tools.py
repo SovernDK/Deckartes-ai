@@ -5,7 +5,6 @@ To add a tool: write an async function with type hints and a docstring, decorate
 parameters and docstring, so describe clearly what it returns and when to use it.
 """
 
-import asyncio
 import datetime as dt
 import json
 
@@ -377,8 +376,7 @@ async def get_calendar_events(date: str) -> str:
     Args:
         date: "today", "tomorrow", "yesterday", a weekday like "friday", or a date as YYYY-MM-DD
     """
-    day = cal.parse_day(date)
-    return cal.events_text(await asyncio.to_thread(cal.events_on, day))
+    return await cal.events_on(date)
 
 @tool("calendar")
 async def get_calendar_period(period: str) -> str:
@@ -389,7 +387,7 @@ async def get_calendar_period(period: str) -> str:
     Args:
         period: "this week", "next week", "this month", "next month", a month name like "december", or YYYY-MM
     """
-    return cal.events_text(await asyncio.to_thread(cal.period_events, period))
+    return await cal.period_events(period)
 
 @tool("calendar")
 async def find_calendar_events(query: str) -> str:
@@ -400,7 +398,7 @@ async def find_calendar_events(query: str) -> str:
     Args:
         query: Word to look for, e.g. "dentist"
     """
-    return cal.found_text(await asyncio.to_thread(cal.find_events, query))
+    return await cal.find_events(query)
 
 @tool("calendar")
 async def add_calendar_event(title: str, date: str, start_time: str, end_date: str, end_time: str) -> str:
@@ -415,14 +413,7 @@ async def add_calendar_event(title: str, date: str, start_time: str, end_date: s
         end_date: The event's last day, in the same formats as date; the same as date unless it runs over several days
         end_time: Local end time on end_date as HH:MM (24-hour), e.g. "15:30" (ignored for all-day events)
     """
-    event = await asyncio.to_thread(cal.new_event, title, date, start_time, end_date, end_time)
-    summary = cal.event_line(event, with_date=True)
-    if await asyncio.to_thread(cal.is_duplicate, event):
-        return f"Not added, it's already in the calendar: {summary}"
-    if not await confirm(f"Add this event to your calendar?\n\n{summary}"):
-        return f"The user declined, so the event was NOT added: {summary}"
-    await asyncio.to_thread(cal.save_event, event)
-    return f"Added to the calendar: {summary}"
+    return await cal.add_event(title, date, start_time, end_date, end_time, confirm)
 
 def tools_for(names: list[str] | None) -> list:
     """Tools with the given names (prompts.allowed_tool_names has checked them); None means all tools."""

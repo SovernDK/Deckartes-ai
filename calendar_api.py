@@ -4,13 +4,14 @@ Sees every calendar synced to this Mac (iCloud, Google, Exchange...). The first 
 for calendar access. The permission belongs to the app running Deckartes (Terminal, iTerm,
 VS Code) and can be changed in System Settings > Privacy & Security > Calendars.
 
-EventKit is blocking, so call these functions with asyncio.to_thread. Times are in
-config.timezone. Data functions return slim dicts; the *_text formatters at the bottom
-turn them into what the tools return.
+Times are in config.timezone. EventKit is blocking, so the public functions at the bottom run
+the private ones in a thread and return tool text.
 """
 
+import asyncio
 import datetime as dt
 import threading
+from collections.abc import Awaitable, Callable
 
 import EventKit
 from Foundation import NSDate
@@ -76,7 +77,7 @@ def _local(nsdate) -> dt.datetime:
 def _midnight(day: dt.date) -> dt.datetime:
     return dt.datetime.combine(day, dt.time.min, tzinfo=clock.zone())
 
-def parse_day(text: str) -> dt.date:
+def _parse_day(text: str) -> dt.date:
     """"today", "tomorrow", "yesterday", a weekday ("friday" is the next one, today included;
     "next friday" is after today) or YYYY-MM-DD."""
     key = text.strip().lower()
@@ -118,7 +119,7 @@ def _events_between(start: dt.datetime, end: dt.datetime) -> list:
     events = list(store.eventsMatchingPredicate_(predicate) or [])
     return sorted(events, key=lambda e: e.startDate().timeIntervalSince1970())
 
-def events_on(day: dt.date) -> dict:
+def _events_on(day: dt.date) -> dict:
     events = _events_between(_midnight(day), _midnight(day + dt.timedelta(days=1)))
     return {"first": day, "last": day, "events": [_slim(e) for e in events[:MAX_EVENTS]]}
 
@@ -153,12 +154,12 @@ def _period(period: str) -> tuple[dt.date, dt.date, str]:
                          f"\"next month\", a month name or YYYY-MM")
     return first, _month_end(first), f"{first:%B %Y}"
 
-def period_events(period: str) -> dict:
+def _period_events(period: str) -> dict:
     first, last, name = _period(period)
     events = _events_between(_midnight(first), _midnight(last + dt.timedelta(days=1)))
     return {"first": first, "last": last, "name": name, "events": [_slim(e) for e in events[:MAX_EVENTS]]}
 
-def find_events(query: str) -> dict:
+def _find_events(query: str) -> dict:
     """Events whose title, location or notes contain query: the next MAX_FOUND and the latest past one."""
     needle = query.strip().casefold()
     if not needle:
@@ -188,13 +189,13 @@ def _target_calendar():
     names = ", ".join(c.title() for c in writable)
     raise ValueError(f"no calendar named {config.calendar_name!r}; calendars you can add to: {names}")
 
-def new_event(title: str, date: str, start_time: str, end_date: str, end_time: str) -> dict:
+def _new_event(title: str, date: str, start_time: str, end_date: str, end_time: str) -> dict:
     """Check and complete an event to add, without saving it. end_date is the event's last day."""
     title = title.strip()
     if not title:
         raise ValueError("The event needs a title")
-    day = parse_day(date)
-    last = parse_day(end_date)
+    day = _parse_day(date)
+    last = _parse_day(end_date)
     if start_time.strip().lower() in ("all-day", "all day", "allday"):
         if last < day:
             raise ValueError(f"The event's last day {_day(last)} is before its first day {_day(day)}")
@@ -220,7 +221,7 @@ def new_event(title: str, date: str, start_time: str, end_date: str, end_time: s
     return {"title": title, "start": start, "end": end, "all_day": all_day,
             "calendar": _target_calendar().title()}
 
-def is_duplicate(event: dict) -> bool:
+def _is_duplicate(event: dict) -> bool:
     """Whether an event with the same title already starts at the same time."""
     existing = _events_between(event["start"], event["end"])
     return any(_slim(e)["title"].casefold() == event["title"].casefold() and _slim(e)["start"] == event["start"]
@@ -259,14 +260,14 @@ def _last_day(event: dict) -> dt.date:
     # An event ending at midnight doesn't reach the day that starts then
     return max((event["end"] - dt.timedelta(seconds=1)).date(), event["start"].date())
 
-def event_line(event: dict, with_date: bool = False) -> str:
+def _event_line(event: dict, with_date: bool = False) -> str:
     about = [f"calendar {event['calendar']}"] if event.get("calendar") else []
     if event.get("location"):
         about.append(f"at {event['location']}")
     extra = f" ({'; '.join(about)})" if about else ""
     return f"{event['title']}: {_when(event, with_date)}{extra}"
 
-def events_text(result: dict) -> str:
+def _events_text(result: dict) -> str:
     first, last, events = result["first"], result["last"], result["events"]
     span = _day(first) if first == last else f"{_day(first)} to {_day(last)}"
     if result.get("name"):
@@ -282,7 +283,7 @@ def events_text(result: dict) -> str:
         multi_day = _last_day(event) != event["start"].date()
         day = max(event["start"].date(), first)
         while day <= min(_last_day(event), last):
-            by_day.setdefault(day, []).append(f"- {event_line(event, with_date=multi_day)}")
+            by_day.setdefault(day, []).append(f"- {_event_line(event, with_date=multi_day)}")
             day += dt.timedelta(days=1)
     for day in sorted(by_day):
         if first != last:
@@ -292,7 +293,7 @@ def events_text(result: dict) -> str:
         lines.append(f"(only the first {MAX_EVENTS} events are listed)")
     return "\n".join(lines)
 
-def found_text(result: dict) -> str:
+def _found_text(result: dict) -> str:
     query = result["query"]
     if not result["upcoming"] and not result["last_past"]:
         return (f"No calendar events matching {query!r} between {_day(result['from'])} "
@@ -300,9 +301,32 @@ def found_text(result: dict) -> str:
     lines = []
     if result["upcoming"]:
         lines.append(f"Upcoming calendar events matching {query!r}, soonest first (local time):")
-        lines += [f"- {event_line(e, with_date=True)}" for e in result["upcoming"]]
+        lines += [f"- {_event_line(e, with_date=True)}" for e in result["upcoming"]]
     else:
         lines.append(f"No upcoming calendar events matching {query!r} (searched until {_day(result['to'])}).")
     if result["last_past"]:
-        lines.append(f"Most recent past one: {event_line(result['last_past'], with_date=True)}")
+        lines.append(f"Most recent past one: {_event_line(result['last_past'], with_date=True)}")
     return "\n".join(lines)
+
+# For the tools
+
+async def events_on(date: str) -> str:
+    return _events_text(await asyncio.to_thread(_events_on, _parse_day(date)))
+
+async def period_events(period: str) -> str:
+    return _events_text(await asyncio.to_thread(_period_events, period))
+
+async def find_events(query: str) -> str:
+    return _found_text(await asyncio.to_thread(_find_events, query))
+
+async def add_event(title: str, date: str, start_time: str, end_date: str, end_time: str,
+                    confirm: Callable[[str], Awaitable[bool]]) -> str:
+    """Add an event unless it's already there or the user, asked through confirm, declines."""
+    event = await asyncio.to_thread(_new_event, title, date, start_time, end_date, end_time)
+    summary = _event_line(event, with_date=True)
+    if await asyncio.to_thread(_is_duplicate, event):
+        return f"Not added, it's already in the calendar: {summary}"
+    if not await confirm(f"Add this event to your calendar?\n\n{summary}"):
+        return f"The user declined, so the event was NOT added: {summary}"
+    await asyncio.to_thread(save_event, event)
+    return f"Added to the calendar: {summary}"

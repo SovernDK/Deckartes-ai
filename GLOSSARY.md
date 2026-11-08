@@ -12,6 +12,10 @@ _Avoid_: exchange, request
 The finished turns so far and the file loaded for them.
 _Avoid_: chat, session
 
+**Loaded file**:
+A file the user picked for the conversation, which every turn receives whole or as excerpts.
+_Avoid_: document, attachment
+
 **Tool text**:
 What a tool hands back to the model: short plain text whose exact wording and order are chosen so a small model can't misread it.
 _Avoid_: tool output, formatted result

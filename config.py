@@ -37,7 +37,7 @@ class Config:
     # Send only the tool groups a question needs, picked by a small embedding model (tool_router.py)
     tool_routing: bool = True
     embed_model: str = "all-minilm:33m"
-    # Embeds chunks of a long loaded file (rag.py); multilingual, unlike embed_model
+    # Embeds chunks of a long loaded file (loaded_file.py); multilingual, unlike embed_model
     rag_embed_model: str = "embeddinggemma-2:570m"
     # Show tokens used per reply and for the whole conversation (key t)
     show_token_usage: bool = False

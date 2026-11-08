@@ -229,7 +229,7 @@ Small models sometimes answer from their own knowledge instead of the file, or n
 | `chat.py` | Chat widgets: messages, spinner, commands, interrupting |
 | `config_screen.py` | Settings popup |
 | `file_explorer.py` | File explorer popup |
-| `rag.py` | Loading a file: reading, chunking, embedding and searching it |
+| `loaded_file.py` | Loading a file: reading, chunking, embedding and searching it |
 | `chat.tcss` | Styles |
 | `conversation.py` | Conversation history, turns, the tool-calling loop and token counting, no UI |
 | `ollama_api.py` | Listing and unloading models |

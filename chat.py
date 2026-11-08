@@ -1,5 +1,4 @@
 import asyncio
-import threading
 from contextlib import aclosing
 from pathlib import Path
 
@@ -11,7 +10,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, Markdown, Static, ListView, ListItem, Label
 from textual.containers import VerticalScroll, VerticalGroup, HorizontalGroup
 
-import rag
+import loaded_file
 import tools
 from config import config
 from conversation import Conversation, Failed, Text, ToolsDone, ToolStarted
@@ -123,8 +122,8 @@ class Chat(VerticalGroup):
     def update_usage(self) -> None:
         """Output title, with the conversation's total tokens while usage is shown."""
         title = "Output"
-        if self.conversation.document is not None:
-            title += f" · {self.conversation.document.name}"
+        if self.conversation.file is not None:
+            title += f" · {self.conversation.file.name}"
         if config.show_token_usage:
             title += f" · {self.conversation.total_usage.total:,} tokens"
         self.query_one("#response").border_title = title
@@ -165,13 +164,13 @@ class Chat(VerticalGroup):
         self.notify("Conversation cleared")
 
     def command_unload(self) -> None:
-        document = self.conversation.document
-        if document is None:
+        file = self.conversation.file
+        if file is None:
             self.notify("No file is loaded", severity="warning")
             return
-        self.conversation.document = None
+        self.conversation.file = None
         self.update_usage()
-        self.notify(f"Unloaded {document.name}")
+        self.notify(f"Unloaded {file.name}")
 
     @work(exclusive=True, group="load")
     async def load_file(self, path: Path) -> None:
@@ -182,15 +181,11 @@ class Chat(VerticalGroup):
         self.set_busy(True)
         spinner = self.query_one(Spinner)
         spinner.set_label(f"Reading {path.name}...")
-        loop = asyncio.get_running_loop()
         def progress(done: int, total: int) -> None:
-            loop.call_soon_threadsafe(spinner.set_label, f"Embedding {path.name}: {done}/{total} chunks")
-        cancel = threading.Event()
+            spinner.set_label(f"Embedding {path.name}: {done}/{total} chunks")
         try:
-            document = await asyncio.to_thread(rag.load, path, progress, cancel)
+            file = await loaded_file.load(path, progress)
         except asyncio.CancelledError:
-            # Interrupted (ctrl+c): stop the embedding thread at its next batch
-            cancel.set()
             self.notify(f"Stopped loading {path.name}")
             raise
         except Exception as e:
@@ -198,11 +193,9 @@ class Chat(VerticalGroup):
             return
         finally:
             self.set_busy(False)
-        self.conversation.document = document
+        self.conversation.file = file
         self.update_usage()
-        how = (f"whole, about {document.tokens:,} tokens" if document.whole
-               else f"{len(document.chunks):,} chunks; each question gets the {rag.TOP_K} most related")
-        self.notify(f"Loaded {document.name} ({how}). /unload stops sending it.")
+        self.notify(f"Loaded {file.name} ({file.how_sent}). /unload stops sending it.")
 
     @work(exclusive=True, group="kill")
     async def command_kill(self) -> None:

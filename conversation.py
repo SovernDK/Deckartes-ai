@@ -8,12 +8,11 @@ A turn is added to the history only when the model finishes it without error. A 
 that fails or is interrupted (its stream closed or task cancelled) leaves the history as it was.
 Tokens are counted for every turn, including failed ones, since the model still used them.
 
-A loaded file (rag.py) goes into every turn: a short file whole, at the end of the system message,
+A loaded file (loaded_file.py) goes into every turn: a short file whole, at the end of the system message,
 where it stays the same each turn so Ollama can reuse its cache; a long one as excerpts picked
 for the question, just before it. Neither is saved in the history.
 """
 
-import asyncio
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 from dataclasses import dataclass, field
@@ -21,7 +20,7 @@ from dataclasses import dataclass, field
 from config import config
 from ollama_client import get_async_client
 from prompts import system_message
-import rag
+from loaded_file import FileContext, LoadedFile
 from tool_router import select_tools
 from tools import run_tool
 
@@ -132,36 +131,24 @@ class Conversation:
         self.last_turn = TurnInfo()
         # Tokens of the whole conversation
         self.total_usage = Usage()
-        self.document: rag.Document | None = None
+        self.file: LoadedFile | None = None
 
     def clear(self) -> None:
         self.history.clear()
         self.last_turn = TurnInfo()
         self.total_usage = Usage()
-        self.document = None
+        self.file = None
 
-    def _messages_for(self, query: str, excerpts: str | None) -> list[dict]:
+    def _messages_for(self, query: str, file: FileContext | None) -> list[dict]:
         """What gets sent to the model for a new question: the current system prompt
         (read fresh, so a changed preset applies from the next turn), the history and the question,
         with the loaded file: whole in the system message, or excerpts just before the question."""
         system = system_message()
-        if self.document is not None and self.document.whole:
-            system = f"{system}\n\n{rag.whole_file_prompt(self.document)}"
+        if file is not None and file.system:
+            system = f"{system}\n\n{file.system}"
         messages = [{"role": "system", "content": system}] if system else []
-        before = [{"role": "system", "content": excerpts}] if excerpts else []
+        before = [{"role": "system", "content": file.excerpts}] if file is not None and file.excerpts else []
         return [*messages, *self.history, *before, {"role": "user", "content": query}]
-
-    async def _file_excerpts(self, query: str, previous: str | None, turn: TurnInfo) -> str | None:
-        """Excerpts of a long loaded file for this question; None without one or for a short file."""
-        document = self.document
-        if document is None:
-            return None
-        if document.whole:
-            turn.file_context = "whole"
-            return None
-        chunks = await asyncio.to_thread(rag.search, document, query, previous)
-        turn.file_context = f"{len(chunks)} excerpts"
-        return rag.excerpts_prompt(document, chunks)
 
     def _remember(self, query: str, reply: str) -> None:
         if reply:
@@ -174,16 +161,17 @@ class Conversation:
         questions = [m["content"] for m in self.history if m["role"] == "user"]
         previous = questions[-1] if questions else None
         try:
-            excerpts = await self._file_excerpts(query, previous, turn)
+            file = await self.file.context_for(query, previous) if self.file is not None else None
         except Exception as e:
             yield Failed(f"could not search the loaded file: {e}")
             return
         try:
-            messages = self._messages_for(query, excerpts)
+            messages = self._messages_for(query, file)
         except Exception as e:
             # e.g. a broken prompts.json
             yield Failed(f"could not load the system prompt: {e}")
             return
+        turn.file_context = file.label if file is not None else None
         reply = ""
         try:
             tools = None

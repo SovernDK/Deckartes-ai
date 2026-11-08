@@ -24,7 +24,7 @@ A `DirectoryTree` rooted at the home folder whose `filter_paths` keeps only what
 
 ## Config popup
 
-The config popup (`config_screen.py`, key `c`) edits `system_prompt`, `temperature` and `context_length`; it checks every field before applying any. `context_length` is picked from `config.CONTEXT_LENGTHS` (2K-32K; add values there), and a value set to something else in `config.py` is kept as an extra option. Options under `RECOMMENDED_MIN_CONTEXT` are labelled "little room with tools". The context also decides whether a loaded file is sent whole (`rag.WHOLE_FILE_SHARE`), but only when the file is loaded.
+The config popup (`config_screen.py`, key `c`) edits `system_prompt`, `temperature` and `context_length`; it checks every field before applying any. `context_length` is picked from `config.CONTEXT_LENGTHS` (2K-32K; add values there), and a value set to something else in `config.py` is kept as an extra option. Options under `RECOMMENDED_MIN_CONTEXT` are labelled "little room with tools". The context also decides whether a loaded file is sent whole (`loaded_file.WHOLE_FILE_SHARE`), but only when the file is loaded.
 
 ## Token usage
 

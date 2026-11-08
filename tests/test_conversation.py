@@ -8,7 +8,6 @@ from unittest import mock
 
 import ollama_client
 import prompts
-import rag
 import tool_router
 from config import config
 from conversation import MAX_TOOL_ROUNDS, Conversation, Failed, Text, ToolsDone, ToolStarted, TurnInfo, Usage
@@ -134,12 +133,12 @@ class FinishedTurnTest(TurnTest):
     async def test_clear_forgets_everything(self):
         self.use([chunk("ok", done=True)])
         await self.reply()
-        self.conversation.document = mock.Mock(whole=True)
+        self.conversation.file = mock.sentinel.file
         self.conversation.clear()
         self.assertIsNone(self.conversation.last_turn.summary())
         self.assertEqual(self.conversation.total_usage.total, 0)
         self.assertEqual(self.conversation.history, [])
-        self.assertIsNone(self.conversation.document)
+        self.assertIsNone(self.conversation.file)
 
 class ToolRoundTest(TurnTest):
     async def test_tool_result_goes_back_to_the_model(self):
@@ -231,13 +230,6 @@ class FailedTurnTest(TurnTest):
         self.assertEqual(client.sent, [])
         self.assertEqual(self.conversation.history, [])
 
-    async def test_file_search_error(self):
-        client = self.use([chunk("never", done=True)])
-        self.conversation.document = mock.Mock(whole=False)
-        self.patch(rag, "search", mock.Mock(side_effect=OSError("cache gone")))
-        self.assertEqual(await self.reply(), [Failed("could not search the loaded file: cache gone")])
-        self.assertEqual(client.sent, [])
-
     async def test_closed_turn_is_not_saved_but_counted(self):
         self.use([chunk("one", done=True), chunk("two")])
         async with aclosing(self.conversation.stream_reply("q")) as events:
@@ -253,24 +245,6 @@ class FailedTurnTest(TurnTest):
             async for event in events:
                 break
         self.assertEqual(client.closed, 1)
-
-class LoadedFileTest(TurnTest):
-    async def test_excerpts_go_just_before_the_question(self):
-        client = self.use([chunk("ok", done=True)])
-        self.conversation.document = mock.Mock(whole=False)
-        self.patch(rag, "search", mock.Mock(return_value=["a", "b"]))
-        self.patch(rag, "excerpts_prompt", mock.Mock(return_value="excerpts"))
-        await self.reply()
-        self.assertEqual(self.sent_contents(client), [DATE_LINE, "excerpts", "q"])
-        self.assertEqual(self.conversation.last_turn.file_context, "2 excerpts")
-
-    async def test_whole_file_goes_in_the_system_message(self):
-        client = self.use([chunk("ok", done=True)])
-        self.conversation.document = mock.Mock(whole=True)
-        self.patch(rag, "whole_file_prompt", mock.Mock(return_value="file"))
-        await self.reply()
-        self.assertEqual(self.sent_contents(client), [f"{DATE_LINE}\n\nfile", "q"])
-        self.assertEqual(self.conversation.last_turn.file_context, "whole")
 
 class SummaryTest(unittest.TestCase):
     def test_nothing_sent_to_the_model(self):

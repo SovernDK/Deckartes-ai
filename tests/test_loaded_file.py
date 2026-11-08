@@ -2,13 +2,14 @@
 
 import asyncio
 import re
+import threading
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest import mock
 
 import ollama_client
-import rag as loaded_file
+import loaded_file
 from config import config
 from conversation import Failed
 from test_conversation import DATE_LINE, TurnTest, chunk
@@ -83,10 +84,10 @@ class FileTest(TurnTest):
         return path
 
     async def load(self, path, progress=None):
-        return await asyncio.to_thread(loaded_file.load, path, progress)
+        return await loaded_file.load(path, progress)
 
     async def attach(self, content, name="notes.txt"):
-        self.conversation.document = await self.load(self.write(content, name))
+        self.conversation.file = await self.load(self.write(content, name))
 
     def long_text(self, count=8) -> str:
         return "\n\n".join(paragraph(i) for i in range(count))
@@ -221,6 +222,34 @@ class EmbeddingTest(FileTest):
         progress = []
         await self.load(self.write(self.long_text(20)), lambda done, total: progress.append((done, total)))
         self.assertEqual(progress, [(0, 20), (16, 20), (20, 20)])
+
+    async def test_cancelling_stops_at_the_next_batch(self):
+        started, release = threading.Event(), threading.Event()
+        def embed(model, input):
+            started.set()
+            release.wait(5)
+            self.embedder.calls.append((model, list(input)))
+            return NS(embeddings=[vector(text) for text in input])
+        self.embedder.embed = embed
+        task = asyncio.create_task(self.load(self.write(self.long_text(20))))
+        await asyncio.to_thread(started.wait, 5)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        release.set()
+        await asyncio.sleep(0.1)
+        self.assertEqual(len(self.embedder.calls), 1)
+        self.assertFalse((self.folder / "cache").exists())
+
+class HowSentTest(FileTest):
+    async def test_short_file(self):
+        file = await self.load(self.write("x" * 700))
+        self.assertEqual(file.how_sent, "whole, about 200 tokens")
+
+    async def test_long_file(self):
+        self.patch(config, "context_length", 10)
+        file = await self.load(self.write(self.long_text()))
+        self.assertEqual(file.how_sent, "8 chunks; each question gets the 5 most related")
 
 class RefusedFileTest(FileTest):
     async def refused(self, path, message):

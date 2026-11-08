@@ -1,0 +1,3 @@
+# Server tools (`glances_api.py`)
+
+Each function returns a few lines of text, because raw Glances JSON is mostly counters and byte values (the containers endpoint alone is ~8,000 tokens). The `_format_*` helpers take an endpoint's JSON, so `overview()` reuses them with one `asyncio.gather` over every endpoint. `get_server_overview` answers "how is the server?" in one call instead of a chain of tool rounds. Glances runs in a container on the server, so file systems are de-duplicated by device: its mount points are bind mounts like `/etc/hosts`. Container lines leave out the uptime most of them share (it's given in the summary line). Temperatures include the sensors' warning level so the model doesn't invent one.

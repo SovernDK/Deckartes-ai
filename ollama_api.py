@@ -75,7 +75,7 @@ class TurnInfo:
         usage = self.usage
         if not usage.total:
             return None
-        text = f"{usage.input:,} in · {usage.output:,} out · {usage.total:,} tokens"
+        text = f"{usage.input:,} in · {usage.output:,} out · {usage.total:,} {'token' if usage.total == 1 else 'tokens'}"
         if usage.tokens_per_second is not None:
             text += f" · {usage.tokens_per_second:.1f} tok/s"
         if self.tool_groups is not None:

@@ -9,9 +9,10 @@ from config import config
 from frozen_clock import freeze
 
 class RegistryTest(unittest.TestCase):
-    def test_every_tool_is_in_its_group(self):
+    def test_groups_hold_real_tools_once_each(self):
         grouped = [name for group in tools.TOOL_GROUPS.values() for name in group["tools"]]
-        self.assertCountEqual(grouped, [tool.__name__ for tool in tools.TOOLS])
+        self.assertEqual(len(grouped), len(set(grouped)))
+        self.assertLessEqual(set(grouped), {tool.__name__ for tool in tools.TOOLS})
         for name, group in tools.TOOL_GROUPS.items():
             self.assertTrue(group["tools"], f"group {name} has no tools")
 
@@ -24,8 +25,10 @@ class RegistryTest(unittest.TestCase):
         self.assertIn("Args:", tools.get_cs_team.__doc__)
 
     def test_unknown_group(self):
+        async def new_tool() -> str:
+            return ""
         with self.assertRaisesRegex(ValueError, "unknown tool group 'nope'"):
-            tools.tool("nope")
+            tools.tool("nope")(new_tool)
 
 class PresetTest(unittest.TestCase):
     def test_presets_name_real_tools(self):

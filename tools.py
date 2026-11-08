@@ -61,7 +61,7 @@ TOOL_GROUPS: dict[str, dict] = {
     "anime": {
         "examples": [
             "What anime is airing this season?", "Best anime of next season", "Top 5 anime of fall 2026",
-            "What anime airs today?", "When is the next episode of Frieren?",
+            "What anime airs today?", "When is the next episode of Frieren?", "When does the next episode air?",
             "Will this show continue next season?", "What's on my anime list?",
             "Which of my shows air this week?", "Recommend a good anime to watch",
             "What am I watching right now?", "Is the new season of my show out?",
@@ -417,7 +417,7 @@ async def find_calendar_events(query: str) -> str:
     return cal.found_text(await asyncio.to_thread(cal.find_events, query))
 
 @tool("calendar")
-async def add_calendar_event(title: str, date: str, start_time: str, duration_minutes: int) -> str:
+async def add_calendar_event(title: str, date: str, start_time: str, end_date: str, end_time: str) -> str:
     """Add an event to the user's own calendar (Apple Calendar). Use it only when the user asks
     to add, schedule or put something in their calendar; the user confirms it before it's saved.
     Use the date and time from the user or from another tool's result, never a guess.
@@ -426,9 +426,10 @@ async def add_calendar_event(title: str, date: str, start_time: str, duration_mi
         title: Event title, e.g. "Dentist" or "NAVI vs Vitality"
         date: "today", "tomorrow", a weekday like "friday", or a date as YYYY-MM-DD
         start_time: Local start time as HH:MM (24-hour), e.g. "14:30", or "all-day"
-        duration_minutes: Length in minutes, e.g. 60 (ignored for all-day events)
+        end_date: The event's last day, in the same formats as date; the same as date unless it runs over several days
+        end_time: Local end time on end_date as HH:MM (24-hour), e.g. "15:30" (ignored for all-day events)
     """
-    event = await asyncio.to_thread(cal.new_event, title, date, start_time, int(duration_minutes))
+    event = await asyncio.to_thread(cal.new_event, title, date, start_time, end_date, end_time)
     summary = cal.event_line(event, with_date=True)
     if await asyncio.to_thread(cal.is_duplicate, event):
         return f"Not added, it's already in the calendar: {summary}"

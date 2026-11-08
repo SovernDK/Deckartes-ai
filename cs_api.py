@@ -271,8 +271,8 @@ async def live_matches() -> dict:
     if not top:
         result["note"] = "No major matches are being played right now."
     if skipped:
-        result["note"] = (result.get("note", "") + f" {skipped} smaller-league matches are live "
-                          "but not listed.").strip()
+        count = "1 smaller-league match is" if skipped == 1 else f"{skipped} smaller-league matches are"
+        result["note"] = (result.get("note", "") + f" {count} live but not listed.").strip()
     return result
 
 def _when(match: dict) -> str | None:

@@ -1,5 +1,6 @@
 """The text the anime tools give the model, from fake AnimeSchedule responses."""
 
+import datetime as dt
 import unittest
 from unittest import mock
 
@@ -21,6 +22,13 @@ def show(route: str, title: str, *, english: str | None = None, episodes: int | 
 
 def episode(route: str, title: str, airs: str, number: int, english: str | None = None) -> dict:
     return {"route": route, "title": title, "english": english, "episodeNumber": number, "episodeDate": airs}
+
+def weekly(*episodes: dict):
+    """The timetable endpoint: each requested ISO week gets only its own episodes, like the API."""
+    def answer(request):
+        wanted = (int(request.url.params["year"]), int(request.url.params["week"]))
+        return [e for e in episodes if tuple(dt.datetime.fromisoformat(e["episodeDate"]).isocalendar())[:2] == wanted]
+    return answer
 
 def ongoing(*shows: dict) -> dict:
     return {"totalAmount": len(shows), "anime": list(shows)}
@@ -51,8 +59,18 @@ class SeasonTest(AnimeToolTest):
         self.assertTrue(text.startswith("Fall 2026 anime, best rated first, 41 shows (ratings out of 10; shows rated "
                                         "6 or lower left out; episode counts and premiere dates are given only "
                                         "when announced):\n"))
-        self.assertTrue(text.endswith("\n...and 1 more lower-rated or unrated shows not listed. "
+        self.assertTrue(text.endswith("\n...and 1 more lower-rated or unrated show not listed. "
                                       "To check a specific show, use get_next_episode."))
+
+    async def test_several_shows_cut_are_plural(self):
+        shows = [show(f"s{i}", f"Show {i}", score=90) for i in range(42)]
+        self.serve({ANIME: {"totalAmount": 1, "anime": shows}})
+        self.assertIn("\n...and 2 more lower-rated or unrated shows not listed.",
+                      await tools.list_season_anime("fall", 2026))
+
+    async def test_a_season_of_one_show_is_singular(self):
+        self.serve({ANIME: ongoing(show("a", "Only Show", score=90))})
+        self.assertIn(", 1 show (", await tools.list_season_anime("fall", 2026))
 
     def serve_pages(self, total: int):
         """The season list a page of 18 at a time, like the API."""
@@ -77,13 +95,17 @@ class SeasonTest(AnimeToolTest):
                                             show("b", "Little Tracked", tracked=5),
                                             show("c", "Much Tracked", tracked=500))})
         self.assertEqual(await tools.get_top_season_anime("next", 2),
-                         "Only 1 Winter 2027 shows have a rating yet; the rest of the list are unrated shows ordered "
+                         "Only 1 Winter 2027 show has a rating yet; the rest of the list are unrated shows ordered "
                          "by how many users track them (anticipation, not quality). (episode counts and premiere "
                          "dates are given only when announced)\n"
                          "1. Rated: rated 8.0\n"
                          "2. Much Tracked: unrated (tracked by 500 users)")
         self.assertEqual(server.requests[0].url.params["seasons"], "winter")
         self.assertEqual(server.requests[0].url.params["years"], "2027")
+
+    async def test_several_rated_shows_are_plural(self):
+        self.serve({ANIME: ongoing(show("a", "One", score=80), show("b", "Two", score=70), show("c", "Three"))})
+        self.assertIn("Only 2 Winter 2027 shows have a rating yet;", await tools.get_top_season_anime("next", 3))
 
 class AiringTest(AnimeToolTest):
     async def test_name_first_by_time_without_low_rated_shows(self):
@@ -108,13 +130,18 @@ class AiringTest(AnimeToolTest):
 
 class NextEpisodeTest(AnimeToolTest):
     async def test_skips_episodes_already_aired(self):
-        self.serve({TIMETABLE: [episode("f", "Sousou no Frieren", "2026-11-09T16:30:00Z", 4, "Frieren"),
-                                episode("f", "Sousou no Frieren", "2026-11-13T16:30:00Z", 5, "Frieren")]})
+        self.serve({TIMETABLE: weekly(episode("f", "Sousou no Frieren", "2026-11-09T16:30:00Z", 4, "Frieren"),
+                                      episode("f", "Sousou no Frieren", "2026-11-13T16:30:00Z", 5, "Frieren"))})
         self.assertEqual(await tools.get_next_episode("frieren"),
                          "Frieren: episode 5 airs Friday 2026-11-13 17:30 (local time)")
 
+    async def test_finds_an_episode_next_week(self):
+        self.serve({TIMETABLE: weekly(episode("f", "Sousou no Frieren", "2026-11-18T16:30:00Z", 6, "Frieren"))})
+        self.assertEqual(await tools.get_next_episode("frieren"),
+                         "Frieren: episode 6 airs Wednesday 2026-11-18 17:30 (local time)")
+
     async def test_name_ignores_case_and_punctuation(self):
-        self.serve({TIMETABLE: [episode("f", "Sousou no Frieren", "2026-11-13T16:30:00Z", 5, "Frieren")]})
+        self.serve({TIMETABLE: weekly(episode("f", "Sousou no Frieren", "2026-11-13T16:30:00Z", 5, "Frieren"))})
         self.assertEqual(await tools.get_next_episode("SOUSOU-no: frieren!"),
                          "Frieren: episode 5 airs Friday 2026-11-13 17:30 (local time)")
 
@@ -127,7 +154,7 @@ class NextEpisodeTest(AnimeToolTest):
 class NextSeasonTest(AnimeToolTest):
     async def answer(self, episodes: int | None, next_number: int | None = 20) -> str:
         timetable = [episode("f", "Frieren", "2026-11-13T16:30:00Z", next_number)] if next_number else []
-        self.serve({TIMETABLE: timetable, ANIME: ongoing(show("f", "Frieren", episodes=episodes))})
+        self.serve({TIMETABLE: weekly(*timetable), ANIME: ongoing(show("f", "Frieren", episodes=episodes))})
         return await tools.will_air_next_season("Frieren")
 
     async def test_yes(self):
@@ -172,7 +199,7 @@ class NextSeasonTest(AnimeToolTest):
 class UserListTest(AnimeToolTest):
     def serve_list(self, entries: list[dict], timetable: list[dict]):
         return self.serve({USER_LIST: {"shows": {entry["route"]: entry for entry in entries}},
-                           ANIME: ongoing(), TIMETABLE: timetable})
+                           ANIME: ongoing(), TIMETABLE: weekly(*timetable)})
 
     async def test_grouped_under_when_the_next_episode_airs(self):
         self.serve_list([listed("a", "Today Show", seen=3), listed("b", "Tomorrow Show", score=85),

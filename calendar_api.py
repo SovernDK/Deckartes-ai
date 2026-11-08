@@ -188,24 +188,32 @@ def _target_calendar():
     names = ", ".join(c.title() for c in writable)
     raise ValueError(f"no calendar named {config.calendar_name!r}; calendars you can add to: {names}")
 
-def new_event(title: str, date: str, start_time: str, duration_minutes: int) -> dict:
-    """Check and complete an event to add, without saving it."""
+def new_event(title: str, date: str, start_time: str, end_date: str, end_time: str) -> dict:
+    """Check and complete an event to add, without saving it. end_date is the event's last day."""
     title = title.strip()
     if not title:
         raise ValueError("The event needs a title")
     day = parse_day(date)
+    last = parse_day(end_date)
     if start_time.strip().lower() in ("all-day", "all day", "allday"):
-        start, end, all_day = _midnight(day), _midnight(day + dt.timedelta(days=1)), True
+        if last < day:
+            raise ValueError(f"The event's last day {_day(last)} is before its first day {_day(day)}")
+        start, end, all_day = _midnight(day), _midnight(last + dt.timedelta(days=1)), True
     else:
         try:
             at = dt.time.fromisoformat(start_time.strip())
         except ValueError:
             raise ValueError(f"Start time {start_time!r} must be HH:MM (24-hour) or \"all-day\"")
-        if not 0 < duration_minutes <= 24 * 60:
-            raise ValueError("duration_minutes must be between 1 and 1440")
+        try:
+            until = dt.time.fromisoformat(end_time.strip())
+        except ValueError:
+            raise ValueError(f"End time {end_time!r} must be HH:MM (24-hour)")
         start = dt.datetime.combine(day, at, tzinfo=clock.zone())
-        end = start + dt.timedelta(minutes=duration_minutes)
+        end = dt.datetime.combine(last, until, tzinfo=clock.zone())
         all_day = False
+        if end <= start:
+            raise ValueError(f"The event would end at {end:%A %Y-%m-%d %H:%M}, not after its start at "
+                             f"{start:%A %Y-%m-%d %H:%M}; one that runs past midnight needs a later end_date")
     # A past date is almost always a wrong year or day from the model
     if (end if all_day else start) <= clock.now():
         raise ValueError(f"{start:%A %Y-%m-%d %H:%M} is in the past; today is {clock.today():%A %Y-%m-%d}")
@@ -247,6 +255,10 @@ def _when(event: dict, with_date: bool) -> str:
         span = f"{start:%H:%M} to {_day(end.date())} {end:%H:%M}"
     return f"{_day(start.date())} {span}" if with_date else span
 
+def _last_day(event: dict) -> dt.date:
+    # An event ending at midnight doesn't reach the day that starts then
+    return max((event["end"] - dt.timedelta(seconds=1)).date(), event["start"].date())
+
 def event_line(event: dict, with_date: bool = False) -> str:
     about = [f"calendar {event['calendar']}"] if event.get("calendar") else []
     if event.get("location"):
@@ -263,14 +275,19 @@ def events_text(result: dict) -> str:
         return f"No events in the calendar for {span}."
     note = "local time; days not listed have no events" if first != last else "local time"
     lines = [f"Calendar events for {span} ({note}):"]
-    day = None
+    # A multi-day event is listed under every day it covers, so an unlisted day really is free,
+    # and with its full dates, since the day heading isn't the day it started
+    by_day: dict[dt.date, list[str]] = {}
     for event in events:
-        # An event that began before the range is listed under the range's first day
-        this_day = max(event["start"].date(), first)
-        if first != last and this_day != day:
-            day = this_day
+        multi_day = _last_day(event) != event["start"].date()
+        day = max(event["start"].date(), first)
+        while day <= min(_last_day(event), last):
+            by_day.setdefault(day, []).append(f"- {event_line(event, with_date=multi_day)}")
+            day += dt.timedelta(days=1)
+    for day in sorted(by_day):
+        if first != last:
             lines.append(f"{_day(day)}:")
-        lines.append(f"- {event_line(event)}")
+        lines += by_day[day]
     if len(events) == MAX_EVENTS:
         lines.append(f"(only the first {MAX_EVENTS} events are listed)")
     return "\n".join(lines)

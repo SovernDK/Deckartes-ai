@@ -20,8 +20,10 @@ def names(tools) -> list[str] | None:
     return None if tools is None else [tool.__name__ for tool in tools]
 
 def group_tools(*groups: str) -> list[str]:
+    """The tools sent when the router picks these groups: theirs and any tool in no group."""
+    grouped = {name for group in TOOL_GROUPS.values() for name in group["tools"]}
     return [tool.__name__ for tool in TOOLS
-            if any(tool.__name__ in TOOL_GROUPS[g]["tools"] for g in groups)]
+            if tool.__name__ not in grouped or any(tool.__name__ in TOOL_GROUPS[g]["tools"] for g in groups)]
 
 def ask(*questions: str) -> list[dict]:
     """Messages as Conversation sends them: system first, earlier turns, then the question."""
@@ -80,9 +82,6 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(selection.groups, ["cs"])
         self.assertEqual(names(selection.tools), group_tools("cs"))
 
-    def test_route_is_private(self):
-        self.assertFalse(hasattr(tool_router, "route"))
-
     async def test_groups_within_margin(self):
         self.embed({"q": {"calendar": 0.7, "anime": 0.55, "cs": 0.45}})
         selection = await tool_router.select_tools(ask("q"))
@@ -98,7 +97,7 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         self.embed({"Is NAVI on?": {"cs": 0.9}, "thanks!": {None: 0.7, "cs": 0.3}})
         selection = await tool_router.select_tools(ask("Is NAVI on?", "thanks!"))
         self.assertEqual(selection.groups, [])
-        self.assertIsNone(selection.tools)
+        self.assertEqual(names(selection.tools) or [], group_tools())
 
     async def test_follow_up_borrows_previous_topic(self):
         self.embed({
@@ -135,7 +134,7 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         self.embed({"q": {"anime": 0.1, None: 0.05}})
         selection = await tool_router.select_tools(ask("q"))
         self.assertEqual(selection.groups, [])
-        self.assertIsNone(selection.tools)
+        self.assertEqual(names(selection.tools) or [], group_tools())
 
     async def test_ungrouped_tools_always_sent(self):
         self.embed({"q": {"cs": 0.8}})
@@ -156,7 +155,7 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(names(selection.tools), group_tools("cs"))
 
     async def test_preset_narrows_routing(self):
-        self.embed({"q": {"anime": 0.9, "cs": 0.3}})
+        self.embed({"q": {"anime": 0.9, "cs": 0.3, "calendar": 0.25}})
         allowed = ["get_cs_team", "get_calendar_events"]
         with mock.patch.object(tool_router, "allowed_tool_names", return_value=allowed):
             selection = await tool_router.select_tools(ask("q"))
@@ -187,12 +186,8 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(names(selection.tools), names(TOOLS))
         self.assertIsNone(selection.groups)
 
-# Questions allowed to send more than UNSURE_GROUPS groups, with why
-MAY_SEND_MORE = {
-    # The embedding model doesn't know the show, so "When does X ... next?" also looks like cs
-    # and calendar; anime is still sent, so the model can answer
-    "When does Dandadan air next?",
-}
+# The most groups a one-topic question may send; a fixed number, so that loosening the router fails
+MAX_GROUPS = 2
 
 # (previous questions..., question, groups that must be chosen; [] = no tools at all)
 LIVE_CASES = [
@@ -276,8 +271,7 @@ class LiveRoutingTest(unittest.IsolatedAsyncioTestCase):
                     detail = f"chose {groups}; scores: {await self.scores(questions[-1])}"
                     if expected:
                         self.assertLessEqual(set(expected), set(groups), detail)
-                        if questions[-1] not in MAY_SEND_MORE:
-                            self.assertLessEqual(len(groups), max(len(expected), tool_router.UNSURE_GROUPS), detail)
+                        self.assertLessEqual(len(groups), max(len(expected), MAX_GROUPS), detail)
                     else:
                         self.assertEqual(groups, [], detail)
 

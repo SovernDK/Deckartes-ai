@@ -131,7 +131,8 @@ async def top_season_anime(season: str, count: int) -> dict:
     if not top:
         note = f"No anime found for {title}."
     elif len(top) > len(rated[:count]):
-        note = (f"Only {len(rated)} {title} shows have a rating yet; the rest of the list are unrated "
+        verb = "show has" if len(rated) == 1 else "shows have"
+        note = (f"Only {len(rated)} {title} {verb} a rating yet; the rest of the list are unrated "
                 "shows ordered by how many users track them (anticipation, not quality).")
     else:
         note = f"Top {len(top)} {title} shows by user rating (0-10)."
@@ -332,17 +333,21 @@ def current_season_text(date: dt.date) -> str:
     season, year = season_of(date)
     return f"Today is {date:%A %Y-%m-%d}. Current anime season: {season.title()} {year}."
 
+def _count_shows(count: int) -> str:
+    return f"{count} {'show' if count == 1 else 'shows'}"
+
 def season_text(season: str, year: int, shows: list[dict]) -> str:
     title = f"{season.strip().lower().replace('autumn', 'fall').title()} {year}"
     if not shows:
         return f"No anime found for {title}."
-    lines = [f"{title} anime, best rated first, {len(shows)} shows (ratings out of 10; shows rated "
+    lines = [f"{title} anime, best rated first, {_count_shows(len(shows))} (ratings out of 10; shows rated "
              f"{config.anime_min_rating:g} or lower left out; {KNOWN_ONLY}):"]
     for i, show in enumerate(shows[:MAX_SEASON_LIST], 1):
         lines.append(f"{i}. {show['name']}: {_rating_text(show['rating'])}"
                      f"{_details(show, 'episodes', 'premiere')}")
     if len(shows) > MAX_SEASON_LIST:
-        lines.append(f"...and {len(shows) - MAX_SEASON_LIST} more lower-rated or unrated shows not listed. "
+        cut = len(shows) - MAX_SEASON_LIST
+        lines.append(f"...and {cut} more lower-rated or unrated {'show' if cut == 1 else 'shows'} not listed. "
                      "To check a specific show, use get_next_episode.")
     return "\n".join(lines)
 
@@ -419,7 +424,7 @@ def user_list_text(status: str, shows: list[dict]) -> str:
 
     headings = {"today": "Airing today", "tomorrow": "Airing tomorrow", "this week": "Airing later this week",
                 "next week": "Airing next week", "later": "No episode in the next two weeks"}
-    lines = [f"Your anime list ({status}), {len(shows)} shows (today is {clock.today():%A %Y-%m-%d}; "
+    lines = [f"Your anime list ({status}), {_count_shows(len(shows))} (today is {clock.today():%A %Y-%m-%d}; "
              "a week runs Monday to Sunday):"]
     for when, entries in groups.items():
         if entries:

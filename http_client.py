@@ -12,6 +12,8 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 
 import httpx
 
+import clock
+
 # Tests set an httpx.MockTransport here in place of the network
 _transport: httpx.AsyncBaseTransport | None = None
 
@@ -47,7 +49,7 @@ async def request(method: str, url: str, *, name: str, error: type[Exception],
         raise error(status_messages[res.status_code])
     if res.status_code == 429:
         reset = res.headers.get("x-ratelimit-reset")
-        when = f"resets at {dt.datetime.fromtimestamp(int(reset)):%H:%M:%S}" if reset else "try again later"
+        when = f"resets at {dt.datetime.fromtimestamp(int(reset), clock.zone()):%H:%M:%S}" if reset else "try again later"
         raise error(f"{name} rate limit reached, {when}")
     if res.status_code != 200:
         raise error(f"{name} responded with status {res.status_code}: {res.text[:200]}")

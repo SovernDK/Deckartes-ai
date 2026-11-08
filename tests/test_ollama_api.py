@@ -5,6 +5,7 @@ from types import SimpleNamespace as NS
 from unittest import mock
 
 import ollama_api
+from config import config
 from ollama_api import Failed, Text, ToolsDone, ToolStarted, TurnInfo
 from tool_router import Selection
 
@@ -67,8 +68,10 @@ class StreamResponseTest(unittest.IsolatedAsyncioTestCase):
             Text("NAVI is ranked 3rd."),
         ])
         ollama_api.run_tool.assert_awaited_once_with("get_cs_team", {"name": "NAVI"})
-        self.assertEqual(client.sent[1]["messages"][-1],
-                         {"role": "tool", "tool_name": "get_cs_team", "content": "tool result"})
+        self.assertEqual(client.sent[1]["messages"][-2:], [
+            {"role": "assistant", "content": "Let me check.", "tool_calls": [call("get_cs_team", name="NAVI")]},
+            {"role": "tool", "tool_name": "get_cs_team", "content": "tool result"},
+        ])
         self.assertEqual(turn.usage.input, 20)
 
     async def test_tool_round_without_text_has_no_break(self):
@@ -83,6 +86,20 @@ class StreamResponseTest(unittest.IsolatedAsyncioTestCase):
         await self.events(turn)
         self.assertEqual(client.sent[0]["tools"], ["T"])
         self.assertEqual(turn.tool_groups, ["cs"])
+
+    async def test_context_length_and_temperature_are_sent(self):
+        client = FakeClient([chunk("ok", done=True)])
+        self.use(client)
+        with mock.patch.object(config, "context_length", 8192), mock.patch.object(config, "temperature", 0.2):
+            await self.events()
+        self.assertEqual(client.sent[0]["options"], {"num_ctx": 8192, "temperature": 0.2})
+
+    async def test_temperature_left_to_the_model(self):
+        client = FakeClient([chunk("ok", done=True)])
+        self.use(client)
+        with mock.patch.object(config, "context_length", 8192), mock.patch.object(config, "temperature", None):
+            await self.events()
+        self.assertEqual(client.sent[0]["options"], {"num_ctx": 8192})
 
     async def test_failure_is_the_last_event(self):
         self.use(FakeClient([chunk("partial"), ConnectionError("connection lost")]))

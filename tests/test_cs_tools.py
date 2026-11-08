@@ -157,7 +157,12 @@ class LiveTest(CsToolTest):
         self.assertEqual(await tools.get_cs_live_matches(),
                          "Live CS matches now:\n"
                          f"- LIVE NOW Natus Vincere 1-0 MOUZ ({DETAILS}, stream {STREAM})\n"
-                         "1 smaller-league matches are live but not listed.")
+                         "1 smaller-league match is live but not listed.")
+
+    async def test_several_smaller_matches_are_plural(self):
+        self.serve({**standings(), "/csgo/matches/running": [running(NAVI, MOUZ), running(MINOR, OTHER, tier="c"),
+                                                             running(OTHER, MINOR, tier="c")]})
+        self.assertIn("\n2 smaller-league matches are live but not listed.", await tools.get_cs_live_matches())
 
     async def test_nothing_live(self):
         self.serve({**standings(), "/csgo/matches/running": []})

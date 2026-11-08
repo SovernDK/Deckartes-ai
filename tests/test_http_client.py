@@ -67,10 +67,10 @@ class RequestTest(HttpTest):
             await self.get()
 
     async def test_rate_limit_with_reset_time(self):
-        reset = 1_800_000_000
-        self.serve({"/items": httpx.Response(429, headers={"x-ratelimit-reset": str(reset)})})
-        when = __import__("datetime").datetime.fromtimestamp(reset).strftime("%H:%M:%S")
-        with self.assertRaisesRegex(BackendError, rf"^Test rate limit reached, resets at {when}$"):
+        # 2027-01-15 08:00:00 UTC
+        self.serve({"/items": httpx.Response(429, headers={"x-ratelimit-reset": "1800000000"})})
+        with mock.patch.object(config, "timezone", "Asia/Tokyo"), \
+             self.assertRaisesRegex(BackendError, r"^Test rate limit reached, resets at 17:00:00$"):
             await self.get()
 
     async def test_rate_limit_without_reset_time(self):

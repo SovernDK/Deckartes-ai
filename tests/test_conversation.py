@@ -29,6 +29,17 @@ class StreamReplyTest(unittest.IsolatedAsyncioTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+    def capture_sent(self) -> list:
+        """A stream_response that answers "ok"; returns the list its messages are collected in."""
+        sent = []
+        async def stream_response(messages, turn=None):
+            sent.extend(messages)
+            yield Text("ok")
+        patcher = mock.patch.object(conversation, "stream_response", stream_response)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return sent
+
     async def reply(self, query="q"):
         return [event async for event in self.conversation.stream_reply(query)]
 
@@ -100,23 +111,28 @@ class StreamReplyTest(unittest.IsolatedAsyncioTestCase):
     async def test_clear_forgets_the_turn_and_the_total(self):
         self.stream(Text("ok"))
         await self.reply()
+        self.conversation.document = mock.Mock(whole=True)
         self.conversation.clear()
         self.assertIsNone(self.conversation.last_turn.summary())
         self.assertEqual(self.conversation.total_usage.total, 0)
+        self.assertEqual(self.conversation.history, [])
+        self.assertIsNone(self.conversation.document)
 
-    async def test_excerpts_are_noted_on_the_turn(self):
-        self.stream(Text("ok"))
+    async def test_excerpts_go_just_before_the_question(self):
+        sent = self.capture_sent()
         self.conversation.document = mock.Mock(whole=False)
         with mock.patch.object(conversation.rag, "search", return_value=["a", "b"]), \
              mock.patch.object(conversation.rag, "excerpts_prompt", return_value="excerpts"):
             await self.reply()
+        self.assertEqual([m["content"] for m in sent], ["Current date: ...", "excerpts", "q"])
         self.assertEqual(self.conversation.last_turn.file_context, "2 excerpts")
 
-    async def test_whole_file_is_noted_on_the_turn(self):
-        self.stream(Text("ok"))
+    async def test_whole_file_goes_in_the_system_message(self):
+        sent = self.capture_sent()
         self.conversation.document = mock.Mock(whole=True)
         with mock.patch.object(conversation.rag, "whole_file_prompt", return_value="file"):
             await self.reply()
+        self.assertEqual([m["content"] for m in sent], ["Current date: ...\n\nfile", "q"])
         self.assertEqual(self.conversation.last_turn.file_context, "whole")
 
 class SummaryTest(unittest.TestCase):
@@ -126,20 +142,23 @@ class SummaryTest(unittest.TestCase):
     def test_tokens_only(self):
         self.assertEqual(TurnInfo(Usage(input=1200, output=34)).summary(), "1,200 in · 34 out · 1,234 tokens")
 
+    def test_one_token_is_singular(self):
+        self.assertEqual(TurnInfo(Usage(input=1)).summary(), "1 in · 0 out · 1 token")
+
     def test_generation_speed(self):
         self.assertEqual(TurnInfo(Usage(input=1, output=5, output_ns=2_000_000_000)).summary(),
                          "1 in · 5 out · 6 tokens · 2.5 tok/s")
 
     def test_tool_groups(self):
         self.assertEqual(TurnInfo(Usage(input=1), tool_groups=["cs", "anime"]).summary(),
-                         "1 in · 0 out · 1 tokens · tools: cs, anime")
+                         "1 in · 0 out · 1 token · tools: cs, anime")
 
     def test_router_chose_no_tools(self):
-        self.assertEqual(TurnInfo(Usage(input=1), tool_groups=[]).summary(), "1 in · 0 out · 1 tokens · tools: none")
+        self.assertEqual(TurnInfo(Usage(input=1), tool_groups=[]).summary(), "1 in · 0 out · 1 token · tools: none")
 
     def test_loaded_file(self):
         self.assertEqual(TurnInfo(Usage(input=1), file_context="5 excerpts").summary(),
-                         "1 in · 0 out · 1 tokens · file: 5 excerpts")
+                         "1 in · 0 out · 1 token · file: 5 excerpts")
 
 if __name__ == "__main__":
     unittest.main()

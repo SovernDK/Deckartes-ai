@@ -108,9 +108,36 @@ class ReadTest(CalendarToolTest):
                          "Calendar events for the rest of this week, Wednesday 2026-11-11 to Sunday 2026-11-15 "
                          "(local time; days not listed have no events):\n"
                          "Wednesday 2026-11-11:\n"
-                         "- Trip: 08:00 to Thursday 2026-11-12 18:00 (calendar Home)\n"
+                         "- Trip: Monday 2026-11-09 08:00 to Thursday 2026-11-12 18:00 (calendar Home)\n"
+                         "Thursday 2026-11-12:\n"
+                         "- Trip: Monday 2026-11-09 08:00 to Thursday 2026-11-12 18:00 (calendar Home)\n"
                          "Saturday 2026-11-14:\n"
                          "- Gym: 10:00-11:00 (calendar Home)")
+
+    async def test_one_day_inside_a_longer_event_gives_its_dates(self):
+        self.events = [FakeEvent("Trip", "2026-11-09 08:00", "2026-11-12 18:00")]
+        self.assertEqual(await tools.get_calendar_events("today"),
+                         "Calendar events for Wednesday 2026-11-11 (local time):\n"
+                         "- Trip: Monday 2026-11-09 08:00 to Thursday 2026-11-12 18:00 (calendar Home)")
+
+    async def test_all_day_event_over_several_days_is_listed_on_each(self):
+        self.events = [FakeEvent("Holiday", "2026-11-12 00:00", "2026-11-13 23:59:59", all_day=True)]
+        line = "- Holiday: all day, Thursday 2026-11-12 to Friday 2026-11-13 (calendar Home)"
+        self.assertEqual(await tools.get_calendar_period("this week"),
+                         "Calendar events for the rest of this week, Wednesday 2026-11-11 to Sunday 2026-11-15 "
+                         "(local time; days not listed have no events):\n"
+                         f"Thursday 2026-11-12:\n{line}\nFriday 2026-11-13:\n{line}")
+
+    async def test_event_over_the_end_of_the_period_stops_at_its_last_day(self):
+        self.events = [FakeEvent("Trip", "2026-11-15 08:00", "2026-11-17 18:00")]
+        self.assertEqual((await tools.get_calendar_period("this week")).split("\n")[1:],
+                         ["Sunday 2026-11-15:",
+                          "- Trip: Sunday 2026-11-15 08:00 to Tuesday 2026-11-17 18:00 (calendar Home)"])
+
+    async def test_event_ending_at_midnight_is_not_on_the_next_day(self):
+        self.events = [FakeEvent("Party", "2026-11-13 22:00", "2026-11-14 00:00")]
+        self.assertEqual((await tools.get_calendar_period("this week")).split("\n")[1:],
+                         ["Friday 2026-11-13:", "- Party: 22:00 to Saturday 2026-11-14 00:00 (calendar Home)"])
 
     async def test_periods_name_their_days(self):
         expected = {"next week": "next week, Monday 2026-11-16 to Sunday 2026-11-22",
@@ -139,9 +166,10 @@ class ReadTest(CalendarToolTest):
 class AddTest(CalendarToolTest):
     SUMMARY = "Dentist: Friday 2026-11-13 14:30-15:30 (calendar Home)"
 
-    async def add(self, date: str = "2026-11-13", start: str = "14:30", minutes: int = 60) -> str:
+    async def add(self, date: str = "2026-11-13", start: str = "14:30", end_date: str | None = None,
+                  end: str = "15:30") -> str:
         return await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": date, "start_time": start,
-                                                           "duration_minutes": minutes})
+                                                           "end_date": end_date or date, "end_time": end})
 
     async def test_confirmed_is_saved(self):
         self.assertEqual(await self.add(), f"Added to the calendar: {self.SUMMARY}")
@@ -149,6 +177,22 @@ class AddTest(CalendarToolTest):
         saved = self.save.call_args.args[0]
         self.assertEqual((saved["title"], saved["start"], saved["end"], saved["all_day"]),
                          ("Dentist", local("2026-11-13 14:30"), local("2026-11-13 15:30"), False))
+
+    async def test_timed_event_over_several_days(self):
+        self.assertEqual(await self.add(end_date="2026-11-15", end="10:00"),
+                         "Added to the calendar: Dentist: Friday 2026-11-13 14:30 to Sunday 2026-11-15 10:00 "
+                         "(calendar Home)")
+        saved = self.save.call_args.args[0]
+        self.assertEqual((saved["start"], saved["end"], saved["all_day"]),
+                         (local("2026-11-13 14:30"), local("2026-11-15 10:00"), False))
+
+    async def test_all_day_event_over_several_days(self):
+        self.assertEqual(await self.add(start="all-day", end_date="2026-11-15", end=""),
+                         "Added to the calendar: Dentist: all day, Friday 2026-11-13 to Sunday 2026-11-15 "
+                         "(calendar Home)")
+        saved = self.save.call_args.args[0]
+        self.assertEqual((saved["start"], saved["end"], saved["all_day"]),
+                         (local("2026-11-13 00:00"), local("2026-11-16 00:00"), True))
 
     async def test_declined_is_not_saved(self):
         self.answer = False
@@ -168,16 +212,32 @@ class AddTest(CalendarToolTest):
         self.assertEqual(self.questions, [])
 
     async def test_all_day_today_is_allowed(self):
-        self.assertEqual(await self.add("today", "all-day", 0),
+        self.assertEqual(await self.add("today", "all-day", end=""),
                          "Added to the calendar: Dentist: Wednesday 2026-11-11, all day (calendar Home)")
 
     async def test_bad_start_time(self):
         self.assertEqual(await self.add(start="noon"),
                          "Tool add_calendar_event failed: Start time 'noon' must be HH:MM (24-hour) or \"all-day\"")
 
-    async def test_bad_duration(self):
-        self.assertEqual(await self.add(minutes=0),
-                         "Tool add_calendar_event failed: duration_minutes must be between 1 and 1440")
+    async def test_bad_end_time(self):
+        self.assertEqual(await self.add(end="later"),
+                         "Tool add_calendar_event failed: End time 'later' must be HH:MM (24-hour)")
+
+    async def test_end_before_start_is_refused(self):
+        self.assertEqual(await self.add(start="23:00", end="01:00"),
+                         "Tool add_calendar_event failed: The event would end at Friday 2026-11-13 01:00, not after "
+                         "its start at Friday 2026-11-13 23:00; one that runs past midnight needs a later end_date")
+        self.assertEqual(self.questions, [])
+
+    async def test_past_midnight_with_a_later_end_date(self):
+        self.assertEqual(await self.add(start="23:00", end_date="2026-11-14", end="01:00"),
+                         "Added to the calendar: Dentist: Friday 2026-11-13 23:00 to Saturday 2026-11-14 01:00 "
+                         "(calendar Home)")
+
+    async def test_all_day_ending_before_it_starts_is_refused(self):
+        self.assertEqual(await self.add(start="all-day", end_date="2026-11-12", end=""),
+                         "Tool add_calendar_event failed: The event's last day Thursday 2026-11-12 is before "
+                         "its first day Friday 2026-11-13")
 
 if __name__ == "__main__":
     unittest.main()

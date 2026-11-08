@@ -9,7 +9,8 @@ import http_client
 
 class FakeServer:
     """Answers requests from a {path: response} table and records them; a response can be
-    an httpx.Response, a JSON-able value, a str (text/markdown) or an exception to raise."""
+    an httpx.Response, a JSON-able value, a str (text/markdown), an exception to raise,
+    or a function of the request returning any of those."""
 
     def __init__(self, routes: dict):
         self.routes = routes
@@ -18,6 +19,8 @@ class FakeServer:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         answer = self.routes[request.url.path]
+        if callable(answer):
+            answer = answer(request)
         if isinstance(answer, Exception):
             raise answer
         if isinstance(answer, httpx.Response):

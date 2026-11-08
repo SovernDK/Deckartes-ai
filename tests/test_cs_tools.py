@@ -124,6 +124,28 @@ class AllMatchesTest(CsToolTest):
                          "Monday 2026-11-09:\n"
                          f"- 18:30 MOUZ beat Minor Five 2-0 ({DETAILS})")
 
+    SMALL_PAGE = [finished(MINOR, OTHER, (2, 0), MINOR, tier="c")] * 100
+
+    def pages_requested(self, server) -> list[str]:
+        return [r.url.params["page"] for r in server.requests if r.url.path == "/csgo/matches/past"]
+
+    async def test_keeps_paging_past_small_matches_until_a_short_page(self):
+        major = finished(NAVI, MOUZ, (2, 1), NAVI)
+        server = self.serve({**standings(), "/csgo/matches/past":
+                             lambda request: self.SMALL_PAGE if request.url.params["page"] == "1" else [major]})
+        self.assertIn("Natus Vincere beat MOUZ 2-1", await tools.get_cs_match_results("all"))
+        self.assertEqual(self.pages_requested(server), ["1", "2"])
+
+    async def test_stops_paging_once_it_has_enough(self):
+        server = self.serve({**standings(), "/csgo/matches/past": [finished(NAVI, MOUZ, (2, 1), NAVI)] * 100})
+        await tools.get_cs_match_results("all")
+        self.assertEqual(self.pages_requested(server), ["1"])
+
+    async def test_stops_paging_at_the_cap(self):
+        server = self.serve({**standings(), "/csgo/matches/past": self.SMALL_PAGE})
+        await tools.get_cs_match_results("all")
+        self.assertEqual(self.pages_requested(server), ["1", "2", "3", "4"])
+
     async def test_nothing_major(self):
         self.serve({**standings(), "/csgo/matches/upcoming": [not_started(MINOR, OTHER, tier="c")]})
         self.assertEqual(await tools.get_cs_upcoming_matches("all"),

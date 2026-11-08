@@ -97,6 +97,47 @@ class RequestTest(HttpTest):
         self.assertEqual(server.requests[0].method, "POST")
         self.assertEqual(json.loads(server.requests[0].content), {"query": "hi"})
 
+class PagesTest(unittest.IsolatedAsyncioTestCase):
+    async def collect(self, pages: list, *, total=None, page_size=2, max_pages=5):
+        """The pages yielded, and the indexes fetched, from a list of pages."""
+        self.fetched = []
+        async def fetch(index):
+            self.fetched.append(index)
+            return pages[index], total
+        return [page async for page in http_client.pages(fetch, page_size, max_pages)]
+
+    async def test_a_short_page_is_the_last(self):
+        self.assertEqual(await self.collect([[1, 2], [3]]), [[1, 2], [3]])
+        self.assertEqual(self.fetched, [0, 1])
+
+    async def test_an_empty_page_is_the_last(self):
+        self.assertEqual(await self.collect([[1, 2], []]), [[1, 2], []])
+
+    async def test_stops_at_max_pages(self):
+        await self.collect([[1, 2]] * 9, max_pages=3)
+        self.assertEqual(self.fetched, [0, 1, 2])
+
+    async def test_a_total_ends_on_a_full_page_without_another_request(self):
+        self.assertEqual(await self.collect([[1, 2], [3, 4]], total=4), [[1, 2], [3, 4]])
+        self.assertEqual(self.fetched, [0, 1])
+
+    async def test_a_total_beats_a_short_page(self):
+        await self.collect([[1], [2], [3]], total=6)
+        self.assertEqual(self.fetched, [0, 1, 2])
+
+    async def test_a_total_of_zero_stops_after_one_page(self):
+        await self.collect([[], []], total=0)
+        self.assertEqual(self.fetched, [0])
+
+    async def test_breaking_out_fetches_no_more(self):
+        fetched = []
+        async def fetch(index):
+            fetched.append(index)
+            return [1, 2], None
+        async for _ in http_client.pages(fetch, 2, 5):
+            break
+        self.assertEqual(fetched, [0])
+
 class BackendTest(HttpTest):
     """One tool per backend, end to end through http_client."""
 

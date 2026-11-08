@@ -54,6 +54,24 @@ class SeasonTest(AnimeToolTest):
         self.assertTrue(text.endswith("\n...and 1 more lower-rated or unrated shows not listed. "
                                       "To check a specific show, use get_next_episode."))
 
+    def serve_pages(self, total: int):
+        """The season list a page of 18 at a time, like the API."""
+        shows = [show(f"s{i}", f"Show {i}", score=90) for i in range(total)]
+        def answer(request):
+            page = int(request.url.params["page"])
+            return {"totalAmount": total, "anime": shows[(page - 1) * 18:page * 18]}
+        return self.serve({ANIME: answer})
+
+    async def test_every_page_of_a_season_is_read(self):
+        server = self.serve_pages(19)
+        self.assertIn(", 19 shows (", await tools.list_season_anime("fall", 2026))
+        self.assertEqual([r.url.params["page"] for r in server.requests], ["1", "2"])
+
+    async def test_no_request_after_an_exactly_full_last_page(self):
+        server = self.serve_pages(18)
+        self.assertIn(", 18 shows (", await tools.list_season_anime("fall", 2026))
+        self.assertEqual(len(server.requests), 1)
+
     async def test_top_of_next_season_fills_with_unrated_shows(self):
         server = self.serve({ANIME: ongoing(show("a", "Rated", score=80),
                                             show("b", "Little Tracked", tracked=5),
@@ -191,6 +209,24 @@ class UserListTest(AnimeToolTest):
                          "- Saturday Show: seen 0 of 12, next episode 2 airs Saturday 2027-01-02 19:00\n"
                          "Airing next week:\n"
                          "- Next Week Show: seen 0 of 12, next episode 2 airs Tuesday 2027-01-05 19:00")
+
+    def serve_list_pages(self, answer):
+        return self.serve({USER_LIST: answer, ANIME: ongoing(), TIMETABLE: []})
+
+    async def test_long_lists_are_read_page_by_page(self):
+        entries = {f"s{i}": listed(f"s{i}", f"Show {i}") for i in range(201)}
+        def answer(request):
+            offset, limit = int(request.url.params["offset"]), int(request.url.params["limit"])
+            return {"shows": dict(list(entries.items())[offset:offset + limit])}
+        server = self.serve_list_pages(answer)
+        self.assertIn(", 201 shows (", await tools.get_my_anime_list("watching"))
+        self.assertEqual([r.url.params["offset"] for r in server.requests if r.url.path == USER_LIST], ["0", "200"])
+
+    async def test_an_endless_list_stops_at_the_cap(self):
+        full_page = {"shows": {f"s{i}": listed(f"s{i}", f"Show {i}") for i in range(200)}}
+        server = self.serve_list_pages(full_page)
+        await tools.get_my_anime_list("watching")
+        self.assertEqual(len([r for r in server.requests if r.url.path == USER_LIST]), 20)
 
     async def test_empty(self):
         self.serve_list([], [])

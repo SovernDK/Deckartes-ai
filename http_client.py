@@ -8,6 +8,7 @@ Responses are cached in memory for max_age seconds; failures never are.
 
 import datetime as dt
 import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 import httpx
 
@@ -54,3 +55,16 @@ async def request(method: str, url: str, *, name: str, error: type[Exception],
     if max_age:
         _cache[key] = (time.monotonic(), res)
     return res
+
+async def pages(fetch: Callable[[int], Awaitable[tuple[list, int | None]]], page_size: int,
+                max_pages: int) -> AsyncIterator[list]:
+    """Yield a list's pages, stopping after the last one or max_pages. Break out to stop early.
+
+    await fetch(index), with index counting from 0, returns (items, total). A total (the API's
+    count of all items) says when the pages run out; with None, a page under page_size is the last.
+    """
+    for index in range(max_pages):
+        items, total = await fetch(index)
+        yield items
+        if (index + 1) * page_size >= total if total is not None else len(items) < page_size:
+            return

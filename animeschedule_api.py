@@ -67,13 +67,10 @@ def premiere_date(anime: dict) -> str | None:
 async def _all_anime(filters: dict) -> list[dict]:
     """Every anime matching filters (up to MAX_PAGES pages). Unrated shows sort last by score,
     so all pages are needed to include them."""
-    results = []
-    for page in range(1, MAX_PAGES + 1):
-        data = await _get("/anime", {**filters, "st": "score", "page": page})
-        results.extend(data.get("anime") or [])
-        if page * PAGE_SIZE >= data.get("totalAmount", 0):
-            break
-    return results
+    async def fetch(index: int) -> tuple[list, int]:
+        data = await _get("/anime", {**filters, "st": "score", "page": index + 1})
+        return data.get("anime") or [], data.get("totalAmount", 0)
+    return [anime async for page in http_client.pages(fetch, PAGE_SIZE, MAX_PAGES) for anime in page]
 
 async def season_anime(season: str, year: int) -> list[dict]:
     """Anime that premiered in a season, best rated first; low-rated ones are left out."""
@@ -279,18 +276,13 @@ async def user_list(status: str) -> list[dict]:
     if status != "all" and status not in LIST_STATUSES:
         raise AnimeScheduleError(f"Unknown list status {status!r}; use all or one of {', '.join(LIST_STATUSES)}")
 
-    entries = []
-    offset = 0
-    while True:
-        params = {"offset": offset, "limit": LIST_PAGE_SIZE}
+    async def fetch(index: int) -> tuple[list, None]:
+        params = {"offset": index * LIST_PAGE_SIZE, "limit": LIST_PAGE_SIZE}
         if status != "all":
             params["list"] = status
         data = await _get(f"/animelists/{config.animeschedule_user}", params, max_age=LIST_CACHE_SECONDS)
-        page = list((data.get("shows") or {}).values())
-        entries.extend(page)
-        if len(page) < LIST_PAGE_SIZE:
-            break
-        offset += LIST_PAGE_SIZE
+        return list((data.get("shows") or {}).values()), None
+    entries = [entry async for page in http_client.pages(fetch, LIST_PAGE_SIZE, MAX_PAGES) for entry in page]
 
     # List entries only carry the user's preferred (often romaji) title
     english = {a["route"]: (a.get("names") or {}).get("english")

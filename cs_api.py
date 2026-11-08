@@ -302,13 +302,14 @@ async def _team_matches(kind: str, team: str) -> dict:
 
     cutoff = clock.now() - MAX_RESULT_AGE
     ranked = await _ranked_teams()
+    async def fetch(index: int) -> tuple[list, None]:
+        return await _get(f"/matches/{kind}", {**params, "per_page": PAGE_SIZE, "page": index + 1},
+                          MATCH_CACHE_SECONDS), None
     top = []
-    for page in range(1, MAX_PAGES + 1):
-        matches = await _get(f"/matches/{kind}", {**params, "per_page": PAGE_SIZE, "page": page},
-                             MATCH_CACHE_SECONDS)
+    async for matches in http_client.pages(fetch, PAGE_SIZE, MAX_PAGES):
         top += [m for m in matches if _major(m, ranked)
                 and (kind == "upcoming" or (_local(_when(m)) or cutoff) > cutoff)]
-        if len(top) >= MAX_MATCHES or len(matches) < PAGE_SIZE:
+        if len(top) >= MAX_MATCHES:
             break
     top.sort(key=lambda m: _when(m) or "", reverse=kind == "past")
     return {"matches": [_match(m) for m in top[:MAX_MATCHES]] or f"{empty} in major events"}

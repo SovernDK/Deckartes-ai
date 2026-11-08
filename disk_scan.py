@@ -5,6 +5,7 @@ Only names, types and sizes are read, never file contents. Every scan is capped
 results then say they are incomplete.
 """
 
+import asyncio
 import fnmatch
 import os
 import stat
@@ -79,7 +80,7 @@ def folder_size(path: str, budget: Budget | None = None) -> dict:
     return {"path": str(root), "size": total, "size_human": human_size(total),
             "files": files, "complete": complete}
 
-def list_directory(path: str, max_entries: int = 100) -> dict:
+def _list_directory(path: str, max_entries: int = 100) -> dict:
     """Files and folders directly inside path with their sizes (folder sizes include
     their contents), biggest first."""
     root = resolve(path)
@@ -112,7 +113,7 @@ def list_directory(path: str, max_entries: int = 100) -> dict:
             "entries": entries[:max_entries], "truncated": len(entries) > max_entries,
             "complete": complete}
 
-def find_files(name_pattern: str, path: str = "~", max_results: int = 50) -> dict:
+def _find_files(name_pattern: str, path: str = "~", max_results: int = 50) -> dict:
     """Files and folders under path whose name matches name_pattern (case-insensitive).
     A pattern without * or ? matches any name containing it."""
     root = resolve(path)
@@ -139,3 +140,14 @@ def find_files(name_pattern: str, path: str = "~", max_results: int = 50) -> dic
 
     return {"path": str(root), "pattern": name_pattern, "count": len(matches),
             "matches": matches, "complete": complete}
+
+# For the tools: a scan blocks, so these run it in a thread
+
+async def list_directory(path: str) -> dict:
+    return await asyncio.to_thread(_list_directory, path)
+
+async def find_files(name_pattern: str, path: str) -> dict:
+    return await asyncio.to_thread(_find_files, name_pattern, path)
+
+async def measure_folder(path: str) -> dict:
+    return await asyncio.to_thread(folder_size, path)

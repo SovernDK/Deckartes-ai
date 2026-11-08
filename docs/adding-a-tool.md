@@ -6,7 +6,7 @@ Write an async function in `tools.py` with type hints and a Google-style docstri
 
 ## Tool tests (`tests/test_*_tools.py`)
 
-The wording and order of tool text are load-bearing, so these tests call the tools themselves with fake backend data and assert the exact text, and a wording change fails a test on purpose. Use `HttpTest.serve` (`tests/http_fake.py`) for HTTP responses and `freeze` (`tests/frozen_clock.py`) for the time and time zone. For calendar tests see `docs/calendar-tests.md`. `rag` and `disk_scan` have no such tests yet.
+The wording and order of tool text are load-bearing, so these tests call the tools themselves with fake backend data and assert the exact text, and a wording change fails a test on purpose. Use `HttpTest.serve` (`tests/http_fake.py`) for HTTP responses and `freeze` (`tests/frozen_clock.py`) for the time and time zone. For calendar tests see `docs/calendar-tests.md`. `rag` has no such tests yet. `tests/test_disk_tools.py` uses a real temporary folder.
 
 ## Confirmation (`tools.confirm`)
 

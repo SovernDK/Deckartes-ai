@@ -168,7 +168,7 @@ async def list_folder(path: str) -> dict:
     Args:
         path: Folder to list, e.g. "~" for the home folder, "~/Downloads" or "/Applications"
     """
-    return await asyncio.to_thread(disk_scan.list_directory, path)
+    return await disk_scan.list_directory(path)
 
 @tool("disk")
 async def search_files(name: str, path: str) -> dict:
@@ -179,7 +179,7 @@ async def search_files(name: str, path: str) -> dict:
         name: Part of the name to look for, e.g. "invoice", or a pattern like "*.pdf"
         path: Folder to search in, including all subfolders, e.g. "~" for the whole home folder
     """
-    return await asyncio.to_thread(disk_scan.find_files, name, path)
+    return await disk_scan.find_files(name, path)
 
 @tool("disk")
 async def get_folder_size(path: str) -> dict:
@@ -189,7 +189,7 @@ async def get_folder_size(path: str) -> dict:
     Args:
         path: Folder to measure, e.g. "~/Downloads"
     """
-    return await asyncio.to_thread(disk_scan.folder_size, path)
+    return await disk_scan.measure_folder(path)
 
 @tool("web")
 async def search_web(query: str) -> list:

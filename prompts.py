@@ -6,11 +6,10 @@ with the current date and time (models don't know it otherwise), so presets need
 The file is read on every use, so edits apply without a restart.
 """
 
-import datetime as dt
 import json
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
+import clock
 from config import config
 from tools import TOOLS_BY_NAME
 
@@ -27,7 +26,7 @@ def current_prompt() -> dict | None:
     return None
 
 def current_date_line() -> str:
-    now = dt.datetime.now(ZoneInfo(config.timezone))
+    now = clock.now()
     return f"Current date: {now:%A %Y-%m-%d}, local time {now:%H:%M} ({config.timezone})."
 
 def system_message() -> str:

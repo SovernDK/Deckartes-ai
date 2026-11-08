@@ -15,11 +15,11 @@ matches of teams in Valve's top MAJOR_TEAM_RANK, which also play smaller events.
 
 import datetime as dt
 import re
-from zoneinfo import ZoneInfo
 
 import clock
 import http_client
 from config import config
+from names import normalize
 
 API_URL = "https://api.pandascore.co/csgo"
 STANDINGS_REPO = "ValveSoftware/counter-strike_regional_standings"
@@ -56,13 +56,8 @@ async def _get(path: str, params: dict, max_age: float = CACHE_SECONDS) -> list:
 async def _github(url: str):
     return await http_client.request("GET", url, name="GitHub", error=CsError, max_age=CACHE_SECONDS)
 
-def _normalize(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
-
 def _local(timestamp: str | None) -> dt.datetime | None:
-    if not timestamp:
-        return None
-    return dt.datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone(ZoneInfo(config.timezone))
+    return clock.to_local(timestamp) if timestamp else None
 
 def _format_time(timestamp: str | None) -> str | None:
     when = _local(timestamp)
@@ -77,7 +72,7 @@ def _top_tier(item: dict) -> bool:
 async def _standings(region: str) -> tuple[str, list[dict]]:
     """Latest Valve standings for region, as (date, rows); looks back a year when the
     current year has no file yet (early January)."""
-    year = clock.now().year
+    year = clock.today().year
     for folder in (year, year - 1):
         try:
             res = await _github(f"{STANDINGS_FILES_URL}/{folder}")
@@ -114,7 +109,7 @@ async def ranking(region: str, count: int) -> dict:
     return {"ranking": f"Valve Regional Standings ({region})", "as_of": date, "teams": rows[:count]}
 
 def _team_key(name: str) -> str:
-    return " ".join(word for word in _normalize(name).split() if word not in TEAM_NAME_FILLER)
+    return " ".join(word for word in normalize(name).split() if word not in TEAM_NAME_FILLER)
 
 async def _valve_rank(team_name: str, players: list[str] = ()) -> dict | None:
     """The team's place in Valve's global standings, or None when it isn't ranked. Matched by
@@ -124,9 +119,9 @@ async def _valve_rank(team_name: str, players: list[str] = ()) -> dict | None:
     except CsError:
         return None
     wanted = _team_key(team_name)
-    roster = {_normalize(player) for player in players}
+    roster = {normalize(player) for player in players}
     for row in rows:
-        valve_roster = {_normalize(player) for player in row["roster"].split(",")}
+        valve_roster = {normalize(player) for player in row["roster"].split(",")}
         if _team_key(row["team"]) == wanted or len(roster & valve_roster) >= 3:
             return {"rank": row["rank"], "points": row["points"], "as_of": date}
     return None
@@ -149,7 +144,7 @@ def _age(player: dict) -> int | None:
         return player["age"]
     if not player.get("birthday"):
         return None
-    born, today = dt.date.fromisoformat(player["birthday"]), clock.now().date()
+    born, today = dt.date.fromisoformat(player["birthday"]), clock.today()
     return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
 # Teams and players
@@ -157,14 +152,14 @@ def _age(player: dict) -> int | None:
 def _best_match(items: list[dict], name: str, keys: tuple[str, ...]) -> list[dict]:
     """Exact name (or acronym) matches first, then the rest, preferring shorter names, so
     "Spirit" finds Spirit rather than Spirit Academy."""
-    wanted = _normalize(name)
+    wanted = normalize(name)
     def score(item):
-        exact = any(_normalize(item.get(key) or "") == wanted for key in keys)
+        exact = any(normalize(item.get(key) or "") == wanted for key in keys)
         return (not exact, len(item.get("name") or ""))
     return sorted(items, key=score)
 
 async def _find_team(name: str) -> dict | None:
-    if not _normalize(name):
+    if not normalize(name):
         raise CsError("Give the name of a team")
     teams = await _get("/teams", {"search[name]": name.strip(), "per_page": 50})
     teams += await _get("/teams", {"search[acronym]": name.strip(), "per_page": 20})
@@ -237,7 +232,7 @@ async def team_info(name: str) -> dict:
     }
 
 async def player_info(name: str) -> dict:
-    if not _normalize(name):
+    if not normalize(name):
         raise CsError("Give the name of a player")
     players = _best_match(await _get("/players", {"search[name]": name.strip(), "per_page": 20}),
                           name, ("name",))
@@ -293,7 +288,7 @@ async def _team_matches(kind: str, team: str) -> dict:
     else:
         params, empty = {"sort": "-end_at", "filter[status]": "finished"}, "No finished matches found"
 
-    if _normalize(team) not in ("", "all"):
+    if normalize(team) not in ("", "all"):
         found = await _find_team(team)
         if found is None:
             return {"searched_for": team, "note": "No team found with that name."}

@@ -6,6 +6,7 @@ from unittest import mock
 import prompts
 import tools
 from config import config
+from frozen_clock import freeze
 
 class RegistryTest(unittest.TestCase):
     def test_every_tool_is_in_its_group(self):
@@ -39,6 +40,11 @@ class PresetTest(unittest.TestCase):
              mock.patch.object(config, "system_prompt", "Typo"):
             with self.assertRaisesRegex(ValueError, "^preset 'Typo' names unknown tool 'get_cs_tem'$"):
                 prompts.allowed_tool_names()
+
+    def test_date_line_is_local_time(self):
+        freeze(self, "2026-11-11 12:00")
+        self.assertEqual(prompts.current_date_line(),
+                         "Current date: Wednesday 2026-11-11, local time 12:00 (Europe/Warsaw).")
 
     def test_tools_for(self):
         self.assertEqual(tools.tools_for(["get_cs_team"]), [tools.get_cs_team])

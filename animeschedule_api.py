@@ -10,11 +10,11 @@ episodes and date. Shows rated at or below config.anime_min_rating are dropped; 
 
 import datetime as dt
 import re
-from zoneinfo import ZoneInfo
 
 import clock
 import http_client
 from config import config
+from names import normalize
 
 API_URL = "https://animeschedule.net/api/v3"
 PAGE_SIZE = 18
@@ -40,9 +40,6 @@ async def _get(path: str, params: dict, max_age: float = CACHE_SECONDS) -> dict 
 def season_of(date: dt.date) -> tuple[str, int]:
     """Anime season for a date: Jan-Mar winter, Apr-Jun spring, Jul-Sep summer, Oct-Dec fall."""
     return SEASONS[(date.month - 1) // 3], date.year
-
-def today() -> dt.date:
-    return clock.now().date()
 
 def rating(anime: dict) -> float | None:
     """Average user score converted from the API's 1-100 to a 0-10 scale; None when nobody rated it yet."""
@@ -100,7 +97,7 @@ async def season_anime(season: str, year: int) -> list[dict]:
 def resolve_season(text: str) -> tuple[str, int]:
     """Season and year from "current", "next", "previous" or e.g. "winter 2027"."""
     key = text.strip().lower()
-    season, year = season_of(today())
+    season, year = season_of(clock.today())
     shift = {"current": 0, "this": 0, "now": 0, "next": 1, "previous": -1, "last": -1}
     if key in shift:
         index = SEASONS.index(season) + shift[key]
@@ -143,22 +140,22 @@ async def top_season_anime(season: str, count: int) -> dict:
         note = f"Top {len(top)} {title} shows by user rating (0-10)."
     return {"season": title, "note": note, "shows": top}
 
+async def _timetable(day: dt.date) -> list[tuple[dt.datetime, dict]]:
+    """The config.anime_air_type timetable of day's ISO week, as (local airing time, entry)."""
+    year, week, _ = day.isocalendar()
+    entries = await _get(f"/timetables/{config.anime_air_type}", {"year": year, "week": week, "tz": config.timezone})
+    return [(clock.to_local(entry["episodeDate"]), entry) for entry in entries]
+
 async def airing_on(date: dt.date) -> list[dict]:
     """Anime with a subtitled (config.anime_air_type) episode on date, best rated first;
     low-rated ones are left out. Times are in config.timezone. Timetables carry no ratings,
     so they are matched against all currently airing anime (which includes shows continuing
     from earlier seasons); shows not found there, like this week's premieres, count as unrated."""
-    year, week, _ = date.isocalendar()
-    timetable = await _get(
-        f"/timetables/{config.anime_air_type}",
-        {"year": year, "week": week, "tz": config.timezone},
-    )
+    timetable = await _timetable(date)
     ratings = {a["route"]: rating(a) for a in await _all_anime({"airing-statuses": "ongoing"})}
 
-    tz = ZoneInfo(config.timezone)
     shows = []
-    for entry in timetable:
-        airs = dt.datetime.fromisoformat(entry["episodeDate"]).astimezone(tz)
+    for airs, entry in timetable:
         show_rating = ratings.get(entry["route"])
         if airs.date() != date or not keep(show_rating):
             continue
@@ -174,17 +171,10 @@ async def airing_on(date: dt.date) -> list[dict]:
 async def _upcoming_episodes() -> dict[str, tuple[dt.datetime, dict]]:
     """Next upcoming subtitled (config.anime_air_type) episode per anime route, as
     (local airing time, timetable entry), from this week's and next week's timetables."""
-    tz = ZoneInfo(config.timezone)
     now = clock.now()
     upcoming = {}
     for day in (now.date(), now.date() + dt.timedelta(days=7)):
-        year, week, _ = day.isocalendar()
-        timetable = await _get(
-            f"/timetables/{config.anime_air_type}",
-            {"year": year, "week": week, "tz": config.timezone},
-        )
-        for entry in timetable:
-            airs = dt.datetime.fromisoformat(entry["episodeDate"]).astimezone(tz)
+        for airs, entry in await _timetable(day):
             if airs >= now and (entry["route"] not in upcoming or airs < upcoming[entry["route"]][0]):
                 upcoming[entry["route"]] = (airs, entry)
     return upcoming
@@ -194,9 +184,6 @@ async def _next_episodes() -> dict[str, tuple[dt.datetime, int]]:
     return {route: (airs, entry.get("episodeNumber"))
             for route, (airs, entry) in (await _upcoming_episodes()).items()}
 
-def _normalize(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
-
 def format_airs(airs: dt.datetime) -> str:
     return airs.strftime("%A %Y-%m-%d %H:%M")
 
@@ -204,13 +191,13 @@ async def next_episode(name: str) -> dict:
     """Next subtitled episode of every show whose English, romaji or main title contains all
     words of name (case and punctuation ignored), soonest first. Says so when nothing is found,
     so the model has no gap to fill with a guess."""
-    words = _normalize(name).split()
+    words = normalize(name).split()
     if not words:
         raise AnimeScheduleError("Give the name of an anime")
 
     matches = []
     for airs, entry in (await _upcoming_episodes()).values():
-        titles = [_normalize(entry.get(key) or "") for key in ("english", "romaji", "title")]
+        titles = [normalize(entry.get(key) or "") for key in ("english", "romaji", "title")]
         if any(all(word in title for word in words) for title in titles):
             matches.append((airs, entry))
     matches.sort(key=lambda match: match[0])
@@ -229,13 +216,13 @@ async def next_episode(name: str) -> dict:
 def _titles(anime: dict) -> list[str]:
     names = anime.get("names") or {}
     titles = [anime.get("title"), names.get("english"), names.get("romaji"), *(names.get("synonyms") or [])]
-    return [_normalize(title) for title in titles if title]
+    return [normalize(title) for title in titles if title]
 
 async def continues_next_season(name: str) -> dict:
     """Whether currently airing shows matching name will still air next season, estimated from
     the next subtitled episode and the announced episode count (one episode a week). Says
     "unknown" with the reason when the count isn't announced or the show isn't in the timetable."""
-    words = _normalize(name).split()
+    words = normalize(name).split()
     if not words:
         raise AnimeScheduleError("Give the name of an anime")
 
@@ -407,7 +394,7 @@ def _relative_day(airs: str) -> str:
     """"today", "tomorrow", "this week" or "next week" (ISO weeks, Monday-Sunday) for a
     format_airs string, so the model needn't work out which days "this week" covers."""
     day = dt.date.fromisoformat(airs.split()[1])
-    now = today()
+    now = clock.today()
     if day == now:
         return "today"
     if day == now + dt.timedelta(days=1):
@@ -440,7 +427,7 @@ def user_list_text(status: str, shows: list[dict]) -> str:
 
     headings = {"today": "Airing today", "tomorrow": "Airing tomorrow", "this week": "Airing later this week",
                 "next week": "Airing next week", "later": "No episode in the next two weeks"}
-    lines = [f"Your anime list ({status}), {len(shows)} shows (today is {today():%A %Y-%m-%d}; "
+    lines = [f"Your anime list ({status}), {len(shows)} shows (today is {clock.today():%A %Y-%m-%d}; "
              "a week runs Monday to Sunday):"]
     for when, entries in groups.items():
         if entries:

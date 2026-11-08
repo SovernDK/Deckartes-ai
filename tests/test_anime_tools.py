@@ -95,6 +95,11 @@ class NextEpisodeTest(AnimeToolTest):
         self.assertEqual(await tools.get_next_episode("frieren"),
                          "Frieren: episode 5 airs Friday 2026-11-13 17:30 (local time)")
 
+    async def test_name_ignores_case_and_punctuation(self):
+        self.serve({TIMETABLE: [episode("f", "Sousou no Frieren", "2026-11-13T16:30:00Z", 5, "Frieren")]})
+        self.assertEqual(await tools.get_next_episode("SOUSOU-no: frieren!"),
+                         "Frieren: episode 5 airs Friday 2026-11-13 17:30 (local time)")
+
     async def test_says_when_nothing_is_found(self):
         self.serve({TIMETABLE: []})
         self.assertEqual(await tools.get_next_episode("Nope"),

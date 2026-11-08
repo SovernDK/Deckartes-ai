@@ -11,7 +11,6 @@ turn them into what the tools return.
 
 import datetime as dt
 import threading
-from zoneinfo import ZoneInfo
 
 import EventKit
 from Foundation import NSDate
@@ -31,12 +30,6 @@ WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", 
 
 _store = None
 _store_lock = threading.Lock()
-
-def _tz() -> ZoneInfo:
-    return ZoneInfo(config.timezone)
-
-def today() -> dt.date:
-    return clock.now().date()
 
 def _request_access(store) -> bool:
     """Show macOS's calendar permission prompt and wait for the answer."""
@@ -78,16 +71,16 @@ def _nsdate(when: dt.datetime) -> NSDate:
     return NSDate.dateWithTimeIntervalSince1970_(when.timestamp())
 
 def _local(nsdate) -> dt.datetime:
-    return dt.datetime.fromtimestamp(nsdate.timeIntervalSince1970(), _tz())
+    return dt.datetime.fromtimestamp(nsdate.timeIntervalSince1970(), clock.zone())
 
 def _midnight(day: dt.date) -> dt.datetime:
-    return dt.datetime.combine(day, dt.time.min, tzinfo=_tz())
+    return dt.datetime.combine(day, dt.time.min, tzinfo=clock.zone())
 
 def parse_day(text: str) -> dt.date:
     """"today", "tomorrow", "yesterday", a weekday ("friday" is the next one, today included;
     "next friday" is after today) or YYYY-MM-DD."""
     key = text.strip().lower()
-    now = today()
+    now = clock.today()
     relative = {"today": 0, "tomorrow": 1, "yesterday": -1}
     if key in relative:
         return now + dt.timedelta(days=relative[key])
@@ -136,7 +129,7 @@ def _month_end(first: dt.date) -> dt.date:
 def _period(period: str) -> tuple[dt.date, dt.date, str]:
     """First and last day of a period, and how to name it. "this week" / "this month" start today;
     a month name is the next one (this month counts, from today)."""
-    now = today()
+    now = clock.today()
     key = " ".join(period.strip().lower().split())
     if key in ("this week", "week"):
         return now, now + dt.timedelta(days=6 - now.weekday()), "the rest of this week"
@@ -210,12 +203,12 @@ def new_event(title: str, date: str, start_time: str, duration_minutes: int) -> 
             raise ValueError(f"Start time {start_time!r} must be HH:MM (24-hour) or \"all-day\"")
         if not 0 < duration_minutes <= 24 * 60:
             raise ValueError("duration_minutes must be between 1 and 1440")
-        start = dt.datetime.combine(day, at, tzinfo=_tz())
+        start = dt.datetime.combine(day, at, tzinfo=clock.zone())
         end = start + dt.timedelta(minutes=duration_minutes)
         all_day = False
     # A past date is almost always a wrong year or day from the model
     if (end if all_day else start) <= clock.now():
-        raise ValueError(f"{start:%A %Y-%m-%d %H:%M} is in the past; today is {today():%A %Y-%m-%d}")
+        raise ValueError(f"{start:%A %Y-%m-%d %H:%M} is in the past; today is {clock.today():%A %Y-%m-%d}")
     return {"title": title, "start": start, "end": end, "all_day": all_day,
             "calendar": _target_calendar().title()}
 

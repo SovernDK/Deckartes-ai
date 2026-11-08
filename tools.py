@@ -11,6 +11,7 @@ import json
 
 import animeschedule_api as anime
 import calendar_api as cal
+import clock
 import cs_api as cs
 import disk_scan
 import glances_api as glances
@@ -228,7 +229,7 @@ async def fetch_web_page(url: str) -> dict:
 async def get_current_season() -> str:
     """Get today's date, weekday and the current anime season and year (e.g. Fall 2026).
     Use it whenever you need today's date or to know which anime season is airing now."""
-    return anime.current_season_text(anime.today())
+    return anime.current_season_text(clock.today())
 
 @tool("anime")
 async def list_season_anime(season: str, year: int) -> str:
@@ -265,7 +266,7 @@ async def get_anime_airing_on(date: str) -> str:
     Args:
         date: "today", "tomorrow", "yesterday" or a date as YYYY-MM-DD
     """
-    today = anime.today()
+    today = clock.today()
     relative = {"today": 0, "tomorrow": 1, "yesterday": -1}
     key = date.strip().lower()
     if key in relative:

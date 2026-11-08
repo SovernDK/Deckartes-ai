@@ -5,12 +5,10 @@ To add a tool: write an async function with type hints and a docstring, decorate
 parameters and docstring, so describe clearly what it returns and when to use it.
 """
 
-import datetime as dt
 import json
 
 import animeschedule_api as anime
 import calendar_api as cal
-import clock
 import cs_api as cs
 import disk_scan
 import glances_api as glances
@@ -214,7 +212,7 @@ async def fetch_web_page(url: str) -> dict:
 async def get_current_season() -> str:
     """Get today's date, weekday and the current anime season and year (e.g. Fall 2026).
     Use it whenever you need today's date or to know which anime season is airing now."""
-    return anime.current_season_text(clock.today())
+    return anime.current_season()
 
 @tool("anime")
 async def list_season_anime(season: str, year: int) -> str:
@@ -226,7 +224,7 @@ async def list_season_anime(season: str, year: int) -> str:
         season: One of "winter", "spring", "summer", "fall"
         year: Year of the season, e.g. 2026
     """
-    return anime.season_text(season, int(year), await anime.season_anime(season, int(year)))
+    return await anime.season_anime(season, year)
 
 @tool("anime")
 async def get_top_season_anime(season: str, count: int) -> str:
@@ -239,7 +237,7 @@ async def get_top_season_anime(season: str, count: int) -> str:
         season: "current", "next", "previous", or a season and year like "winter 2027"
         count: How many shows to return, e.g. 5
     """
-    return anime.top_season_text(await anime.top_season_anime(season, count))
+    return await anime.top_season_anime(season, count)
 
 @tool("anime")
 async def get_anime_airing_on(date: str) -> str:
@@ -251,17 +249,7 @@ async def get_anime_airing_on(date: str) -> str:
     Args:
         date: "today", "tomorrow", "yesterday" or a date as YYYY-MM-DD
     """
-    today = clock.today()
-    relative = {"today": 0, "tomorrow": 1, "yesterday": -1}
-    key = date.strip().lower()
-    if key in relative:
-        day = today + dt.timedelta(days=relative[key])
-    else:
-        try:
-            day = dt.date.fromisoformat(key)
-        except ValueError:
-            raise ValueError(f"Date {date!r} must be today, tomorrow, yesterday or YYYY-MM-DD")
-    return anime.airing_text(day, await anime.airing_on(day))
+    return await anime.airing_on(date)
 
 @tool("anime")
 async def get_next_episode(name: str) -> str:
@@ -272,7 +260,7 @@ async def get_next_episode(name: str) -> str:
     Args:
         name: The anime's name or part of it, in English or romaji, e.g. "Apothecary Diaries"
     """
-    return anime.next_episode_text(await anime.next_episode(name))
+    return await anime.next_episode(name)
 
 @tool("anime")
 async def will_air_next_season(name: str) -> str:
@@ -284,7 +272,7 @@ async def will_air_next_season(name: str) -> str:
     Args:
         name: The anime's name or part of it, in English or romaji, e.g. "Red River"
     """
-    return anime.continues_text(await anime.continues_next_season(name))
+    return await anime.continues_next_season(name)
 
 @tool("anime")
 async def get_my_anime_list(status: str) -> str:
@@ -297,7 +285,7 @@ async def get_my_anime_list(status: str) -> str:
     Args:
         status: "watching", "completed", "on-hold", "dropped", "to-watch", or "all"
     """
-    return anime.user_list_text(status, await anime.user_list(status))
+    return await anime.user_list(status)
 
 @tool("cs")
 async def get_cs_ranking(region: str, count: int) -> str:

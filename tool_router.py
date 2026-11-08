@@ -16,6 +16,7 @@ import math
 from dataclasses import dataclass
 
 from config import config
+from ollama_client import get_async_client
 from prompts import allowed_tool_names
 from tools import TOOL_GROUPS, tools_for
 
@@ -42,8 +43,6 @@ NO_TOOL_EXAMPLES = [
 _examples: dict[tuple[str, str], dict[str, list[list[float]]]] = {}
 
 async def _embed(texts: list[str]) -> list[list[float]]:
-    # Imported here: ollama_api imports this module
-    from ollama_api import get_async_client
     response = await get_async_client().embed(model=config.embed_model, input=texts)
     return response.embeddings
 

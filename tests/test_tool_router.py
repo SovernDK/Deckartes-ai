@@ -11,7 +11,7 @@ import math
 import unittest
 from unittest import mock
 
-import ollama_api
+import ollama_client
 import tool_router
 from config import config
 from tools import TOOL_GROUPS, TOOLS, TOOLS_BY_NAME
@@ -251,9 +251,9 @@ class LiveRoutingTest(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         # Clients are bound to the event loop they were made on; each test gets a new one
-        ollama_api._clients.clear()
+        ollama_client._clients.clear()
         tool_router._examples.clear()
-        self.addCleanup(ollama_api._clients.clear)
+        self.addCleanup(ollama_client._clients.clear)
         self.addCleanup(tool_router._examples.clear)
         try:
             await tool_router._embed(["ping"])

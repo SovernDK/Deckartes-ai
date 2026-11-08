@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from config import config
-from ollama_api import get_client
+from ollama_client import get_client
 from tool_router import cosine
 
 # Rough characters per token; Polish and code use more tokens per character than English prose

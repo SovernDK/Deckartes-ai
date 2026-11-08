@@ -2,7 +2,9 @@
 
 Each preset has a name, a description, the system prompt text and the tools it may use:
 "all", a list of tool names from tools.TOOLS, or [] for none. Every system message starts
-with the current date and time (models don't know it otherwise), so presets needn't mention it.
+with the current date (models don't know it otherwise), so presets needn't mention it.
+The time of day goes just before each question instead (current_time_line): the start of the
+prompt has to stay the same from minute to minute for the server's prompt cache to work.
 The file is read on every use, so edits apply without a restart.
 """
 
@@ -15,6 +17,10 @@ from tools import TOOLS_BY_NAME
 
 PROMPTS_FILE = Path(__file__).with_name("prompts.json")
 
+# Added to every preset that has tools: small models otherwise ask for values they already have
+TOOL_VALUES_RULE = ("When a tool needs a value, take it from the conversation so far or leave out what is "
+                    "optional, and call the tool instead of asking the user for it.")
+
 def load_prompts() -> list[dict]:
     return json.loads(PROMPTS_FILE.read_text())["prompts"]
 
@@ -26,15 +32,18 @@ def current_prompt() -> dict | None:
     return None
 
 def current_date_line() -> str:
-    now = clock.now()
-    return f"Current date: {now:%A %Y-%m-%d}, local time {now:%H:%M} ({config.timezone})."
+    return f"Current date: {clock.now():%A %Y-%m-%d} ({config.timezone})."
+
+def current_time_line() -> str:
+    return f"Current local time: {clock.now():%H:%M}."
 
 def system_message() -> str:
     """The current date, then the preset's prompt; just the date if no preset matches."""
     prompt = current_prompt()
     if prompt is None:
         return current_date_line()
-    return f"{current_date_line()}\n\n{prompt['prompt']}"
+    rule = f" {TOOL_VALUES_RULE}" if prompt.get("tools", "all") else ""
+    return f"{current_date_line()}\n\n{prompt['prompt']}{rule}"
 
 def allowed_tool_names() -> list[str] | None:
     """Tool names the current preset allows; None means all tools.

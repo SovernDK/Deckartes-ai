@@ -67,7 +67,7 @@ class ConfigScreen(ModalScreen[bool]):
             yield Input(value="" if config.temperature is None else f"{config.temperature:g}",
                         placeholder="model default", type="number", select_on_focus=False,
                         id="temperature")
-            yield Label("Context limit")
+            yield Label("Context budget (when to compact)")
             yield Select(self.context_options(), value=config.context_length, allow_blank=False, id="context")
             yield Static(load_error, id="config_error")
             with Horizontal(id="config_buttons"):

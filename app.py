@@ -104,6 +104,13 @@ class DecartesApp(App):
         self.push_screen(ModelChangeScreen(), self.set_model)
 
     def set_model(self, model: str | None) -> None:
-        if model:
-            config.model = model
-            self.update_subtitle()
+        if not model or model == config.model:
+            return
+        chat = self.query_one(Chat)
+        if chat.busy:
+            self.notify("Wait for the reply to finish before changing the model", severity="warning")
+            return
+        config.model = model
+        self.update_subtitle()
+        # The server is launched with its model, so changing it means restarting the server
+        chat.start_server(restart=True)

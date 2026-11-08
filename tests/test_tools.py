@@ -20,7 +20,7 @@ class RegistryTest(unittest.TestCase):
         self.assertIs(tools.TOOLS_BY_NAME["get_cs_team"], tools.get_cs_team)
 
     def test_decorator_returns_the_function(self):
-        # Ollama builds the tool definition from the function's own name, signature and docstring
+        # tool_schema builds the tool definition from the function's own name, signature and docstring
         self.assertEqual(tools.get_cs_team.__name__, "get_cs_team")
         self.assertIn("Args:", tools.get_cs_team.__doc__)
 
@@ -46,8 +46,16 @@ class PresetTest(unittest.TestCase):
 
     def test_date_line_is_local_time(self):
         freeze(self, "2026-11-11 12:00")
-        self.assertEqual(prompts.current_date_line(),
-                         "Current date: Wednesday 2026-11-11, local time 12:00 (Europe/Warsaw).")
+        self.assertEqual(prompts.current_date_line(), "Current date: Wednesday 2026-11-11 (Europe/Warsaw).")
+        self.assertEqual(prompts.current_time_line(), "Current local time: 12:00.")
+
+    def test_presets_with_tools_are_told_to_use_what_they_know(self):
+        presets = [{"name": "A", "prompt": "Help.", "tools": "all"}, {"name": "B", "prompt": "Chat.", "tools": []}]
+        with mock.patch.object(prompts, "load_prompts", return_value=presets):
+            with mock.patch.object(config, "system_prompt", "A"):
+                self.assertTrue(prompts.system_message().endswith(f"Help. {prompts.TOOL_VALUES_RULE}"))
+            with mock.patch.object(config, "system_prompt", "B"):
+                self.assertTrue(prompts.system_message().endswith("Chat."))
 
     def test_tools_for(self):
         self.assertEqual(tools.tools_for(["get_cs_team"]), [tools.get_cs_team])

@@ -28,21 +28,32 @@ CONTEXT_LENGTHS = [2048, 4096, 8192, 16384, 32768]
 
 @dataclass
 class Config:
-    host: str = "http://localhost:11434"
-    model: str = "granite4.1:3b"
-    # One of CONTEXT_LENGTHS
+    # Rapid-MLX chat server; the app starts it (mlx_server.py)
+    host: str = "http://127.0.0.1:8000"
+    # Embeddings-only server for long loaded files, because one server holds one embedding model
+    file_embed_host: str = "http://127.0.0.1:8001"
+    mlx_server_command: str = "~/.local/bin/rapid-mlx"
+    model: str = "LiquidAI/LFM3-1.7B-MLX-4bit"
+    # One of CONTEXT_LENGTHS. The app's own budget (when to compact, when a file is sent whole);
+    # the server doesn't cut the prompt to it
     context_length: int = 16384
+    # Longest reply in tokens
+    max_tokens: int = 4096
+    # Off for speed: a thinking model spends tokens before the reply starts
+    enable_thinking: bool = False
     # Summarise the conversation into one message once a turn's prompt plus reply reaches this
     # share of context_length (0.6 = 60%), so it stays clear of the window's limit and the
     # model's quality drop near it. None = never compact.
     compact_at: float | None = 0.6
-    # None = the model's own default
-    temperature: float | None = None
+    # Sampling; None = the model's own default. These are LFM3's recommended chat and tool settings
+    temperature: float | None = 0.1
+    top_k: int | None = 50
+    repetition_penalty: float | None = 1.1
     # Send only the tool groups a question needs, picked by a small embedding model (tool_router.py)
     tool_routing: bool = True
-    embed_model: str = "all-minilm:33m"
+    embed_model: str = "mlx-community/all-MiniLM-L6-v2-4bit"
     # Embeds chunks of a long loaded file (loaded_file.py); multilingual, unlike embed_model
-    rag_embed_model: str = "embeddinggemma-2:570m"
+    rag_embed_model: str = "mlx-community/embeddinggemma-2-4bit"
     # Show tokens used per reply and for the whole conversation (key t)
     show_token_usage: bool = False
     # Name of a preset in prompts.json

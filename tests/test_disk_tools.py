@@ -19,15 +19,15 @@ class DiskToolTest(unittest.IsolatedAsyncioTestCase):
     async def test_list_folder_biggest_first(self):
         self.assertEqual(await tools.run_tool("list_folder", {"path": str(self.root)}), json.dumps({
             "path": str(self.root), "size_human": "2.0 KB", "count": 2,
-            "entries": [{"name": "sub", "type": "folder", "size": 2048, "size_human": "2.0 KB"},
-                        {"name": "a.txt", "type": "file", "size": 3, "size_human": "3 B"}],
+            "folders": [{"name": "sub", "type": "folder", "size": 2048, "size_human": "2.0 KB"}],
+            "files": [{"name": "a.txt", "type": "file", "size": 3, "size_human": "3 B"}],
             "truncated": False, "complete": True}))
 
     async def test_list_folder_caps_entries(self):
         for i in range(100):
             (self.root / f"file{i}").touch()
         listing = await tools.list_folder(str(self.root))
-        self.assertEqual((listing["count"], len(listing["entries"]), listing["truncated"]), (102, 100, True))
+        self.assertEqual((listing["count"], len(listing["folders"]) + len(listing["files"]), listing["truncated"]), (102, 100, True))
 
     async def test_search_files(self):
         self.assertEqual(await tools.run_tool("search_files", {"name": "BIN", "path": str(self.root)}), json.dumps({

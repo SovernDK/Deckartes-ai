@@ -178,6 +178,30 @@ class AddTest(CalendarToolTest):
         self.assertEqual((saved["title"], saved["start"], saved["end"], saved["all_day"]),
                          ("Dentist", local("2026-11-13 14:30"), local("2026-11-13 15:30"), False))
 
+    async def test_without_an_end_it_lasts_one_hour(self):
+        self.assertEqual(await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13",
+                                                                     "start_time": "14:30"}),
+                         f"Added to the calendar: {self.SUMMARY}")
+
+    async def test_empty_end_counts_as_no_end(self):
+        self.assertEqual(await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13",
+                                                                     "start_time": "14:30", "end_date": "", "end_time": ""}),
+                         f"Added to the calendar: {self.SUMMARY}")
+
+    async def test_default_end_can_pass_midnight(self):
+        await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13", "start_time": "23:30"})
+        self.assertEqual(self.save.call_args.args[0]["end"], local("2026-11-14 00:30"))
+
+    async def test_end_time_without_end_date_is_on_the_same_day(self):
+        await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13", "start_time": "18:00",
+                                                    "end_time": "20:00"})
+        self.assertEqual(self.save.call_args.args[0]["end"], local("2026-11-13 20:00"))
+
+    async def test_all_day_without_an_end_is_one_day(self):
+        await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13", "start_time": "all-day"})
+        saved = self.save.call_args.args[0]
+        self.assertEqual((saved["end"], saved["all_day"]), (local("2026-11-14 00:00"), True))
+
     async def test_timed_event_over_several_days(self):
         self.assertEqual(await self.add(end_date="2026-11-15", end="10:00"),
                          "Added to the calendar: Dentist: Friday 2026-11-13 14:30 to Sunday 2026-11-15 10:00 "

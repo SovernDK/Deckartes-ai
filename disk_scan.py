@@ -109,9 +109,12 @@ def _list_directory(path: str, max_entries: int = 100) -> dict:
         entry["size_human"] = human_size(entry["size"])
     total = sum(e["size"] for e in entries)
 
+    # Separate lists, so the model doesn't have to group a mixed list (and can't repeat an entry in both)
+    shown = entries[:max_entries]
     return {"path": str(root), "size_human": human_size(total), "count": len(entries),
-            "entries": entries[:max_entries], "truncated": len(entries) > max_entries,
-            "complete": complete}
+            "folders": [e for e in shown if e["type"] == "folder"],
+            "files": [e for e in shown if e["type"] != "folder"],
+            "truncated": len(entries) > max_entries, "complete": complete}
 
 def _find_files(name_pattern: str, path: str = "~", max_results: int = 50) -> dict:
     """Files and folders under path whose name matches name_pattern (case-insensitive).

@@ -13,17 +13,20 @@ first replaces the whole history with the model's summary of it (one system mess
 conversation keeps fitting. A failed summary fails that turn and leaves the history as it was.
 
 A loaded file (loaded_file.py) goes into every turn: a short file whole, at the end of the system message,
-where it stays the same each turn so Ollama can reuse its cache; a long one as excerpts picked
-for the question, just before it. Neither is saved in the history.
+where it stays the same each turn so the server can reuse its prompt cache; a long one as excerpts
+picked for the question, just before it. Neither is saved in the history.
+
+The time of day is a system message just before each question. It is saved in the history with
+the turn, so the earlier turns of the next prompt match the cached ones exactly.
 """
 
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 from dataclasses import dataclass, field
 
+import mlx_client
 from config import config
-from ollama_client import get_async_client
-from prompts import system_message
+from prompts import current_time_line, system_message
 from loaded_file import FileContext, LoadedFile
 from tool_router import select_tools
 from tools import run_tool
@@ -63,18 +66,19 @@ MAX_TOOL_ROUNDS = 10
 
 @dataclass
 class Usage:
-    """Tokens Ollama reports for chat calls: prompt tokens evaluated (in) and generated (out).
+    """Tokens the server reports for chat calls: prompt tokens (in) and generated (out).
     A reply with tool calls makes several calls, each re-sending the conversation so far."""
     input: int = 0
     output: int = 0
     # Nanoseconds spent generating the output tokens, without model loading or prompt evaluation
     output_ns: int = 0
 
-    def count(self, response) -> None:
-        """Add a finished chat response's token counts."""
-        self.input += response.prompt_eval_count or 0
-        self.output += response.eval_count or 0
-        self.output_ns += response.eval_duration or 0
+    def count(self, tokens: mlx_client.TokenCount | None) -> None:
+        """Add a finished chat call's token counts."""
+        if tokens is not None:
+            self.input += tokens.prompt
+            self.output += tokens.completion
+            self.output_ns += tokens.generation_ns
 
     def add(self, other: "Usage") -> None:
         self.input += other.input
@@ -83,7 +87,7 @@ class Usage:
 
     @property
     def tokens_per_second(self) -> float | None:
-        """Generation speed; None when Ollama reported no generation time."""
+        """Generation speed; None when the server reported no generation time."""
         return self.output / self.output_ns * 1e9 if self.output_ns else None
 
     @property
@@ -120,32 +124,21 @@ SUMMARY_PROMPT = (
     "Write plain text, as short as the content allows."
 )
 
-_tool_support = {}
-
-async def _supports_tools() -> bool:
-    """Whether the current model accepts tools; cached per host and model."""
-    key = (config.host, config.model)
-    if key not in _tool_support:
-        info = await get_async_client().show(config.model)
-        _tool_support[key] = "tools" in (info.capabilities or [])
-    return _tool_support[key]
-
-def _model_options() -> dict:
-    """Ollama options from config: context window and, unless left to the model, temperature."""
-    options = {"num_ctx": config.context_length}
-    if config.temperature is not None:
-        options["temperature"] = config.temperature
-    return options
-
 def _add_tool_results(messages, content, tool_calls, results) -> None:
     """Append the model's tool calls and their results so the next request sees them."""
-    messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
+    messages.append({"role": "assistant", "content": content,
+                     "tool_calls": [call.as_message() for call in tool_calls]})
     for call, result in zip(tool_calls, results):
-        messages.append({"role": "tool", "tool_name": call.function.name, "content": result})
+        messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+
+async def _run_call(call: mlx_client.ToolCall) -> str:
+    if call.arguments is None:
+        return f"Tool {call.name} failed: its arguments were not valid JSON"
+    return await run_tool(call.name, call.arguments)
 
 class Conversation:
     def __init__(self) -> None:
-        # Finished turns in the Ollama messages format
+        # Finished turns as chat messages: for each, its time line, the question and the reply
         self.history: list[dict] = []
         self.last_turn = TurnInfo()
         # Tokens of the whole conversation
@@ -161,19 +154,21 @@ class Conversation:
         self.total_usage = Usage()
         self.file = None
 
-    def _messages_for(self, query: str, file: FileContext | None) -> list[dict]:
+    def _messages_for(self, query: str, file: FileContext | None, time_line: str) -> list[dict]:
         """What gets sent to the model for a new question: the current system prompt
-        (read fresh, so a changed preset applies from the next turn), the history and the question,
-        with the loaded file: whole in the system message, or excerpts just before the question."""
+        (read fresh, so a changed preset applies from the next turn), the history, the time and
+        the question, with the loaded file: whole in the system message, or excerpts before the time."""
         system = system_message()
         if file is not None and file.system:
             system = f"{system}\n\n{file.system}"
         messages = [{"role": "system", "content": system}] if system else []
         before = [{"role": "system", "content": file.excerpts}] if file is not None and file.excerpts else []
-        return [*messages, *self.history, *before, {"role": "user", "content": query}]
+        return [*messages, *self.history, *before, {"role": "system", "content": time_line},
+                {"role": "user", "content": query}]
 
-    def _remember(self, query: str, reply: str) -> None:
+    def _remember(self, query: str, reply: str, time_line: str) -> None:
         if reply:
+            self.history.append({"role": "system", "content": time_line})
             self.history.append({"role": "user", "content": query})
             self.history.append({"role": "assistant", "content": reply})
 
@@ -185,14 +180,10 @@ class Conversation:
     async def _compact(self, usage: Usage) -> None:
         """Replace the history with the model's summary of it."""
         transcript = "\n\n".join(f"{m['role']}: {m['content']}" for m in self.history)
-        response = await get_async_client().chat(
-            model=config.model,
-            messages=[{"role": "system", "content": SUMMARY_PROMPT},
-                      {"role": "user", "content": transcript}],
-            options=_model_options(),
-        )
-        usage.count(response)
-        summary = (response.message.content or "").strip()
+        response = await mlx_client.complete([{"role": "system", "content": SUMMARY_PROMPT},
+                                              {"role": "user", "content": transcript}])
+        usage.count(response.usage)
+        summary = response.content.strip()
         if not summary:
             raise ValueError("the model returned an empty summary")
         self.history = [{"role": "system", "content": f"Summary of the conversation so far:\n{summary}"}]
@@ -217,8 +208,9 @@ class Conversation:
         except Exception as e:
             yield Failed(f"could not search the loaded file: {e}")
             return
+        time_line = current_time_line()
         try:
-            messages = self._messages_for(query, file)
+            messages = self._messages_for(query, file, time_line)
         except Exception as e:
             # e.g. a broken prompts.json
             yield Failed(f"could not load the system prompt: {e}")
@@ -226,37 +218,27 @@ class Conversation:
         turn.file_context = file.label if file is not None else None
         reply = ""
         try:
-            tools = None
-            if await _supports_tools():
-                selection = await select_tools(query, previous)
-                tools = selection.tools
-                turn.tool_groups = selection.groups
+            selection = await select_tools(query, previous)
+            tools = selection.tools
+            turn.tool_groups = selection.groups
             for _ in range(MAX_TOOL_ROUNDS):
-                stream = await get_async_client().chat(
-                    model=config.model,
-                    messages=messages,
-                    tools=tools,
-                    options=_model_options(),
-                    stream=True,
-                )
                 content = ""
                 tool_calls = []
                 context = 0
-                # aclosing: a closed turn stops Ollama's request at once, not when Python gets to it
-                async with aclosing(stream):
-                    async for chunk in stream:
-                        if chunk.message.content:
-                            content += chunk.message.content
-                            reply += chunk.message.content
-                            yield Text(chunk.message.content)
-                        if chunk.message.tool_calls:
-                            tool_calls.extend(chunk.message.tool_calls)
-                        if chunk.done:
-                            turn.usage.count(chunk)
-                            context = (chunk.prompt_eval_count or 0) + (chunk.eval_count or 0)
+                # aclosing: a closed turn stops the model's request at once, not when Python gets to it
+                async with aclosing(mlx_client.stream_chat(messages, tools)) as stream:
+                    async for delta in stream:
+                        if delta.content:
+                            content += delta.content
+                            reply += delta.content
+                            yield Text(delta.content)
+                        tool_calls.extend(delta.tool_calls)
+                        if delta.usage is not None:
+                            turn.usage.count(delta.usage)
+                            context = delta.usage.prompt + delta.usage.completion
 
                 if not tool_calls:
-                    self._remember(query, reply)
+                    self._remember(query, reply, time_line)
                     if reply:
                         self.context_tokens = context
                     return
@@ -265,8 +247,8 @@ class Conversation:
                     yield Text("\n\n")
                 results = []
                 for call in tool_calls:
-                    yield ToolStarted(call.function.name)
-                    results.append(await run_tool(call.function.name, call.function.arguments))
+                    yield ToolStarted(call.name)
+                    results.append(await _run_call(call))
                 yield ToolsDone()
                 _add_tool_results(messages, content, tool_calls, results)
 

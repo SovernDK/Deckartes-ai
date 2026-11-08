@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rapid-mlx --help)",
+      "Bash(rapid-mlx models)",
+      "Bash(rapid-mlx info *)",
+      "Bash(rapid-mlx serve *)",
+      "Bash(curl http://127.0.0.1:8000/*)",
+      "Read(~/.local/share/uv/tools/rapid-mlx/**)",
+      "Bash(venv/bin/python -m unittest *)",
+      "Bash(venv/bin/pip uninstall -y ollama)",
+      "Bash(rm ollama_client.py ollama_api.py tests/test_ollama_client.py)",
+      "Bash(curl http://127.0.0.1:8001/*)"
+    ]
+  }
+}

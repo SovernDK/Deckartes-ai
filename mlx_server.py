@@ -1,0 +1,149 @@
+"""Starts and stops the local Rapid-MLX servers, which run as child processes.
+
+The chat server (config.host) holds the chat model and the routing embedding model. A second,
+embeddings-only server (config.file_embed_host) holds config.rag_embed_model and is started only
+when a long file needs it, because a Rapid-MLX server can serve one embedding model.
+
+A server already answering on a port is used as it is and never stopped, which also covers one
+left behind by a crash. Servers started here stop when the app exits. Their output goes to a log
+file, never the terminal the app draws on.
+"""
+
+import atexit
+import os
+import signal
+import subprocess
+import threading
+import time
+from collections.abc import Callable
+from pathlib import Path
+from urllib.parse import urlsplit
+
+import httpx
+
+from config import config
+
+READY_PATH = "/health/ready"
+POLL_SECONDS = 0.5
+# Long, because the first start downloads the model
+START_LIMIT_SECONDS = 30 * 60
+STOP_WAIT_SECONDS = 10
+LOG_DIR = Path.home() / ".cache" / "deckartes"
+# Parsers for models Rapid-MLX can't identify by itself, by lowercase start of the model id
+PARSER_FLAGS = {
+    "liquidai/lfm3": ["--tool-call-parser", "nemotron", "--reasoning-parser", "qwen3"],
+}
+
+class ModelServerError(Exception):
+    """A model server couldn't be started or reached, or refused a request. The message says why."""
+
+class _Server:
+    def __init__(self, name: str, url: Callable[[], str], arguments: Callable[[], list[str]]) -> None:
+        self.name = name
+        self.url = url
+        self.arguments = arguments
+        self.process: subprocess.Popen | None = None
+        self.lock = threading.Lock()
+
+    @property
+    def log_path(self) -> Path:
+        return LOG_DIR / f"rapid-mlx-{self.name.replace(' ', '-')}.log"
+
+    def status(self) -> int | None:
+        """HTTP status of the readiness check; None when nothing answers."""
+        try:
+            return httpx.get(self.url() + READY_PATH, timeout=2).status_code
+        except httpx.HTTPError:
+            return None
+
+    def _start(self) -> None:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        program = os.path.expanduser(config.mlx_server_command)
+        try:
+            with open(self.log_path, "w") as log:
+                # Its own process group, so stop() also reaches anything it starts
+                self.process = subprocess.Popen([program, *self.arguments()], stdin=subprocess.DEVNULL,
+                                                stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        except OSError as e:
+            raise ModelServerError(f"Could not start {program}: {e}. "
+                                   "Install it with: uv tool install 'rapid-mlx[embeddings]'") from e
+
+    def _wait_until_ready(self) -> None:
+        process = self.process
+        deadline = time.monotonic() + START_LIMIT_SECONDS
+        while time.monotonic() < deadline:
+            status = self.status()
+            if status == 200:
+                return
+            if process is not None and process.poll() is not None:
+                raise ModelServerError(f"The {self.name} server stopped while starting. See {self.log_path}")
+            if process is None and status is None:
+                raise ModelServerError(f"The {self.name} server at {self.url()} stopped answering")
+            time.sleep(POLL_SECONDS)
+        raise ModelServerError(f"The {self.name} server wasn't ready after {START_LIMIT_SECONDS // 60} "
+                               f"minutes. See {self.log_path}")
+
+    def ensure_running(self) -> None:
+        """Return once this server is ready, starting it if nothing is on its port."""
+        with self.lock:
+            status = self.status()
+            if status == 200:
+                return
+            if self.process is not None and self.process.poll() is not None:
+                self.process = None
+            # Any other status is a server still loading: wait for it instead of starting another
+            if status is None and self.process is None:
+                self._start()
+            self._wait_until_ready()
+
+    def stop(self) -> bool:
+        """Stop this server if this app started it. Returns whether it did."""
+        # No lock: this has to be able to end a start that is still waiting
+        process, self.process = self.process, None
+        if process is None or process.poll() is not None:
+            return False
+        os.killpg(process.pid, signal.SIGTERM)
+        try:
+            process.wait(STOP_WAIT_SECONDS)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+        return True
+
+def _address(url: str) -> list[str]:
+    parts = urlsplit(url)
+    return ["--host", parts.hostname, "--port", str(parts.port)]
+
+def _chat_arguments() -> list[str]:
+    model = config.model
+    parsers = next((flags for start, flags in PARSER_FLAGS.items() if model.lower().startswith(start)), [])
+    return ["serve", model, *_address(config.host), "--yes", "--enable-auto-tool-choice", *parsers,
+            "--embedding-model", config.embed_model]
+
+def _file_arguments() -> list[str]:
+    return ["serve", *_address(config.file_embed_host), "--yes", "--embedding-model", config.rag_embed_model]
+
+_chat = _Server("chat", lambda: config.host, _chat_arguments)
+_files = _Server("file search", lambda: config.file_embed_host, _file_arguments)
+
+def ensure_chat() -> None:
+    """Block until the chat server is ready. Raises ModelServerError if it can't be."""
+    _chat.ensure_running()
+
+def ensure_files() -> None:
+    """Block until the file embedding server is ready. Raises ModelServerError if it can't be."""
+    _files.ensure_running()
+
+def chat_is_ready() -> bool:
+    return _chat.status() == 200
+
+def restart_chat() -> None:
+    """Start the chat server again, after config.model changed."""
+    _chat.stop()
+    _chat.ensure_running()
+
+def stop_all() -> list[str]:
+    """Stop the servers this app started, freeing their memory. Returns the names of those stopped."""
+    return [server.name for server in (_chat, _files) if server.stop()]
+
+atexit.register(stop_all)

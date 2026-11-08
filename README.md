@@ -8,7 +8,7 @@
   <img src="screnshots/3.png" alt="File explorer for loading a file into the chat" width="395">
 </p>
 
-A terminal chat app ([Textual](https://textual.textualize.io/)) for local [Ollama](https://ollama.com/) models, with tools the model can call:
+A terminal chat app ([Textual](https://textual.textualize.io/)) for local MLX models on Apple Silicon, served by [Rapid-MLX](https://github.com/raullenchai/Rapid-MLX), with tools the model can call:
 
 - **Home server**: CPU, RAM, disk, temperatures and Docker containers of the home server (through its Glances API).
 - **This computer**: list folders, find files, folder sizes.
@@ -20,23 +20,21 @@ A terminal chat app ([Textual](https://textual.textualize.io/)) for local [Ollam
 
 ## TODO
 
-- [x] **Cloud models**: use Ollama cloud models next to local ones (token usage display is ready, key `t`).
 - [ ] **Model routing**: pick a model per question, e.g. a small local one for chit-chat and a bigger one for hard questions.
 - [x] **RAG over one document**: load a file from the file explorer; long ones are searched with embeddings.
 - [ ] **More documents**: several files at once, other formats (`.docx`), and a `/load <path>` command.
 - [ ] **Vector DB**: store embeddings for documents, and later images and videos (LanceDB is the current pick).
+- [ ] **Fine-tuning**: tune the model on this app's tools, starting with a test set and turn logging (plan in [FINE-TUNING.md](FINE-TUNING.md)).
 
 ## Setup
 
 Requirements:
 
 - Python 3.11+
-- Ollama running on `localhost:11434`, with a chat model that supports tools (default `granite4.1:3b`) and the embedding model used for tool routing:
+- An Apple Silicon Mac with [Rapid-MLX](https://github.com/raullenchai/Rapid-MLX) installed. The app starts its servers and stops them on exit, and the models download the first time they're needed:
 
   ```bash
-  ollama pull granite4.1:3b
-  ollama pull all-minilm:33m
-  ollama pull embeddinggemma-2:570m   # for searching long loaded files
+  uv tool install 'rapid-mlx[embeddings]'
   ```
 
 - For the server tools: [Glances](https://nicolargo.github.io/glances/) running in web server mode on the home server (default `http://thinkpad:61208`).
@@ -45,7 +43,7 @@ Install the dependencies into a virtual environment (there is no requirements fi
 
 ```bash
 python3 -m venv venv
-venv/bin/pip install textual textual-dev ollama httpx pyobjc-framework-EventKit pypdf cryptography
+venv/bin/pip install textual textual-dev httpx pyobjc-framework-EventKit pypdf cryptography
 ```
 
 The calendar tools use macOS's EventKit and see every calendar synced to Calendar.app (iCloud, Google, Exchange). The first calendar question shows a macOS prompt asking to give your terminal app (Terminal, iTerm, VS Code) access to your calendars. You can change that later in System Settings > Privacy & Security > Calendars.
@@ -92,7 +90,7 @@ Typed into the input box:
 | Command | Action |
 |---|---|
 | `/clear` | Clear the conversation |
-| `/kill` | Release all Ollama models from memory |
+| `/kill` | Stop the model servers to free their memory; the next question starts them again |
 | `/unload` | Stop sending the file loaded with the file explorer |
 
 Select text with the mouse and press `ctrl+c` to copy it.
@@ -103,14 +101,18 @@ Settings live in `config.py`, as fields of the shared `config` object. The setti
 
 | Setting | Default | What it does |
 |---|---|---|
-| `host` | `http://localhost:11434` | Ollama server |
-| `model` | `granite4.1:3b` | Chat model (also changed with `m`) |
-| `context_length` | `16384` | Context window in tokens, sent to Ollama as `num_ctx` (Ollama's own default of 4096 is too small for tool results). Chosen with `c` from `CONTEXT_LENGTHS` in `config.py`: 2K, 4K, 8K, 16K or 32K |
-| `temperature` | `None` | Sampling temperature. `None` uses the model's default |
+| `host` | `http://127.0.0.1:8000` | Chat server the app starts |
+| `file_embed_host` | `http://127.0.0.1:8001` | Embeddings-only server, started for long loaded files |
+| `mlx_server_command` | `~/.local/bin/rapid-mlx` | The Rapid-MLX program |
+| `model` | `LiquidAI/LFM3-1.7B-MLX-4bit` | Chat model (also changed with `m`, which restarts the server) |
+| `context_length` | `16384` | The app's budget in tokens, for deciding when to compact and when a file is sent whole. Chosen with `c` from `CONTEXT_LENGTHS` in `config.py`: 2K, 4K, 8K, 16K or 32K |
+| `max_tokens` | `4096` | Longest reply in tokens |
+| `enable_thinking` | `False` | Let the model reason before answering, which is slower |
+| `temperature`, `top_k`, `repetition_penalty` | `0.1`, `50`, `1.1` | Sampling, LFM3's recommended chat settings. `None` uses the model's default. Temperature is also changed with `c` |
 | `system_prompt` | `Assistant` | Preset from `prompts.json` (also changed with `c`) |
 | `tool_routing` | `True` | Send only the tool groups a question needs (see [Tool routing](#tool-routing)) |
-| `embed_model` | `all-minilm:33m` | Embedding model used for tool routing |
-| `rag_embed_model` | `embeddinggemma-2:570m` | Embedding model for searching long loaded files (multilingual) |
+| `embed_model` | `mlx-community/all-MiniLM-L6-v2-4bit` | Embedding model used for tool routing |
+| `rag_embed_model` | `mlx-community/embeddinggemma-2-4bit` | Embedding model for searching long loaded files (multilingual) |
 | `show_token_usage` | `False` | Show token counts (toggled with `t`) |
 | `glances_host` | `http://thinkpad:61208` | Glances API of the home server |
 | `timezone` | this machine's | Used for "today" and all displayed times |
@@ -123,7 +125,7 @@ Settings live in `config.py`, as fields of the shared `config` object. The setti
 
 ### Prompt presets
 
-`prompts.json` holds the system prompt presets you can pick with `c`. Each has a name, a description, the prompt text and the tools it may use (`"all"`, a list of tool names, or `[]` for none). The file is re-read on every message, so edits apply without a restart. The current date and time are always added in front of the prompt, so presets don't need to mention them.
+`prompts.json` holds the system prompt presets you can pick with `c`. Each has a name, a description, the prompt text and the tools it may use (`"all"`, a list of tool names, or `[]` for none). The file is re-read on every message, so edits apply without a restart. The current date is always added in front of the prompt and the time just before each question, so presets don't need to mention them.
 
 | Preset | Tools |
 |---|---|
@@ -138,7 +140,7 @@ Settings live in `config.py`, as fields of the shared `config` object. The setti
 
 ## Adding a tool
 
-A tool is an async function in `tools.py`. Ollama builds the definition the model sees from the function's name, type hints and docstring, so these are what tell the model when and how to use it.
+A tool is an async function in `tools.py`. `tool_schema.py` builds the definition the model sees from the function's name, type hints and docstring, so these are what tell the model when and how to use it.
 
 ### 1. Write the function
 
@@ -157,7 +159,7 @@ async def get_exchange_rate(base: str, target: str) -> str:
 Guidelines:
 
 - **Google-style docstring with an `Args:` section.** Say what the tool returns and when to use it. For the server and disk tools, say "home server (thinkpad)" or "this computer", so the model can tell them apart.
-- **Keep parameters few.** Ollama marks every parameter as required, even ones with defaults.
+- **Keep parameters few.** Every parameter is marked as required, even ones with defaults.
 - **One tool per common question.** A tool that answers "when does X air next" directly is better than one the model has to call day by day. Small models don't chain tools reliably.
 - **Return short plain text, not raw API JSON.** One line per item, readable units (GB, %, °C, local times), shared context stated once in a header, and no `null` fields. It costs about half the tokens, and small models misread raw values such as byte counts. Strings are passed to the model as they are; anything else is JSON-encoded.
 - **Include the reference values the model would otherwise guess,** such as limits, totals or "this week ends Sunday". When a small model can't find something in a result, it makes it up.
@@ -207,7 +209,7 @@ Tool definitions are most of what's sent with a short question: about 2,700 toke
 - **Vague follow-ups** ("and Vitality?") use the previous question's topic.
 - **Unsure questions** get the two closest groups.
 
-If the embedding model isn't available, every tool the preset allows is sent. The thresholds were tuned for `all-minilm`, so a different embedding model may need new ones. To fix a question that gets routed wrong, add an example to the right group rather than lowering thresholds.
+If the embedding model isn't available, every tool the preset allows is sent. The thresholds were checked with `all-MiniLM-L6-v2`, so a different embedding model may need new ones. To fix a question that gets routed wrong, add an example to the right group rather than lowering thresholds.
 
 ## Loading a file
 
@@ -232,7 +234,9 @@ Small models sometimes answer from their own knowledge instead of the file, or n
 | `loaded_file.py` | Loading a file: reading, chunking, embedding and searching it |
 | `chat.tcss` | Styles |
 | `conversation.py` | Conversation history, turns, the tool-calling loop and token counting, no UI |
-| `ollama_api.py` | Listing and unloading models |
+| `mlx_client.py` | Chat, embeddings and the model list from the Rapid-MLX servers |
+| `mlx_server.py` | Starting and stopping the Rapid-MLX servers |
+| `tool_schema.py` | Builds the definition the model sees for each tool |
 | `tool_router.py` | Picks which tool groups to send with a question |
 | `tools.py` | Tool functions, `TOOLS` and `TOOL_GROUPS` |
 | `prompts.py`, `prompts.json` | System prompt presets |

@@ -1,7 +1,7 @@
 """Tools the AI model can call.
 
 To add a tool: write an async function with type hints and a docstring, decorated with
-@tool("<group>") (a TOOL_GROUPS key; add a group with example questions if none fits). Ollama builds the tool definition the model sees from the function name,
+@tool("<group>") (a TOOL_GROUPS key; add a group with example questions if none fits). tool_schema.py builds the tool definition the model sees from the function name,
 parameters and docstring, so describe clearly what it returns and when to use it. Its body is one
 call to the backend, which takes the tool's arguments and returns the tool text.
 """
@@ -50,6 +50,7 @@ TOOL_GROUPS: dict[str, dict] = {
             "Look up the price of a Steam Deck", "What does this website say?",
             "Summarize this article for me", "Who won the election?", "What's the weather tomorrow?",
             "Find reviews of this laptop", "Google how to fix this error",
+            "Read this page: https://example.org/article", "Open this link and tell me what it says",
         ],
     },
     "anime": {
@@ -390,17 +391,20 @@ async def find_calendar_events(query: str) -> str:
     return await cal.find_events(query)
 
 @tool("calendar")
-async def add_calendar_event(title: str, date: str, start_time: str, end_date: str, end_time: str) -> str:
+async def add_calendar_event(title: str, date: str, start_time: str, end_date: str | None = None,
+                             end_time: str | None = None) -> str:
     """Add an event to the user's own calendar (Apple Calendar). Use it only when the user asks
-    to add, schedule or put something in their calendar; the user confirms it before it's saved.
-    Use the date and time from the user or from another tool's result, never a guess.
+    to add, schedule or put something in their calendar. The user confirms it before it's saved,
+    so call it right away with what you know. Take the title, date and time from the user, from
+    earlier in this conversation or from another tool's result. Ask only if the start date or
+    time appears nowhere. The end is optional.
 
     Args:
         title: Event title, e.g. "Dentist" or "NAVI vs Vitality"
         date: "today", "tomorrow", a weekday like "friday", or a date as YYYY-MM-DD
         start_time: Local start time as HH:MM (24-hour), e.g. "14:30", or "all-day"
-        end_date: The event's last day, in the same formats as date; the same as date unless it runs over several days
-        end_time: Local end time on end_date as HH:MM (24-hour), e.g. "15:30" (ignored for all-day events)
+        end_date: Optional. The event's last day, in the same formats as date, only if it runs over several days
+        end_time: Optional. Local end time as HH:MM (24-hour), e.g. "15:30"; leave it out for a one-hour event
     """
     return await cal.add_event(title, date, start_time, end_date, end_time, confirm)
 

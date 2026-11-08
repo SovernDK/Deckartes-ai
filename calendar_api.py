@@ -189,13 +189,16 @@ def _target_calendar():
     names = ", ".join(c.title() for c in writable)
     raise ValueError(f"no calendar named {config.calendar_name!r}; calendars you can add to: {names}")
 
-def _new_event(title: str, date: str, start_time: str, end_date: str, end_time: str) -> dict:
-    """Check and complete an event to add, without saving it. end_date is the event's last day."""
+DEFAULT_EVENT_LENGTH = dt.timedelta(hours=1)
+
+def _new_event(title: str, date: str, start_time: str, end_date: str | None, end_time: str | None) -> dict:
+    """Check and complete an event to add, without saving it. end_date is the event's last day,
+    by default the first; a timed event without end_time lasts DEFAULT_EVENT_LENGTH."""
     title = title.strip()
     if not title:
         raise ValueError("The event needs a title")
     day = _parse_day(date)
-    last = _parse_day(end_date)
+    last = _parse_day(end_date) if end_date and end_date.strip() else day
     if start_time.strip().lower() in ("all-day", "all day", "allday"):
         if last < day:
             raise ValueError(f"The event's last day {_day(last)} is before its first day {_day(day)}")
@@ -205,12 +208,15 @@ def _new_event(title: str, date: str, start_time: str, end_date: str, end_time: 
             at = dt.time.fromisoformat(start_time.strip())
         except ValueError:
             raise ValueError(f"Start time {start_time!r} must be HH:MM (24-hour) or \"all-day\"")
-        try:
-            until = dt.time.fromisoformat(end_time.strip())
-        except ValueError:
-            raise ValueError(f"End time {end_time!r} must be HH:MM (24-hour)")
         start = dt.datetime.combine(day, at, tzinfo=clock.zone())
-        end = dt.datetime.combine(last, until, tzinfo=clock.zone())
+        if end_time and end_time.strip():
+            try:
+                until = dt.time.fromisoformat(end_time.strip())
+            except ValueError:
+                raise ValueError(f"End time {end_time!r} must be HH:MM (24-hour)")
+            end = dt.datetime.combine(last, until, tzinfo=clock.zone())
+        else:
+            end = start + DEFAULT_EVENT_LENGTH
         all_day = False
         if end <= start:
             raise ValueError(f"The event would end at {end:%A %Y-%m-%d %H:%M}, not after its start at "
@@ -319,7 +325,7 @@ async def period_events(period: str) -> str:
 async def find_events(query: str) -> str:
     return _found_text(await asyncio.to_thread(_find_events, query))
 
-async def add_event(title: str, date: str, start_time: str, end_date: str, end_time: str,
+async def add_event(title: str, date: str, start_time: str, end_date: str | None, end_time: str | None,
                     confirm: Callable[[str], Awaitable[bool]]) -> str:
     """Add an event unless it's already there or the user, asked through confirm, declines."""
     event = await asyncio.to_thread(_new_event, title, date, start_time, end_date, end_time)

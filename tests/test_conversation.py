@@ -1,12 +1,10 @@
-"""A turn from start to finish: Conversation.stream_reply with only the Ollama client faked."""
+"""A turn from start to finish: Conversation.stream_reply with only the model client faked."""
 
-import itertools
 import unittest
 from contextlib import aclosing
-from types import SimpleNamespace as NS
 from unittest import mock
 
-import ollama_client
+import mlx_client
 import prompts
 import tool_router
 from config import config
@@ -14,53 +12,47 @@ from conversation import MAX_TOOL_ROUNDS, Compacted, Compacting, Conversation, F
 from frozen_clock import freeze
 from test_tool_router import FakeEmbeddings, group_tools, names
 
-DATE_LINE = "Current date: Wednesday 2026-11-11, local time 12:00 (Europe/Warsaw)."
+DATE_LINE = "Current date: Wednesday 2026-11-11 (Europe/Warsaw)."
+TIME_LINE = "Current local time: 12:00."
+TIME = {"role": "system", "content": TIME_LINE}
 SEASON_TEXT = "Today is Wednesday 2026-11-11. Current anime season: Fall 2026."
-_models = itertools.count()
 
 def chunk(content="", tool_calls=None, done=False):
-    return NS(message=NS(content=content, tool_calls=tool_calls), done=done,
-              prompt_eval_count=10 if done else None, eval_count=5 if done else None,
-              eval_duration=10**9 if done else None)
+    return mlx_client.Delta(content, tool_calls or [], mlx_client.TokenCount(10, 5, 10**9) if done else None)
 
 def call(tool, **arguments):
-    return NS(function=NS(name=tool, arguments=arguments))
+    return mlx_client.ToolCall(f"call_{tool}", tool, arguments)
 
 class FakeClient:
-    """Answers each chat call with the next round's chunks (an exception among them is raised
-    there), and records what each call sent."""
+    """Stands in for mlx_client's chat calls: answers each with the next round's chunks (an
+    exception among them is raised there), and records what each call sent."""
 
-    def __init__(self, *rounds, capabilities=("tools",)):
+    def __init__(self, *rounds):
         self.rounds = list(rounds)
-        self.capabilities = capabilities
         self.sent = []
-        self.shown = 0
         self.closed = 0
 
-    async def show(self, model):
-        self.shown += 1
-        return NS(capabilities=list(self.capabilities))
-
-    async def chat(self, **kwargs):
-        self.sent.append({**kwargs, "messages": list(kwargs["messages"])})
+    def next_round(self, messages, tools):
+        self.sent.append({"messages": list(messages), "tools": tools})
         if not self.rounds:
             raise ConnectionError("no more rounds")
-        chunks = self.rounds.pop(0)
-        if not kwargs.get("stream"):
-            # A call without streaming gets the round's chunks as one response
-            if isinstance(chunks[0], Exception):
-                raise chunks[0]
-            return NS(message=NS(content="".join(c.message.content for c in chunks), tool_calls=None),
-                      prompt_eval_count=10, eval_count=5, eval_duration=10**9)
-        async def stream():
-            try:
-                for c in chunks:
-                    if isinstance(c, Exception):
-                        raise c
-                    yield c
-            finally:
-                self.closed += 1
-        return stream()
+        return self.rounds.pop(0)
+
+    async def complete(self, messages):
+        chunks = self.next_round(messages, None)
+        if isinstance(chunks[0], Exception):
+            raise chunks[0]
+        return mlx_client.Reply("".join(c.content for c in chunks), mlx_client.TokenCount(10, 5, 10**9))
+
+    async def stream_chat(self, messages, tools=None):
+        chunks = self.next_round(messages, tools)
+        try:
+            for c in chunks:
+                if isinstance(c, Exception):
+                    raise c
+                yield c
+        finally:
+            self.closed += 1
 
 class TurnTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -69,8 +61,6 @@ class TurnTest(unittest.IsolatedAsyncioTestCase):
         self.patch(config, "tool_routing", False)
         # Tests with a tiny context window would otherwise compact on every turn
         self.patch(config, "compact_at", None)
-        # Whether a model supports tools is remembered per model, so each test has its own
-        self.patch(config, "model", f"model-{next(_models)}")
         self.conversation = Conversation()
 
     def patch(self, target, name, value):
@@ -78,11 +68,10 @@ class TurnTest(unittest.IsolatedAsyncioTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def use(self, *rounds, **kwargs) -> FakeClient:
-        client = FakeClient(*rounds, **kwargs)
-        patcher = mock.patch.dict(ollama_client._clients, {("async", config.host): client})
-        patcher.start()
-        self.addCleanup(patcher.stop)
+    def use(self, *rounds) -> FakeClient:
+        client = FakeClient(*rounds)
+        self.patch(mlx_client, "stream_chat", client.stream_chat)
+        self.patch(mlx_client, "complete", client.complete)
         return client
 
     def route(self, scores: dict[str, dict]) -> None:
@@ -101,7 +90,7 @@ class FinishedTurnTest(TurnTest):
     async def test_reply_is_streamed_saved_and_counted(self):
         self.use([chunk("Hel"), chunk("lo", done=True)])
         self.assertEqual(await self.reply("hi"), [Text("Hel"), Text("lo")])
-        self.assertEqual(self.conversation.history, [{"role": "user", "content": "hi"},
+        self.assertEqual(self.conversation.history, [TIME, {"role": "user", "content": "hi"},
                                                      {"role": "assistant", "content": "Hello"}])
         usage = self.conversation.last_turn.usage
         self.assertEqual((usage.input, usage.output), (10, 5))
@@ -110,14 +99,24 @@ class FinishedTurnTest(TurnTest):
     async def test_system_message_comes_first(self):
         client = self.use([chunk("ok", done=True)])
         await self.reply("hi")
-        self.assertEqual(client.sent[0]["messages"], [{"role": "system", "content": DATE_LINE},
+        self.assertEqual(client.sent[0]["messages"], [{"role": "system", "content": DATE_LINE}, TIME,
                                                       {"role": "user", "content": "hi"}])
 
     async def test_history_is_sent_with_the_next_question(self):
         client = self.use([chunk("first", done=True)], [chunk("second", done=True)])
         await self.reply("one")
         await self.reply("two")
-        self.assertEqual(self.sent_contents(client, 1), [DATE_LINE, "one", "first", "two"])
+        self.assertEqual(self.sent_contents(client, 1), [DATE_LINE, TIME_LINE, "one", "first", TIME_LINE, "two"])
+
+    async def test_a_new_minute_leaves_the_earlier_prompt_unchanged(self):
+        # The server's prompt cache only reuses an exact start of the prompt
+        client = self.use([chunk("first", done=True)], [chunk("second", done=True)])
+        await self.reply("one")
+        freeze(self, "2026-11-11 12:07")
+        await self.reply("two")
+        first, second = client.sent[0]["messages"], client.sent[1]["messages"]
+        self.assertEqual(second[:len(first)], first)
+        self.assertEqual(second[-2]["content"], "Current local time: 12:07.")
 
     async def test_empty_reply_is_not_saved(self):
         self.use([chunk(done=True)])
@@ -159,9 +158,10 @@ class CompactTest(TurnTest):
         await self.reply("one")
         self.assertEqual(await self.reply("two"), [Compacting(), Compacted(), Text("second")])
         summary = "Summary of the conversation so far:\nthe gist"
-        self.assertEqual(self.sent_contents(client, 2), [DATE_LINE, summary, "two"])
-        self.assertEqual(client.sent[1]["messages"][1]["content"], "user: one\n\nassistant: first")
-        self.assertEqual(self.conversation.history, [{"role": "system", "content": summary},
+        self.assertEqual(self.sent_contents(client, 2), [DATE_LINE, summary, TIME_LINE, "two"])
+        self.assertEqual(client.sent[1]["messages"][1]["content"],
+                         f"system: {TIME_LINE}\n\nuser: one\n\nassistant: first")
+        self.assertEqual(self.conversation.history, [{"role": "system", "content": summary}, TIME,
                                                      {"role": "user", "content": "two"},
                                                      {"role": "assistant", "content": "second"}])
 
@@ -170,7 +170,7 @@ class CompactTest(TurnTest):
         client = self.use([chunk("first", done=True)], [chunk("second", done=True)])
         await self.reply("one")
         self.assertEqual(await self.reply("two"), [Text("second")])
-        self.assertEqual(self.sent_contents(client, 1), [DATE_LINE, "one", "first", "two"])
+        self.assertEqual(self.sent_contents(client, 1), [DATE_LINE, TIME_LINE, "one", "first", TIME_LINE, "two"])
 
     async def test_none_never_compacts(self):
         self.patch(config, "compact_at", None)
@@ -183,7 +183,7 @@ class CompactTest(TurnTest):
         await self.reply("one")
         events = await self.reply("two")
         self.assertEqual(events, [Compacting(), Failed("could not compact the conversation: down")])
-        self.assertEqual([m["content"] for m in self.conversation.history], ["one", "first"])
+        self.assertEqual([m["content"] for m in self.conversation.history], [TIME_LINE, "one", "first"])
 
     async def test_clear_forgets_the_context_size(self):
         self.use([chunk("first", done=True)])
@@ -198,8 +198,10 @@ class ToolRoundTest(TurnTest):
         self.assertEqual(await self.reply(), [Text("Let me check."), Text("\n\n"), ToolStarted("get_current_season"),
                                               ToolsDone(), Text("It is fall.")])
         self.assertEqual(client.sent[1]["messages"][-2:], [
-            {"role": "assistant", "content": "Let me check.", "tool_calls": [call("get_current_season")]},
-            {"role": "tool", "tool_name": "get_current_season", "content": SEASON_TEXT},
+            {"role": "assistant", "content": "Let me check.",
+             "tool_calls": [{"id": "call_get_current_season", "type": "function",
+                             "function": {"name": "get_current_season", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": "call_get_current_season", "content": SEASON_TEXT},
         ])
         self.assertEqual(self.conversation.history[-1]["content"], "Let me check.\n\nIt is fall.")
         self.assertEqual(self.conversation.last_turn.usage.input, 20)
@@ -209,7 +211,15 @@ class ToolRoundTest(TurnTest):
                           [chunk("ok", done=True)])
         await self.reply("one")
         await self.reply("two")
-        self.assertEqual(self.sent_contents(client, 2), [DATE_LINE, "one", "fall", "two"])
+        self.assertEqual(self.sent_contents(client, 2), [DATE_LINE, TIME_LINE, "one", "fall", TIME_LINE, "two"])
+
+    async def test_arguments_that_are_not_json_go_back_as_a_tool_failure(self):
+        bad = mlx_client.ToolCall("call_1", "get_cs_team", None)
+        client = self.use([chunk(tool_calls=[bad], done=True)], [chunk("sorry", done=True)])
+        await self.reply()
+        self.assertEqual(client.sent[1]["messages"][-1], {
+            "role": "tool", "tool_call_id": "call_1",
+            "content": "Tool get_cs_team failed: its arguments were not valid JSON"})
 
     async def test_round_without_text_has_no_break(self):
         self.use([chunk(tool_calls=[call("a"), call("b")], done=True)], [chunk("ok", done=True)])
@@ -221,31 +231,6 @@ class ToolRoundTest(TurnTest):
         self.assertEqual(events[-1], Failed(f"model still calling tools after {MAX_TOOL_ROUNDS} rounds"))
         self.assertEqual(events.count(ToolsDone()), MAX_TOOL_ROUNDS)
         self.assertEqual(self.conversation.history, [])
-
-class ModelCallTest(TurnTest):
-    async def test_context_length_and_temperature_are_sent(self):
-        client = self.use([chunk("ok", done=True)])
-        with mock.patch.object(config, "context_length", 8192), mock.patch.object(config, "temperature", 0.2):
-            await self.reply()
-        self.assertEqual(client.sent[0]["options"], {"num_ctx": 8192, "temperature": 0.2})
-
-    async def test_temperature_left_to_the_model(self):
-        client = self.use([chunk("ok", done=True)])
-        with mock.patch.object(config, "context_length", 8192), mock.patch.object(config, "temperature", None):
-            await self.reply()
-        self.assertEqual(client.sent[0]["options"], {"num_ctx": 8192})
-
-    async def test_model_without_tool_support_gets_none(self):
-        client = self.use([chunk("ok", done=True)], capabilities=())
-        await self.reply()
-        self.assertIsNone(client.sent[0]["tools"])
-        self.assertIsNone(self.conversation.last_turn.tool_groups)
-
-    async def test_tool_support_is_checked_once_per_model(self):
-        client = self.use([chunk("a", done=True)], [chunk("b", done=True)])
-        await self.reply()
-        await self.reply()
-        self.assertEqual(client.shown, 1)
 
 class RoutingTest(TurnTest):
     async def test_chosen_tools_are_sent_and_recorded(self):

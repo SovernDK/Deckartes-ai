@@ -2,7 +2,7 @@
 
 The rule tests swap tool_router._embed for fake vectors, so each question gets exactly the
 similarity scores a test asks for. The live test embeds real questions with config.embed_model
-and skips itself when Ollama can't be reached.
+and skips itself when the chat server isn't already running.
 
 Run: venv/bin/python -m unittest discover tests
 """
@@ -11,7 +11,7 @@ import math
 import unittest
 from unittest import mock
 
-import ollama_client
+import mlx_server
 import tool_router
 from config import config
 from tools import TOOL_GROUPS, TOOLS, TOOLS_BY_NAME
@@ -94,6 +94,21 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         selection = await tool_router.select_tools(*ask("Is NAVI on?", "thanks!"))
         self.assertEqual(selection.groups, [])
         self.assertEqual(names(selection.tools) or [], group_tools())
+
+    async def test_short_answer_with_a_number_keeps_the_topic(self):
+        self.embed({"Add this to my calendar": {"calendar": 0.9}, "18 to 20": {None: 0.5, "cs": 0.1}})
+        selection = await tool_router.select_tools(*ask("Add this to my calendar", "18 to 20"))
+        self.assertEqual(selection.groups, ["calendar"])
+
+    async def test_yes_keeps_the_topic_but_thanks_does_not(self):
+        scores = {"Add this to my calendar": {"calendar": 0.9}, "Yes!": {None: 0.5}, "thanks": {None: 0.5}}
+        self.embed(scores)
+        self.assertEqual((await tool_router.select_tools(*ask("Add this to my calendar", "Yes!"))).groups, ["calendar"])
+        self.assertEqual((await tool_router.select_tools(*ask("Add this to my calendar", "thanks"))).groups, [])
+
+    async def test_number_without_a_previous_question_is_small_talk(self):
+        self.embed({"18 to 20": {None: 0.5, "cs": 0.1}})
+        self.assertEqual((await tool_router.select_tools(*ask("18 to 20"))).groups, [])
 
     async def test_follow_up_borrows_previous_topic(self):
         self.embed({
@@ -229,6 +244,9 @@ LIVE_CASES = [
     (("Is Vitality playing today?", "and tomorrow?"), ["cs"]),
     (("What do I have on today?", "what about Friday?"), ["calendar"]),
     (("Who won the last CS major?", "thanks!"), []),
+    # answers to something the model asked
+    (("Add this event to calendar", "18 to 20"), ["calendar"]),
+    (("Add the next Frieren episode to my calendar", "yes"), ["calendar"]),
 ]
 
 class LiveRoutingTest(unittest.IsolatedAsyncioTestCase):
@@ -236,15 +254,10 @@ class LiveRoutingTest(unittest.IsolatedAsyncioTestCase):
     the group examples or the thresholds."""
 
     async def asyncSetUp(self):
-        # Clients are bound to the event loop they were made on; each test gets a new one
-        ollama_client._clients.clear()
         tool_router._examples.clear()
-        self.addCleanup(ollama_client._clients.clear)
         self.addCleanup(tool_router._examples.clear)
-        try:
-            await tool_router._embed(["ping"])
-        except Exception as e:
-            self.skipTest(f"embedding model {config.embed_model} unreachable: {e}")
+        if not mlx_server.chat_is_ready():
+            self.skipTest("the chat server isn't running")
 
     async def scores(self, question: str) -> str:
         examples = await tool_router._example_vectors()

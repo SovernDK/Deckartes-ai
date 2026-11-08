@@ -11,10 +11,11 @@ from textual.widgets import Input, Markdown, Static, ListView, ListItem, Label
 from textual.containers import VerticalScroll, VerticalGroup, HorizontalGroup
 
 import loaded_file
+import mlx_client
+import mlx_server
 import tools
 from config import config
 from conversation import Compacted, Compacting, Conversation, Failed, Text, ToolsDone, ToolStarted
-from ollama_api import fetch_models, unload_models
 
 class Spinner(Static):
     """Text spinner made of slashes, shown while the model is answering."""
@@ -98,6 +99,20 @@ class Chat(VerticalGroup):
         self.query_one("#chat_in").border_title = "Input"
         self.update_usage()
         tools.confirm_handler = self.confirm
+        # After the refresh, so the spinner has mounted
+        self.call_after_refresh(self.start_server)
+
+    @work(exclusive=True, group="server")
+    async def start_server(self, restart: bool = False) -> None:
+        """Have the chat server ready, loading the model (and downloading it the first time)."""
+        self.set_busy(True)
+        self.query_one(Spinner).set_label("Starting model server...")
+        try:
+            await asyncio.to_thread(mlx_server.restart_chat if restart else mlx_server.ensure_chat)
+        except mlx_server.ModelServerError as e:
+            self.notify(str(e), title="Could not start the model server", severity="error")
+        finally:
+            self.set_busy(False)
 
     def on_unmount(self) -> None:
         tools.confirm_handler = None
@@ -133,7 +148,7 @@ class Chat(VerticalGroup):
 
     COMMANDS = {
         "clear": ("command_clear", "Clear the entire conversation"),
-        "kill": ("command_kill", "Release all Ollama models from memory"),
+        "kill": ("command_kill", "Stop the model servers to free their memory; the next question starts them again"),
         "unload": ("command_unload", "Stop sending the file loaded with the file explorer (e)"),
     }
 
@@ -199,13 +214,11 @@ class Chat(VerticalGroup):
 
     @work(exclusive=True, group="kill")
     async def command_kill(self) -> None:
-        unloaded, error = await unload_models()
-        if error:
-            self.notify(error, title="Could not unload models", severity="error")
-        elif unloaded:
-            self.notify(f"Released {', '.join(unloaded)}")
+        stopped = await asyncio.to_thread(mlx_server.stop_all)
+        if stopped:
+            self.notify(f"Stopped the {' and '.join(stopped)} server")
         else:
-            self.notify("No models were loaded")
+            self.notify("No model server started by this app is running")
 
     def set_busy(self, busy: bool) -> None:
         """Swap the input for the spinner while the model is answering."""
@@ -302,7 +315,7 @@ class ModelChangeMenu(VerticalGroup):
 
     @work(exclusive=True)
     async def load_models(self) -> None:
-        models = await fetch_models()
+        models = await asyncio.to_thread(mlx_client.list_models)
         names = models or ["No models found"]
         # Same width for every label so the highlight bar spans the whole menu
         width = max(len(name) for name in names)

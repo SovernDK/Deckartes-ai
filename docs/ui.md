@@ -12,7 +12,7 @@ async with app.run_test(size=(100, 30)) as pilot:
     app.save_screenshot("shot.svg")
 ```
 
-`Input` has to be focused before `pilot.press("enter")` or nothing is submitted. To fake model output, put a `FakeClient` (`tests/test_conversation.py`) in `ollama_client._clients[("async", config.host)]` and give `config.model` a name no earlier run used, since tool support is remembered per model. History is `app.query_one(Chat).conversation.history`.
+`Input` has to be focused before `pilot.press("enter")` or nothing is submitted. Mounting `Chat` starts the real model server, so patch `mlx_server.ensure_chat` first (`tests/test_model_server_ui.py`). To fake model output, patch `mlx_client.stream_chat` and `complete` with a `FakeClient`'s methods (`tests/test_conversation.py`). History is `app.query_one(Chat).conversation.history`.
 
 ## Chat flow (`chat.py`)
 
@@ -28,7 +28,7 @@ The config popup (`config_screen.py`, key `c`) edits `system_prompt`, `temperatu
 
 ## Token usage
 
-`Conversation.stream_reply` adds each chat call's `prompt_eval_count` / `eval_count` to the `Usage` in the turn's `TurnInfo`, summed over tool rounds, since each round re-sends the conversation. It also sums `eval_duration` for `tokens_per_second`, which is generation time only (no model loading or prompt evaluation); the usage line shows it as "tok/s". `TurnInfo` is one turn's tokens plus what it was sent with (tool groups, loaded file), and `TurnInfo.summary()` writes the usage line, so a change to the line belongs there and is tested without Textual. `Conversation` keeps `last_turn` and `total_usage` (tokens only), counting failed turns too because they still used tokens, and `/clear` resets both. After each reply `Chat.add_usage` mounts a `.usage` line, always. `t` toggles `config.show_token_usage`, which sets the `show-usage` class on `Chat` (CSS shows or hides every line at once) and adds the total to the Output border title (`Chat.update_usage`).
+`Conversation.stream_reply` adds each chat call's `TokenCount` to the `Usage` in the turn's `TurnInfo`, summed over tool rounds, since each round re-sends the conversation. It also sums `generation_ns` for `tokens_per_second`, which is generation time only (no model loading or prompt evaluation); the usage line shows it as "tok/s". `TurnInfo` is one turn's tokens plus what it was sent with (tool groups, loaded file), and `TurnInfo.summary()` writes the usage line, so a change to the line belongs there and is tested without Textual. `Conversation` keeps `last_turn` and `total_usage` (tokens only), counting failed turns too because they still used tokens, and `/clear` resets both. After each reply `Chat.add_usage` mounts a `.usage` line, always. `t` toggles `config.show_token_usage`, which sets the `show-usage` class on `Chat` (CSS shows or hides every line at once) and adds the total to the Output border title (`Chat.update_usage`).
 
 ## UI details
 

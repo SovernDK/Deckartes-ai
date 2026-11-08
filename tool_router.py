@@ -9,26 +9,29 @@ compares it with each group's example questions and with examples that need no t
 - otherwise the UNSURE_GROUPS best groups, since unknown names (a player, a show) score low.
 
 When no group is confident, or the question is a short follow-up ("and tomorrow?", which can
-still match calendar on its own), the previous question counts at PREVIOUS_WEIGHT, so it keeps its topic. Thresholds were tuned on all-minilm; another embedding model may need new ones.
+still match calendar on its own), the previous question counts at PREVIOUS_WEIGHT, so it keeps its topic. Thresholds were checked on all-MiniLM-L6-v2; another embedding model may need new ones.
 """
 
 from dataclasses import dataclass
 
+import mlx_client
 from config import config
-from ollama_client import get_async_client
 from prompts import allowed_tool_names
 from similarity import cosine
 from tools import TOOL_GROUPS, tools_for
 
 CONFIDENT = 0.45
-# "What anime airs tomorrow?" scores 0.95 for anime but also 0.46 for cs
-MARGIN = 0.2
+# "What anime airs tomorrow?" scores 0.95 for anime but also 0.46 for cs, and "Add Vitality's
+# next match to my calendar" 0.70 for cs and calendar but also 0.54 for anime
+MARGIN = 0.15
 MIN_SCORE = 0.2
 UNSURE_GROUPS = 2
 PREVIOUS_WEIGHT = 0.8
 # A question this short starting like this is a follow-up to the previous one
 FOLLOW_UP_WORDS = 4
 FOLLOW_UP_STARTS = ("and ", "what about ", "how about ")
+# Replies to something the model asked: they say nothing of the topic and read like small talk
+FOLLOW_UP_ANSWERS = {"yes", "yes please", "ok", "okay", "sure", "do it", "go ahead"}
 
 # Questions the model answers from its own knowledge
 NO_TOOL_EXAMPLES = [
@@ -43,8 +46,7 @@ NO_TOOL_EXAMPLES = [
 _examples: dict[tuple[str, str], dict[str, list[list[float]]]] = {}
 
 async def _embed(texts: list[str]) -> list[list[float]]:
-    response = await get_async_client().embed(model=config.embed_model, input=texts)
-    return response.embeddings
+    return await mlx_client.embed(texts)
 
 async def _example_vectors() -> dict[str, list[list[float]]]:
     key = (config.host, config.embed_model)
@@ -62,7 +64,11 @@ def _scores(vector: list[float], examples: dict) -> dict:
 
 def _is_follow_up(query: str) -> bool:
     text = query.strip().lower()
-    return text.startswith(FOLLOW_UP_STARTS) and len(text.split()) <= FOLLOW_UP_WORDS
+    if len(text.split()) > FOLLOW_UP_WORDS:
+        return False
+    # A short message with a number ("18 to 20") is the missing detail of the question before it
+    return text.startswith(FOLLOW_UP_STARTS) or text.rstrip("!. ") in FOLLOW_UP_ANSWERS \
+        or any(character.isdigit() for character in text)
 
 async def _route(query: str, previous: str | None, groups: list[str]) -> list[str]:
     """Names of the groups (among groups) to send for query; [] means no tools.
@@ -76,7 +82,7 @@ async def _route(query: str, previous: str | None, groups: list[str]) -> list[st
         return []
     best = max(scores.values())
     # Small talk ("thanks!") needs no tools, whatever the previous topic was
-    if best < CONFIDENT and no_tools > best:
+    if best < CONFIDENT and no_tools > best and not (previous and _is_follow_up(query)):
         return []
     # A vague question or a short follow-up borrows the previous question's topic
     if previous and (best < CONFIDENT or _is_follow_up(query)):

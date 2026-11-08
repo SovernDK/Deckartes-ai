@@ -18,8 +18,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+import mlx_client
 from config import config
-from ollama_client import get_client
 from similarity import cosine
 
 # Rough characters per token; Polish and code use more tokens per character than English prose
@@ -213,7 +213,7 @@ def _cache_file(path: Path) -> Path:
     return CACHE_DIR / f"{hashlib.sha256(key.encode()).hexdigest()[:32]}.json"
 
 def _embed(texts: list[str]) -> list[list[float]]:
-    return get_client().embed(model=config.rag_embed_model, input=texts).embeddings
+    return mlx_client.embed_file_text(texts)
 
 def _load(path: Path, on_progress: Callable[[int, int], None], cancel: threading.Event) -> LoadedFile:
     path = path.expanduser().resolve()

@@ -5,14 +5,12 @@ import re
 import threading
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace as NS
-from unittest import mock
 
-import ollama_client
+import mlx_client
 import loaded_file
 from config import config
 from conversation import Failed
-from test_conversation import DATE_LINE, TurnTest, chunk
+from test_conversation import DATE_LINE, TIME_LINE, TurnTest, chunk
 
 TOPICS = 40
 
@@ -26,11 +24,14 @@ class FakeEmbedder:
         self.calls = []
         self.error = None
 
-    def embed(self, model, input):
-        self.calls.append((model, list(input)))
+    def __call__(self, texts):
+        return self.embed(texts)
+
+    def embed(self, texts):
+        self.calls.append((config.rag_embed_model, list(texts)))
         if self.error:
             raise self.error
-        return NS(embeddings=[vector(text) for text in input])
+        return [vector(text) for text in texts]
 
 def paragraph(i: int) -> str:
     """About 1,000 characters, so each paragraph ends up as a chunk of its own."""
@@ -74,9 +75,7 @@ class FileTest(TurnTest):
         self.patch(loaded_file, "CACHE_DIR", self.folder / "cache")
         self.patch(config, "context_length", 1000)
         self.embedder = FakeEmbedder()
-        patcher = mock.patch.dict(ollama_client._clients, {("sync", config.host): self.embedder})
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        self.patch(mlx_client, "embed_file_text", self.embedder)
 
     def write(self, content, name="notes.txt") -> Path:
         path = self.folder / name
@@ -109,8 +108,8 @@ class ShortFileTest(FileTest):
         await self.reply("two")
         system = (f"{DATE_LINE}\n\nThe user loaded the file \"notes.txt\". Its full text is below. Answer questions "
                   "about the file from this text.\n\n<file name=\"notes.txt\">\nSome notes.\nMore notes.\n</file>")
-        self.assertEqual(self.sent_contents(client, 0), [system, "one"])
-        self.assertEqual(self.sent_contents(client, 1), [system, "one", "a", "two"])
+        self.assertEqual(self.sent_contents(client, 0), [system, TIME_LINE, "one"])
+        self.assertEqual(self.sent_contents(client, 1), [system, TIME_LINE, "one", "a", TIME_LINE, "two"])
         self.assertEqual(self.conversation.last_turn.file_context, "whole")
         self.assertEqual(self.embedder.calls, [])
 
@@ -144,10 +143,10 @@ class ExcerptsTest(FileTest):
         client = self.use([chunk("ok", done=True)], [chunk("ok", done=True)])
         await self.reply("q")
         prompt = excerpts_prompt("notes.txt", "[lines 1-3]\nFirst part.\n\nSecond part.")
-        self.assertEqual(self.sent_contents(client), [DATE_LINE, prompt, "q"])
+        self.assertEqual(self.sent_contents(client), [DATE_LINE, prompt, TIME_LINE, "q"])
         self.assertEqual(self.conversation.last_turn.file_context, "1 excerpts")
         await self.reply("next")
-        self.assertEqual(self.sent_contents(client, 1), [DATE_LINE, "q", "ok", prompt, "next"])
+        self.assertEqual(self.sent_contents(client, 1), [DATE_LINE, TIME_LINE, "q", "ok", prompt, TIME_LINE, "next"])
 
     async def test_best_chunks_in_file_order(self):
         sent = await self.excerpts(self.long_text(), "tell me about topic3")
@@ -161,7 +160,7 @@ class ExcerptsTest(FileTest):
         client = self.use([chunk("a", done=True)], [chunk("b", done=True)])
         await self.reply("topic0")
         await self.reply("topic3")
-        sent = client.sent[1]["messages"][3]["content"]
+        sent = client.sent[1]["messages"][4]["content"]
         self.assertEqual(re.findall(r"^\[line (\d+)\]", sent, re.M), ["1", "7", "11", "13", "15"])
 
     async def test_chunk_starts_with_the_end_of_the_one_before(self):
@@ -225,11 +224,11 @@ class EmbeddingTest(FileTest):
 
     async def test_cancelling_stops_at_the_next_batch(self):
         started, release = threading.Event(), threading.Event()
-        def embed(model, input):
+        def embed(texts):
             started.set()
             release.wait(5)
-            self.embedder.calls.append((model, list(input)))
-            return NS(embeddings=[vector(text) for text in input])
+            self.embedder.calls.append((config.rag_embed_model, list(texts)))
+            return [vector(text) for text in texts]
         self.embedder.embed = embed
         task = asyncio.create_task(self.load(self.write(self.long_text(20))))
         await asyncio.to_thread(started.wait, 5)

@@ -240,17 +240,10 @@ class Chat(VerticalGroup):
 
     async def add_usage(self, after) -> None:
         """Show the latest turn's token count under its reply (hidden by CSS while usage is off)."""
-        usage = self.conversation.last_usage
-        if usage.total:
-            text = f"{usage.input:,} in · {usage.output:,} out · {usage.total:,} tokens"
-            if usage.tokens_per_second is not None:
-                text += f" · {usage.tokens_per_second:.1f} tok/s"
-            if usage.tool_groups is not None:
-                text += f" · tools: {', '.join(usage.tool_groups) or 'none'}"
-            if usage.file_context:
-                text += f" · file: {usage.file_context}"
+        summary = self.conversation.last_turn.summary()
+        if summary:
             await self.query_one("#response", VerticalScroll).mount(
-                Static(text, markup=False, classes="usage"),
+                Static(summary, markup=False, classes="usage"),
                 after=after,
             )
         self.update_usage()

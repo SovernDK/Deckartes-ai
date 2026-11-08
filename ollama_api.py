@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import ollama
 
@@ -55,10 +55,6 @@ class Usage:
     output: int = 0
     # Nanoseconds spent generating the output tokens, without model loading or prompt evaluation
     output_ns: int = 0
-    # Tool groups the router sent with the question; None when it didn't run
-    tool_groups: list[str] | None = None
-    # What was sent from the loaded file: "whole" or "5 excerpts"; None without a file
-    file_context: str | None = None
 
     def count(self, response) -> None:
         """Add a finished chat response's token counts."""
@@ -79,6 +75,29 @@ class Usage:
     @property
     def total(self) -> int:
         return self.input + self.output
+
+@dataclass
+class TurnInfo:
+    """What one turn used and what it was sent with, for the usage line under its reply."""
+    usage: Usage = field(default_factory=Usage)
+    # Tool groups the router sent with the question; None when it didn't run
+    tool_groups: list[str] | None = None
+    # What was sent from the loaded file: "whole" or "5 excerpts"; None without a file
+    file_context: str | None = None
+
+    def summary(self) -> str | None:
+        """The usage line; None when the turn never reached the model."""
+        usage = self.usage
+        if not usage.total:
+            return None
+        text = f"{usage.input:,} in · {usage.output:,} out · {usage.total:,} tokens"
+        if usage.tokens_per_second is not None:
+            text += f" · {usage.tokens_per_second:.1f} tok/s"
+        if self.tool_groups is not None:
+            text += f" · tools: {', '.join(self.tool_groups) or 'none'}"
+        if self.file_context:
+            text += f" · file: {self.file_context}"
+        return text
 
 _tool_support = {}
 
@@ -103,17 +122,17 @@ def add_tool_results(messages, content, tool_calls, results) -> None:
     for call, result in zip(tool_calls, results):
         messages.append({"role": "tool", "tool_name": call.function.name, "content": result})
 
-async def stream_response(messages, usage: Usage | None = None) -> AsyncIterator[Event]:
+async def stream_response(messages, turn: TurnInfo | None = None) -> AsyncIterator[Event]:
     """Yield the reply as events, running any tools the model calls. Never raises: a failure
-    is yielded as Failed, last. Tokens used are added to usage as each model call finishes."""
+    is yielded as Failed, last. Tokens used are added to turn as each model call finishes."""
     messages = list(messages)
+    turn = turn or TurnInfo()
     try:
         tools = None
         if await supports_tools():
             selection = await select_tools(messages)
             tools = selection.tools
-            if usage is not None:
-                usage.tool_groups = selection.groups
+            turn.tool_groups = selection.groups
         for _ in range(MAX_TOOL_ROUNDS):
             stream = await get_async_client().chat(
                 model=config.model,
@@ -130,8 +149,8 @@ async def stream_response(messages, usage: Usage | None = None) -> AsyncIterator
                     yield Text(chunk.message.content)
                 if chunk.message.tool_calls:
                     tool_calls.extend(chunk.message.tool_calls)
-                if chunk.done and usage is not None:
-                    usage.count(chunk)
+                if chunk.done:
+                    turn.usage.count(chunk)
 
             if not tool_calls:
                 return

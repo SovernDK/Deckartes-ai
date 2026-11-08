@@ -13,7 +13,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 
-from ollama_api import Event, Failed, Text, Usage, stream_response
+from ollama_api import Event, Failed, Text, TurnInfo, Usage, stream_response
 from prompts import system_message
 import rag
 
@@ -21,14 +21,14 @@ class Conversation:
     def __init__(self) -> None:
         # Finished exchanges in the Ollama messages format
         self.history: list[dict] = []
-        # Tokens of the latest turn and of the whole conversation
-        self.last_usage = Usage()
+        self.last_turn = TurnInfo()
+        # Tokens of the whole conversation
         self.total_usage = Usage()
         self.document: rag.Document | None = None
 
     def clear(self) -> None:
         self.history.clear()
-        self.last_usage = Usage()
+        self.last_turn = TurnInfo()
         self.total_usage = Usage()
         self.document = None
 
@@ -43,17 +43,17 @@ class Conversation:
         before = [{"role": "system", "content": excerpts}] if excerpts else []
         return [*messages, *self.history, *before, {"role": "user", "content": query}]
 
-    async def file_excerpts(self, query: str, usage: Usage) -> str | None:
+    async def file_excerpts(self, query: str, turn: TurnInfo) -> str | None:
         """Excerpts of a long loaded file for this question; None without one or for a short file."""
         document = self.document
         if document is None:
             return None
         if document.whole:
-            usage.file_context = "whole"
+            turn.file_context = "whole"
             return None
         questions = [m["content"] for m in self.history if m["role"] == "user"]
         chunks = await asyncio.to_thread(rag.search, document, query, questions[-1] if questions else None)
-        usage.file_context = f"{len(chunks)} excerpts"
+        turn.file_context = f"{len(chunks)} excerpts"
         return rag.excerpts_prompt(document, chunks)
 
     def remember(self, query: str, reply: str) -> None:
@@ -63,9 +63,9 @@ class Conversation:
 
     async def stream_reply(self, query: str) -> AsyncIterator[Event]:
         """Yield the turn's events (see ollama_api). A Failed comes last and the turn isn't saved."""
-        self.last_usage = usage = Usage()
+        self.last_turn = turn = TurnInfo()
         try:
-            excerpts = await self.file_excerpts(query, usage)
+            excerpts = await self.file_excerpts(query, turn)
         except Exception as e:
             yield Failed(f"could not search the loaded file: {e}")
             return
@@ -78,7 +78,7 @@ class Conversation:
         reply = ""
         try:
             # aclosing: closing this generator also closes the model stream right away
-            async with aclosing(stream_response(messages, usage)) as events:
+            async with aclosing(stream_response(messages, turn)) as events:
                 async for event in events:
                     yield event
                     if isinstance(event, Failed):
@@ -86,5 +86,5 @@ class Conversation:
                     if isinstance(event, Text):
                         reply += event.text
         finally:
-            self.total_usage.add(usage)
+            self.total_usage.add(turn.usage)
         self.remember(query, reply)

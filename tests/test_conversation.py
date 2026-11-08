@@ -6,13 +6,13 @@ from unittest import mock
 
 import conversation
 from conversation import Conversation
-from ollama_api import Failed, Text, ToolsDone, ToolStarted
+from ollama_api import Failed, Text, ToolsDone, ToolStarted, TurnInfo, Usage
 
 def fake_stream(*events, tokens=7):
     """A stream_response that counts tokens and yields events."""
-    async def stream_response(messages, usage=None):
-        if usage is not None:
-            usage.input += tokens
+    async def stream_response(messages, turn=None):
+        if turn is not None:
+            turn.usage.input += tokens
         for event in events:
             yield event
     return stream_response
@@ -40,7 +40,7 @@ class StreamReplyTest(unittest.IsolatedAsyncioTestCase):
             {"role": "user", "content": "When does NAVI play?"},
             {"role": "assistant", "content": "Let me check.\n\nDone."},
         ])
-        self.assertEqual(self.conversation.last_usage.input, 7)
+        self.assertEqual(self.conversation.last_turn.usage.input, 7)
 
     async def test_failed_turn_is_not_saved_but_counted(self):
         self.stream(Text("partial"), Failed("connection lost"))
@@ -70,7 +70,7 @@ class StreamReplyTest(unittest.IsolatedAsyncioTestCase):
         self.stream(Text("first"))
         await self.reply("one")
         sent = []
-        async def stream_response(messages, usage=None):
+        async def stream_response(messages, turn=None):
             sent.extend(messages)
             yield Text("second")
         with mock.patch.object(conversation, "stream_response", stream_response):
@@ -88,6 +88,58 @@ class StreamReplyTest(unittest.IsolatedAsyncioTestCase):
         self.conversation.document = mock.Mock(whole=False)
         with mock.patch.object(conversation.rag, "search", side_effect=OSError("cache gone")):
             self.assertEqual(await self.reply(), [Failed("could not search the loaded file: cache gone")])
+
+    async def test_each_turn_has_its_own_info_and_tokens_add_up(self):
+        self.stream(Text("ok"))
+        await self.reply()
+        first = self.conversation.last_turn
+        await self.reply()
+        self.assertIsNot(self.conversation.last_turn, first)
+        self.assertEqual(self.conversation.total_usage.total, 14)
+
+    async def test_clear_forgets_the_turn_and_the_total(self):
+        self.stream(Text("ok"))
+        await self.reply()
+        self.conversation.clear()
+        self.assertIsNone(self.conversation.last_turn.summary())
+        self.assertEqual(self.conversation.total_usage.total, 0)
+
+    async def test_excerpts_are_noted_on_the_turn(self):
+        self.stream(Text("ok"))
+        self.conversation.document = mock.Mock(whole=False)
+        with mock.patch.object(conversation.rag, "search", return_value=["a", "b"]), \
+             mock.patch.object(conversation.rag, "excerpts_prompt", return_value="excerpts"):
+            await self.reply()
+        self.assertEqual(self.conversation.last_turn.file_context, "2 excerpts")
+
+    async def test_whole_file_is_noted_on_the_turn(self):
+        self.stream(Text("ok"))
+        self.conversation.document = mock.Mock(whole=True)
+        with mock.patch.object(conversation.rag, "whole_file_prompt", return_value="file"):
+            await self.reply()
+        self.assertEqual(self.conversation.last_turn.file_context, "whole")
+
+class SummaryTest(unittest.TestCase):
+    def test_nothing_sent_to_the_model(self):
+        self.assertIsNone(TurnInfo().summary())
+
+    def test_tokens_only(self):
+        self.assertEqual(TurnInfo(Usage(input=1200, output=34)).summary(), "1,200 in · 34 out · 1,234 tokens")
+
+    def test_generation_speed(self):
+        self.assertEqual(TurnInfo(Usage(input=1, output=5, output_ns=2_000_000_000)).summary(),
+                         "1 in · 5 out · 6 tokens · 2.5 tok/s")
+
+    def test_tool_groups(self):
+        self.assertEqual(TurnInfo(Usage(input=1), tool_groups=["cs", "anime"]).summary(),
+                         "1 in · 0 out · 1 tokens · tools: cs, anime")
+
+    def test_router_chose_no_tools(self):
+        self.assertEqual(TurnInfo(Usage(input=1), tool_groups=[]).summary(), "1 in · 0 out · 1 tokens · tools: none")
+
+    def test_loaded_file(self):
+        self.assertEqual(TurnInfo(Usage(input=1), file_context="5 excerpts").summary(),
+                         "1 in · 0 out · 1 tokens · file: 5 excerpts")
 
 if __name__ == "__main__":
     unittest.main()

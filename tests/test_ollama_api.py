@@ -5,7 +5,7 @@ from types import SimpleNamespace as NS
 from unittest import mock
 
 import ollama_api
-from ollama_api import Failed, Text, ToolsDone, ToolStarted, Usage
+from ollama_api import Failed, Text, ToolsDone, ToolStarted, TurnInfo
 from tool_router import Selection
 
 def chunk(content="", tool_calls=None, done=False):
@@ -45,15 +45,15 @@ class StreamResponseTest(unittest.IsolatedAsyncioTestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    async def events(self, usage=None):
+    async def events(self, turn=None):
         messages = [{"role": "user", "content": "q"}]
-        return [event async for event in ollama_api.stream_response(messages, usage)]
+        return [event async for event in ollama_api.stream_response(messages, turn)]
 
     async def test_text_chunks(self):
         self.use(FakeClient([chunk("Hel"), chunk("lo", done=True)]))
-        usage = Usage()
-        self.assertEqual(await self.events(usage), [Text("Hel"), Text("lo")])
-        self.assertEqual((usage.input, usage.output), (10, 5))
+        turn = TurnInfo()
+        self.assertEqual(await self.events(turn), [Text("Hel"), Text("lo")])
+        self.assertEqual((turn.usage.input, turn.usage.output), (10, 5))
 
     async def test_tool_round(self):
         client = FakeClient(
@@ -61,15 +61,15 @@ class StreamResponseTest(unittest.IsolatedAsyncioTestCase):
             [chunk("NAVI is ranked 3rd.", done=True)],
         )
         self.use(client)
-        usage = Usage()
-        self.assertEqual(await self.events(usage), [
+        turn = TurnInfo()
+        self.assertEqual(await self.events(turn), [
             Text("Let me check."), Text("\n\n"), ToolStarted("get_cs_team"), ToolsDone(),
             Text("NAVI is ranked 3rd."),
         ])
         ollama_api.run_tool.assert_awaited_once_with("get_cs_team", {"name": "NAVI"})
         self.assertEqual(client.sent[1]["messages"][-1],
                          {"role": "tool", "tool_name": "get_cs_team", "content": "tool result"})
-        self.assertEqual(usage.input, 20)
+        self.assertEqual(turn.usage.input, 20)
 
     async def test_tool_round_without_text_has_no_break(self):
         self.use(FakeClient([chunk(tool_calls=[call("a"), call("b")], done=True)], [chunk("ok", done=True)]))
@@ -79,10 +79,10 @@ class StreamResponseTest(unittest.IsolatedAsyncioTestCase):
     async def test_selected_tools_are_sent(self):
         client = FakeClient([chunk("ok", done=True)])
         self.use(client, Selection(["T"], ["cs"]))
-        usage = Usage()
-        await self.events(usage)
+        turn = TurnInfo()
+        await self.events(turn)
         self.assertEqual(client.sent[0]["tools"], ["T"])
-        self.assertEqual(usage.tool_groups, ["cs"])
+        self.assertEqual(turn.tool_groups, ["cs"])
 
     async def test_failure_is_the_last_event(self):
         self.use(FakeClient([chunk("partial"), ConnectionError("connection lost")]))

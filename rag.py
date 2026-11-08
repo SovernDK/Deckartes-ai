@@ -21,7 +21,7 @@ from pathlib import Path
 
 from config import config
 from ollama_client import get_client
-from tool_router import cosine
+from similarity import cosine
 
 # Rough characters per token; Polish and code use more tokens per character than English prose
 CHARS_PER_TOKEN = 3.5

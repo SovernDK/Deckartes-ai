@@ -12,12 +12,12 @@ When no group is confident, or the question is a short follow-up ("and tomorrow?
 still match calendar on its own), the previous question counts at PREVIOUS_WEIGHT, so it keeps its topic. Thresholds were tuned on all-minilm; another embedding model may need new ones.
 """
 
-import math
 from dataclasses import dataclass
 
 from config import config
 from ollama_client import get_async_client
 from prompts import allowed_tool_names
+from similarity import cosine
 from tools import TOOL_GROUPS, tools_for
 
 CONFIDENT = 0.45
@@ -55,10 +55,6 @@ async def _example_vectors() -> dict[str, list[list[float]]]:
         vectors = iter(await _embed(texts))
         _examples[key] = {name: [next(vectors) for _ in examples] for name, examples in groups.items()}
     return _examples[key]
-
-def cosine(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    return dot / math.sqrt(sum(x * x for x in a) * sum(y * y for y in b))
 
 def _scores(vector: list[float], examples: dict) -> dict:
     """Best similarity to each group's examples (None = the no-tools examples)."""

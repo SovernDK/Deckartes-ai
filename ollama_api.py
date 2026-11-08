@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import aclosing
 from dataclasses import dataclass, field
 
 from config import config
@@ -128,14 +129,16 @@ async def stream_response(messages, turn: TurnInfo | None = None) -> AsyncIterat
             )
             content = ""
             tool_calls = []
-            async for chunk in stream:
-                if chunk.message.content:
-                    content += chunk.message.content
-                    yield Text(chunk.message.content)
-                if chunk.message.tool_calls:
-                    tool_calls.extend(chunk.message.tool_calls)
-                if chunk.done:
-                    turn.usage.count(chunk)
+            # aclosing: a closed turn stops Ollama's request at once, not when Python gets to it
+            async with aclosing(stream):
+                async for chunk in stream:
+                    if chunk.message.content:
+                        content += chunk.message.content
+                        yield Text(chunk.message.content)
+                    if chunk.message.tool_calls:
+                        tool_calls.extend(chunk.message.tool_calls)
+                    if chunk.done:
+                        turn.usage.count(chunk)
 
             if not tool_calls:
                 return

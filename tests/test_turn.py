@@ -37,6 +37,7 @@ class FakeClient:
         self.capabilities = capabilities
         self.sent = []
         self.shown = 0
+        self.closed = 0
 
     async def show(self, model):
         self.shown += 1
@@ -48,10 +49,13 @@ class FakeClient:
             raise ConnectionError("no more rounds")
         chunks = self.rounds.pop(0)
         async def stream():
-            for c in chunks:
-                if isinstance(c, Exception):
-                    raise c
-                yield c
+            try:
+                for c in chunks:
+                    if isinstance(c, Exception):
+                        raise c
+                    yield c
+            finally:
+                self.closed += 1
         return stream()
 
 class TurnTest(unittest.IsolatedAsyncioTestCase):
@@ -243,6 +247,13 @@ class FailedTurnTest(TurnTest):
                     break
         self.assertEqual(self.conversation.history, [])
         self.assertEqual(self.conversation.total_usage.input, 10)
+
+    async def test_closing_a_turn_closes_the_model_stream_at_once(self):
+        client = self.use([chunk("one"), chunk("two")])
+        async with aclosing(self.conversation.stream_reply("q")) as events:
+            async for event in events:
+                break
+        self.assertEqual(client.closed, 1)
 
 class LoadedFileTest(TurnTest):
     async def test_excerpts_go_just_before_the_question(self):

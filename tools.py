@@ -17,10 +17,6 @@ import disk_scan
 import glances_api as glances
 import web_search as web
 
-# Caps on web text handed to the model, so results can't fill its context window
-MAX_PAGE_CHARS = 8000
-MAX_SNIPPET_CHARS = 1500
-
 # Set by the UI: an async function (question) -> bool that asks the user before a tool changes
 # something outside the app, like adding a calendar event. Without a UI (None) changes go through.
 confirm_handler = None
@@ -203,12 +199,7 @@ async def search_web(query: str) -> list:
     Args:
         query: What to search for, e.g. "textual python latest version"
     """
-    results = await web.web_search(query, max_results=5)
-    for result in results:
-        content = result.get("content") or ""
-        if len(content) > MAX_SNIPPET_CHARS:
-            result["content"] = content[:MAX_SNIPPET_CHARS] + " [...]"
-    return results
+    return await web.web_search(query)
 
 @tool("web")
 async def fetch_web_page(url: str) -> dict:
@@ -218,12 +209,7 @@ async def fetch_web_page(url: str) -> dict:
     Args:
         url: Full address of the page, starting with http:// or https://
     """
-    page = await web.web_fetch(url)
-    content = page.get("content") or ""
-    if len(content) > MAX_PAGE_CHARS:
-        page["content"] = content[:MAX_PAGE_CHARS] + "\n[...page truncated]"
-    page["links"] = (page.get("links") or [])[:20]
-    return page
+    return await web.web_fetch(url)
 
 @tool("anime")
 async def get_current_season() -> str:

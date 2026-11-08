@@ -157,7 +157,14 @@ class BackendTest(HttpTest):
             results = await tools.search_web("textual")
         self.assertEqual(json.loads(server.requests[0].content), {"query": "textual", "max_results": 5})
         self.assertEqual(server.requests[0].headers["authorization"], "Bearer key")
-        self.assertEqual(results[0]["content"], "y" * tools.MAX_SNIPPET_CHARS + " [...]")
+        self.assertEqual(results[0]["content"], "y" * 1500 + " [...]")
+
+    async def test_fetch_web_page_caps_text_and_links(self):
+        links = [f"https://example.com/{i}" for i in range(30)]
+        self.serve({"/api/web_fetch": {"title": "Long", "content": "y" * 9000, "links": links}})
+        with mock.patch.object(config, "ollama_api_key", "key"):
+            page = await tools.fetch_web_page("https://example.com")
+        self.assertEqual(page, {"title": "Long", "content": "y" * 8000 + "\n[...page truncated]", "links": links[:20]})
 
     async def test_web_search_without_key(self):
         with mock.patch.object(config, "ollama_api_key", ""):

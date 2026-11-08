@@ -32,6 +32,10 @@ class Config:
     model: str = "granite4.1:3b"
     # One of CONTEXT_LENGTHS
     context_length: int = 16384
+    # Summarise the conversation into one message once a turn's prompt plus reply reaches this
+    # share of context_length (0.6 = 60%), so it stays clear of the window's limit and the
+    # model's quality drop near it. None = never compact.
+    compact_at: float | None = 0.6
     # None = the model's own default
     temperature: float | None = None
     # Send only the tool groups a question needs, picked by a small embedding model (tool_router.py)

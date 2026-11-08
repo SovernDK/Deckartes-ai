@@ -32,7 +32,7 @@ Flat modules, no package. `main.py` → `app.py` (`DecartesApp`: bindings, model
 
 **Tool loop.** `stream_reply` sends the tools `tool_router.select_tools` picks (only if the model's Ollama capabilities include `tools`; checked once per host+model), run any tool calls, append assistant + `role: tool` messages to a local copy of `messages`, and repeat up to `MAX_TOOL_ROUNDS`. Text before a tool round is followed by `Text("\n\n")`, so rounds are separate paragraphs in the saved reply.
 
-**Conversation (`conversation.py`).** `Conversation.history` holds only finished user/assistant text; tool calls and results aren't kept between turns. `stream_reply` yields the turn's events and saves the turn only after a clean finish, so a failed, cancelled or closed turn never reaches the history. There is no non-streaming path: a turn always runs as the `fetch_stream` worker on the app's loop. Model-calling logic goes here, not in widgets.
+**Conversation (`conversation.py`).** `Conversation.history` holds only finished user/assistant text; tool calls and results aren't kept between turns. `stream_reply` yields the turn's events and saves the turn only after a clean finish, so a failed, cancelled or closed turn never reaches the history. There is no non-streaming path: a turn always runs as the `fetch_stream` worker on the app's loop. **Compaction:** when a finished turn's context (last prompt + reply tokens) reaches `config.compact_at` (share of `context_length`, `None` = off), the next turn first yields `Compacting`, replaces the whole history with the model's summary (one `system` message) and yields `Compacted`; a failed summary is a `Failed` and keeps the history. Model-calling logic goes here, not in widgets.
 
 ## Reference docs
 

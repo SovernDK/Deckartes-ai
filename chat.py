@@ -13,7 +13,7 @@ from textual.containers import VerticalScroll, VerticalGroup, HorizontalGroup
 import loaded_file
 import tools
 from config import config
-from conversation import Conversation, Failed, Text, ToolsDone, ToolStarted
+from conversation import Compacted, Compacting, Conversation, Failed, Text, ToolsDone, ToolStarted
 from ollama_api import fetch_models, unload_models
 
 class Spinner(Static):
@@ -272,6 +272,10 @@ class Chat(VerticalGroup):
                         spinner.show_tool(event.name)
                     elif isinstance(event, ToolsDone):
                         spinner.show_tool(None)
+                    elif isinstance(event, Compacting):
+                        spinner.set_label("Compacting conversation...")
+                    elif isinstance(event, Compacted):
+                        spinner.set_label(None)
                     elif isinstance(event, Failed):
                         # An error ends the reply as its own paragraph
                         error = f"**Error:** {event.message}"

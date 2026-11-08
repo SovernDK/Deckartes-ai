@@ -10,7 +10,7 @@ import ollama_client
 import prompts
 import tool_router
 from config import config
-from conversation import MAX_TOOL_ROUNDS, Conversation, Failed, Text, ToolsDone, ToolStarted, TurnInfo, Usage
+from conversation import MAX_TOOL_ROUNDS, Compacted, Compacting, Conversation, Failed, Text, ToolsDone, ToolStarted, TurnInfo, Usage
 from frozen_clock import freeze
 from test_tool_router import FakeEmbeddings, group_tools, names
 
@@ -46,6 +46,12 @@ class FakeClient:
         if not self.rounds:
             raise ConnectionError("no more rounds")
         chunks = self.rounds.pop(0)
+        if not kwargs.get("stream"):
+            # A call without streaming gets the round's chunks as one response
+            if isinstance(chunks[0], Exception):
+                raise chunks[0]
+            return NS(message=NS(content="".join(c.message.content for c in chunks), tool_calls=None),
+                      prompt_eval_count=10, eval_count=5, eval_duration=10**9)
         async def stream():
             try:
                 for c in chunks:
@@ -61,6 +67,8 @@ class TurnTest(unittest.IsolatedAsyncioTestCase):
         freeze(self, "2026-11-11 12:00")
         self.patch(config, "system_prompt", "No such preset")
         self.patch(config, "tool_routing", False)
+        # Tests with a tiny context window would otherwise compact on every turn
+        self.patch(config, "compact_at", None)
         # Whether a model supports tools is remembered per model, so each test has its own
         self.patch(config, "model", f"model-{next(_models)}")
         self.conversation = Conversation()
@@ -139,6 +147,49 @@ class FinishedTurnTest(TurnTest):
         self.assertEqual(self.conversation.total_usage.total, 0)
         self.assertEqual(self.conversation.history, [])
         self.assertIsNone(self.conversation.file)
+
+class CompactTest(TurnTest):
+    def setUp(self):
+        super().setUp()
+        self.patch(config, "context_length", 1000)
+        self.patch(config, "compact_at", 0.01)  # a finished turn (15 tokens) is over it
+
+    async def test_big_context_is_summarised_before_the_next_question(self):
+        client = self.use([chunk("first", done=True)], [chunk("the gist")], [chunk("second", done=True)])
+        await self.reply("one")
+        self.assertEqual(await self.reply("two"), [Compacting(), Compacted(), Text("second")])
+        summary = "Summary of the conversation so far:\nthe gist"
+        self.assertEqual(self.sent_contents(client, 2), [DATE_LINE, summary, "two"])
+        self.assertEqual(client.sent[1]["messages"][1]["content"], "user: one\n\nassistant: first")
+        self.assertEqual(self.conversation.history, [{"role": "system", "content": summary},
+                                                     {"role": "user", "content": "two"},
+                                                     {"role": "assistant", "content": "second"}])
+
+    async def test_small_context_is_left_alone(self):
+        self.patch(config, "compact_at", 0.5)
+        client = self.use([chunk("first", done=True)], [chunk("second", done=True)])
+        await self.reply("one")
+        self.assertEqual(await self.reply("two"), [Text("second")])
+        self.assertEqual(self.sent_contents(client, 1), [DATE_LINE, "one", "first", "two"])
+
+    async def test_none_never_compacts(self):
+        self.patch(config, "compact_at", None)
+        self.use([chunk("first", done=True)], [chunk("second", done=True)])
+        await self.reply("one")
+        self.assertEqual(await self.reply("two"), [Text("second")])
+
+    async def test_failed_summary_fails_the_turn_and_keeps_the_history(self):
+        self.use([chunk("first", done=True)], [ConnectionError("down")])
+        await self.reply("one")
+        events = await self.reply("two")
+        self.assertEqual(events, [Compacting(), Failed("could not compact the conversation: down")])
+        self.assertEqual([m["content"] for m in self.conversation.history], ["one", "first"])
+
+    async def test_clear_forgets_the_context_size(self):
+        self.use([chunk("first", done=True)])
+        await self.reply("one")
+        self.conversation.clear()
+        self.assertFalse(self.conversation.needs_compacting())
 
 class ToolRoundTest(TurnTest):
     async def test_tool_result_goes_back_to_the_model(self):

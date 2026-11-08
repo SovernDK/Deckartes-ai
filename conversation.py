@@ -8,6 +8,10 @@ A turn is added to the history only when the model finishes it without error. A 
 that fails or is interrupted (its stream closed or task cancelled) leaves the history as it was.
 Tokens are counted for every turn, including failed ones, since the model still used them.
 
+When the last turn's context reached config.compact_at of the context window, the next turn
+first replaces the whole history with the model's summary of it (one system message), so a long
+conversation keeps fitting. A failed summary fails that turn and leaves the history as it was.
+
 A loaded file (loaded_file.py) goes into every turn: a short file whole, at the end of the system message,
 where it stays the same each turn so Ollama can reuse its cache; a long one as excerpts picked
 for the question, just before it. Neither is saved in the history.
@@ -40,11 +44,19 @@ class ToolsDone:
     """The tools of one round have run; the model is answering again."""
 
 @dataclass
+class Compacting:
+    """The history is being summarised before the question is answered."""
+
+@dataclass
+class Compacted:
+    """The history is now a summary; the question is being answered."""
+
+@dataclass
 class Failed:
     """The turn failed; always the last event. The reply so far isn't saved."""
     message: str
 
-Event = Text | ToolStarted | ToolsDone | Failed
+Event = Text | ToolStarted | ToolsDone | Compacting | Compacted | Failed
 
 # Stop a model that keeps calling tools instead of answering
 MAX_TOOL_ROUNDS = 10
@@ -101,6 +113,13 @@ class TurnInfo:
             text += f" · file: {self.file_context}"
         return text
 
+SUMMARY_PROMPT = (
+    "Summarise the conversation below so it can replace it as your only memory of it. "
+    "Keep what the user wants, facts and numbers they gave, decisions made, results found "
+    "(including tool results) and anything still open. Drop greetings and wording. "
+    "Write plain text, as short as the content allows."
+)
+
 _tool_support = {}
 
 async def _supports_tools() -> bool:
@@ -132,9 +151,12 @@ class Conversation:
         # Tokens of the whole conversation
         self.total_usage = Usage()
         self.file: LoadedFile | None = None
+        # Size of the context of the last finished turn: its final prompt plus reply, in tokens
+        self.context_tokens = 0
 
     def clear(self) -> None:
         self.history.clear()
+        self.context_tokens = 0
         self.last_turn = TurnInfo()
         self.total_usage = Usage()
         self.file = None
@@ -155,9 +177,39 @@ class Conversation:
             self.history.append({"role": "user", "content": query})
             self.history.append({"role": "assistant", "content": reply})
 
+    def needs_compacting(self) -> bool:
+        """Whether the last turn's context reached config.compact_at of the window."""
+        return bool(self.history and config.compact_at
+                    and self.context_tokens >= config.compact_at * config.context_length)
+
+    async def _compact(self, usage: Usage) -> None:
+        """Replace the history with the model's summary of it."""
+        transcript = "\n\n".join(f"{m['role']}: {m['content']}" for m in self.history)
+        response = await get_async_client().chat(
+            model=config.model,
+            messages=[{"role": "system", "content": SUMMARY_PROMPT},
+                      {"role": "user", "content": transcript}],
+            options=_model_options(),
+        )
+        usage.count(response)
+        summary = (response.message.content or "").strip()
+        if not summary:
+            raise ValueError("the model returned an empty summary")
+        self.history = [{"role": "system", "content": f"Summary of the conversation so far:\n{summary}"}]
+        self.context_tokens = 0
+
     async def stream_reply(self, query: str) -> AsyncIterator[Event]:
         """Run one turn, yielding its events. A Failed comes last and the turn isn't saved."""
         self.last_turn = turn = TurnInfo()
+        if self.needs_compacting():
+            yield Compacting()
+            try:
+                await self._compact(turn.usage)
+            except Exception as e:
+                self.total_usage.add(turn.usage)
+                yield Failed(f"could not compact the conversation: {e}")
+                return
+            yield Compacted()
         questions = [m["content"] for m in self.history if m["role"] == "user"]
         previous = questions[-1] if questions else None
         try:
@@ -189,6 +241,7 @@ class Conversation:
                 )
                 content = ""
                 tool_calls = []
+                context = 0
                 # aclosing: a closed turn stops Ollama's request at once, not when Python gets to it
                 async with aclosing(stream):
                     async for chunk in stream:
@@ -200,9 +253,12 @@ class Conversation:
                             tool_calls.extend(chunk.message.tool_calls)
                         if chunk.done:
                             turn.usage.count(chunk)
+                            context = (chunk.prompt_eval_count or 0) + (chunk.eval_count or 0)
 
                 if not tool_calls:
                     self._remember(query, reply)
+                    if reply:
+                        self.context_tokens = context
                     return
                 if content:
                     reply += "\n\n"

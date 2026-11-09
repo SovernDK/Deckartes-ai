@@ -64,6 +64,11 @@ class Config:
     ollama_api_key: str = field(default_factory=lambda: read_env("OLLAMA_API_KEY"), repr=False)
     animeschedule_token: str = field(default_factory=lambda: read_env("ANIMESCHEDULE_TOKEN"), repr=False)
     pandascore_token: str = field(default_factory=lambda: read_env("PANDA_SCORE_API_TOKEN"), repr=False)
+    telegram_token: str = field(default_factory=lambda: read_env("TELEGRAM_BOT_TOKEN"), repr=False)
+    # The only Telegram user the bot answers; the bot won't start without it
+    telegram_user_id: str = field(default_factory=lambda: read_env("TELEGRAM_USER_ID"), repr=False)
+    # Name of the preset in prompts.json the Telegram bot uses
+    telegram_prompt: str = "Phone"
     # Lists of all CS matches/events keep only this PandaScore tier or better (s, a, b, c, d)
     cs_min_tier: str = "b"
     # Whose anime list the list tool reads (must be public)

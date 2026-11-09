@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Deckartes is a terminal chat UI (Textual) for local MLX models served by Rapid-MLX, with tool calling: the model can query a home server's Glances API, scan the local disk, search the web through Ollama's web API, look up anime seasons, timetables and ratings on AnimeSchedule.net, get Counter-Strike esports teams, players and matches from PandaScore plus Valve's ranking, and read and add events in Apple Calendar.
+Deckartes is a terminal chat UI (Textual) for local MLX models served by Rapid-MLX, with tool calling: the model can query a home server's Glances API, scan the local disk, search the web through Ollama's web API, look up anime seasons, timetables and ratings on AnimeSchedule.net, get Counter-Strike esports teams, players and matches from PandaScore plus Valve's ranking, read and add events in Apple Calendar, and search the files the user saved to its library.
 
 ## Commands
 
-There is no build step or requirements file. Tests use stdlib `unittest` in `tests/`. Linting uses Ruff, configured in `pyproject.toml`. Dependencies live in `venv/` (textual 8.2.8, textual-dev, httpx, pyobjc-framework-EventKit 12.2.2, pypdf 6.20.1, cryptography 50.0.2 for AES-encrypted PDFs, ruff 0.17.4).
+There is no build step or requirements file. Tests use stdlib `unittest` in `tests/`. Linting uses Ruff, configured in `pyproject.toml`. Dependencies live in `venv/` (textual 8.2.8, textual-dev, httpx, pyobjc-framework-EventKit 12.2.2, pypdf 6.20.1, cryptography 50.0.2 for AES-encrypted PDFs, numpy 2.4.6, ruff 0.17.4).
 
 ```bash
 venv/bin/python main.py                 # run the app
@@ -25,9 +25,9 @@ The `vscode-mcp` tools expose Pylance and Ruff for diagnostics, references, symb
 
 ## Architecture
 
-Flat modules, no package. `main.py` → `app.py` (`DecartesApp`: bindings, model-picker, help and file-explorer screens) → `chat.py` (widgets: bubbles, spinner, busy state, interrupt) → `conversation.py` (`Conversation`: history, the whole turn including the tool loop, and the loaded file, no UI; `loaded_file.py` reads and searches the file) → `tool_router.py` (picks tool groups per question) → `tools.py` (tool registry) → `glances_api.py` / `disk_scan.py` / `web_search.py` / `animeschedule_api.py` / `cs_api.py` / `calendar_api.py` (tool backends); the HTTP ones go through `http_client.py`). `mlx_client.py` is the only module that talks to the model servers, and `mlx_server.py` starts and stops them. `clock.py` is the one owner of the current time and of conversions to `config.timezone`, and `names.py` of normalising names for matching. `validation.py` runs `/validate` (no UI; `validation_screen.py` is its popup).
+Flat modules, no package. `main.py` → `app.py` (`DecartesApp`: bindings, model-picker, help and file-explorer screens) → `chat.py` (widgets: bubbles, spinner, busy state, interrupt) → `conversation.py` (`Conversation`: history, the whole turn including the tool loop, no UI) → `tool_router.py` (picks tool groups per question) → `tools.py` (tool registry) → `glances_api.py` / `disk_scan.py` / `web_search.py` / `animeschedule_api.py` / `cs_api.py` / `calendar_api.py` / `library.py` (tool backends; `library.py` also takes the explorer's loads and owns the saved files); the HTTP ones go through `http_client.py`). `mlx_client.py` is the only module that talks to the model servers, and `mlx_server.py` starts and stops them. `clock.py` is the one owner of the current time and of conversions to `config.timezone`, and `names.py` of normalising names for matching. `validation.py` runs `/validate` (no UI; `validation_screen.py` is its popup).
 
-**Shared config.** `config.py` exposes a single mutable `config` instance (host, model, context_length, temperature, system_prompt, plus tool settings and keys). Modules read it at call time rather than taking parameters; widgets change settings by assigning to it (e.g. the model picker sets `config.model`). `context_length` is the app's own budget for compaction and sending files whole; the server doesn't cut prompts to it.
+**Shared config.** `config.py` exposes a single mutable `config` instance (host, model, context_length, temperature, system_prompt, plus tool settings and keys). Modules read it at call time rather than taking parameters; widgets change settings by assigning to it (e.g. the model picker sets `config.model`). `context_length` is the app's own budget for compaction; the server doesn't cut prompts to it.
 
 **Prompt presets.** `prompts.json` holds presets (name, description, `prompt`, `tools`: `"all"`, a list of tool names, or `[]`), selected by `config.system_prompt`. `prompts.py` re-reads the file on every use, so edits apply without a restart. `system_message()` always starts with the current local date, even when no preset matches, since models don't know it otherwise, and `current_time_line()` goes just before each question to keep the prompt cache valid. Presets shouldn't repeat either. `Conversation` puts the system message first on every turn (it isn't stored in the history), and `tool_router.select_tools` sends only the tools the preset allows. A new tool must also be added to the relevant presets, unless they use `"all"`. `allowed_tool_names` raises for a name that isn't a tool, so a typo shows as an error in the reply (and fails `tests/test_tools.py`) instead of silently dropping the tool.
 
@@ -49,7 +49,7 @@ Read the matching doc before working in that area:
 - [docs/tools-anime.md](docs/tools-anime.md): AnimeSchedule tools.
 - [docs/tools-cs.md](docs/tools-cs.md): Counter-Strike tools, PandaScore and Valve ranking.
 - [docs/tools-calendar.md](docs/tools-calendar.md): Apple Calendar tools. [docs/calendar-tests.md](docs/calendar-tests.md) has the fakes, because calendar access can't be tested from Claude Code's shell.
-- [docs/loaded-file.md](docs/loaded-file.md): loading files, chunking, embeddings and excerpts (`loaded_file.py`).
+- [docs/library.md](docs/library.md): saving files and folders, chunking, embeddings, overwriting and searching (`library.py`).
 - [docs/validation.md](docs/validation.md): the `/validate` command, its case file, scoring and saved results.
 - [docs/ui.md](docs/ui.md): widgets, screens, bindings, styles, the config popup and the usage line, plus the headless pilot recipe for verifying UI changes.
 

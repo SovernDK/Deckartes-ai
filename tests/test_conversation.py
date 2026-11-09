@@ -173,12 +173,10 @@ class FinishedTurnTest(TurnTest):
     async def test_clear_forgets_everything(self):
         self.use([chunk("ok", done=True)])
         await self.reply()
-        self.conversation.file = mock.sentinel.file
         self.conversation.clear()
         self.assertIsNone(self.conversation.last_turn.summary())
         self.assertEqual(self.conversation.total_usage.total, 0)
         self.assertEqual(self.conversation.history, [])
-        self.assertIsNone(self.conversation.file)
 
 class CompactTest(TurnTest):
     def setUp(self):
@@ -335,10 +333,6 @@ class SummaryTest(unittest.TestCase):
 
     def test_router_chose_no_tools(self):
         self.assertEqual(TurnInfo(Usage(input=1), tool_groups=[]).summary(), "1 in · 0 out · 1 token · tools: none")
-
-    def test_loaded_file(self):
-        self.assertEqual(TurnInfo(Usage(input=1), file_context="5 excerpts").summary(),
-                         "1 in · 0 out · 1 token · file: 5 excerpts")
 
 if __name__ == "__main__":
     unittest.main()

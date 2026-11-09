@@ -2,7 +2,7 @@
 
 The chat server (config.host) holds the chat model and the routing embedding model. A second,
 embeddings-only server (config.file_embed_host) holds config.rag_embed_model and is started only
-when a long file needs it, because a Rapid-MLX server can serve one embedding model.
+when the library needs it, because a Rapid-MLX server can serve one embedding model.
 
 A server already answering on a port is used as it is and never stopped, which also covers one
 left behind by a crash. Servers started here stop when the app exits. Their output goes to a log

@@ -77,7 +77,8 @@
       "tools": [
         "list_folder",
         "search_files",
-        "get_folder_size"
+        "get_folder_size",
+        "search_library"
       ],
       "prompt": "You help the user find files and understand what takes up space on this computer. Use your tools to look things up instead of guessing paths. Show full paths and sizes, biggest first, and keep lists short unless asked for more."
     },
@@ -86,7 +87,8 @@
       "description": "Answers from the web with sources",
       "tools": [
         "search_web",
-        "fetch_web_page"
+        "fetch_web_page",
+        "search_library"
       ],
       "prompt": "You are a research assistant. Search the web before answering factual questions, read the most relevant pages when snippets are not enough, and list the URLs you used at the end of your answer."
     },

@@ -31,12 +31,13 @@ CONTEXT_LENGTHS = [2048, 4096, 8192, 16384, 32768]
 class Config:
     # Rapid-MLX chat server; the app starts it (mlx_server.py)
     host: str = "http://127.0.0.1:8000"
-    # Embeddings-only server for long loaded files, because one server holds one embedding model
+    # Embeddings-only server for the library, because one server holds one embedding model
     file_embed_host: str = "http://127.0.0.1:8001"
+    # The files the user saved and their embeddings (library.py); not in ~/.cache, because it can't be rebuilt without them
+    library_path: Path = Path.home() / ".local" / "share" / "deckartes" / "library.db"
     mlx_server_command: str = "~/.local/bin/rapid-mlx"
     model: str = "LiquidAI/LFM3-1.7B-MLX-4bit"
-    # One of CONTEXT_LENGTHS. The app's own budget (when to compact, when a file is sent whole);
-    # the server doesn't cut the prompt to it
+    # One of CONTEXT_LENGTHS. The app's own budget (when to compact); the server doesn't cut the prompt to it
     context_length: int = 16384
     # Longest reply in tokens
     max_tokens: int = 4096
@@ -53,7 +54,7 @@ class Config:
     # Send only the tool groups a question needs, picked by a small embedding model (tool_router.py)
     tool_routing: bool = True
     embed_model: str = "mlx-community/all-MiniLM-L6-v2-4bit"
-    # Embeds chunks of a long loaded file (loaded_file.py); multilingual, unlike embed_model
+    # Embeds the library's chunks and searches (library.py); multilingual, unlike embed_model
     rag_embed_model: str = "mlx-community/embeddinggemma-2-4bit"
     # Show tokens used per reply and for the whole conversation (key t)
     show_token_usage: bool = False

@@ -1,6 +1,6 @@
 # Deckartes
 
-A terminal chat for local models that can answer from tools: a home server, the local disk, the web, anime schedules, Counter-Strike esports and the user's calendar.
+A terminal chat for local models that can answer from tools: a home server, the local disk, the web, anime schedules, Counter-Strike esports, the user's calendar and their saved files.
 
 ## Language
 
@@ -9,12 +9,12 @@ One question from the user and everything done to answer it, including any tool 
 _Avoid_: exchange, request
 
 **Conversation**:
-The finished turns so far and the file loaded for them.
+The finished turns so far.
 _Avoid_: chat, session
 
-**Loaded file**:
-A file the user picked for the conversation, which every turn receives whole or as excerpts.
-_Avoid_: document, attachment
+**Library**:
+The files the user has saved, kept between conversations, which the model can search.
+_Avoid_: loaded file, knowledge base, vector store
 
 **Tool text**:
 What a tool hands back to the model: short plain text whose exact wording and order are chosen so a small model can't misread it.

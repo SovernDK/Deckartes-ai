@@ -5,7 +5,7 @@
 </p>
 <p align="center">
   <img src="screnshots/2.png" alt="Config popup with system prompt, temperature and context limit" width="395">
-  <img src="screnshots/3.png" alt="File explorer for loading a file into the chat" width="395">
+  <img src="screnshots/3.png" alt="File explorer for saving files to the library" width="395">
 </p>
 
 A terminal chat app ([Textual](https://textual.textualize.io/)) for local MLX models on Apple Silicon, served by [Rapid-MLX](https://github.com/raullenchai/Rapid-MLX), with tools the model can call:
@@ -15,13 +15,13 @@ A terminal chat app ([Textual](https://textual.textualize.io/)) for local MLX mo
 - **Web**: search and read pages through Ollama's web API.
 - **Anime**: seasons, ratings, airing schedule and your own list, from AnimeSchedule.net.
 - **Counter-Strike**: teams, players, matches and tournaments from PandaScore, and Valve's ranking.
-- **Your files**: load a text file or PDF from the file explorer (`e`) and ask about it. Long files are searched, so only the relevant parts are sent.
+- **Your files**: save text files, PDFs or whole folders from the file explorer (`e`) once, and ask about them in any session.
 - **Calendar**: read and search your Apple Calendar and add events (you confirm each one), e.g. an anime episode or a CS match.
 
 ## TODO
 
 - [ ] **Model routing**: pick a model per question, e.g. a small local one for chit-chat and a bigger one for hard questions.
-- [x] **RAG over one document**: load a file from the file explorer; long ones are searched with embeddings.
+- [x] **RAG over your documents**: a library of saved files and folders, searched with embeddings.
 - [ ] **More documents**: several files at once, other formats (`.docx`), and a `/load <path>` command.
 - [ ] **Vector DB**: store embeddings for documents, and later images and videos (LanceDB is the current pick).
 - [ ] **Fine-tuning**: tune the model on this app's tools, starting with a test set and turn logging (plan in [FINE-TUNING.md](FINE-TUNING.md)).
@@ -43,7 +43,7 @@ Install the dependencies into a virtual environment (there is no requirements fi
 
 ```bash
 python3 -m venv venv
-venv/bin/pip install textual textual-dev httpx pyobjc-framework-EventKit pypdf cryptography
+venv/bin/pip install textual textual-dev httpx pyobjc-framework-EventKit pypdf cryptography numpy
 ```
 
 The calendar tools use macOS's EventKit and see every calendar synced to Calendar.app (iCloud, Google, Exchange). The first calendar question shows a macOS prompt asking to give your terminal app (Terminal, iTerm, VS Code) access to your calendars. You can change that later in System Settings > Privacy & Security > Calendars.
@@ -79,7 +79,7 @@ venv/bin/textual console
 | `Esc` | Leave the input box, so the single-key shortcuts below work |
 | `c` | Settings: system prompt preset, temperature, context limit |
 | `m` | Change model |
-| `e` | File explorer: browse the home folder (hidden files left out), with sizes of the highlighted file or folder. `Enter` on a file loads it into the chat (see [Loading a file](#loading-a-file)) |
+| `e` | File explorer: browse the home folder (hidden files left out), with sizes of the highlighted file or folder. `Enter` on a file or `l` on a file or folder saves it to the library (see [Saving files to the library](#saving-files-to-the-library)) |
 | `t` | Show or hide token usage (per reply, and the total in the Output title) |
 | `h` | Help |
 | `q` | Quit |
@@ -91,7 +91,8 @@ Typed into the input box:
 |---|---|
 | `/clear` | Clear the conversation |
 | `/kill` | Stop the model servers to free their memory; the next question starts them again |
-| `/unload` | Stop sending the file loaded with the file explorer |
+| `/library` | List the files saved in the library |
+| `/forget <path or file name>` | Remove saved files from the library |
 | `/validate` | Score the loaded model's tool use on the validation cases |
 
 Select text with the mouse and press `ctrl+c` to copy it.
@@ -103,17 +104,18 @@ Settings live in `config.py`, as fields of the shared `config` object. The setti
 | Setting | Default | What it does |
 |---|---|---|
 | `host` | `http://127.0.0.1:8000` | Chat server the app starts |
-| `file_embed_host` | `http://127.0.0.1:8001` | Embeddings-only server, started for long loaded files |
+| `file_embed_host` | `http://127.0.0.1:8001` | Embeddings-only server, started when the library is used |
 | `mlx_server_command` | `~/.local/bin/rapid-mlx` | The Rapid-MLX program |
 | `model` | `LiquidAI/LFM3-1.7B-MLX-4bit` | Chat model (also changed with `m`, which restarts the server) |
-| `context_length` | `16384` | The app's budget in tokens, for deciding when to compact and when a file is sent whole. Chosen with `c` from `CONTEXT_LENGTHS` in `config.py`: 2K, 4K, 8K, 16K or 32K |
+| `context_length` | `16384` | The app's budget in tokens, for deciding when to compact. Chosen with `c` from `CONTEXT_LENGTHS` in `config.py`: 2K, 4K, 8K, 16K or 32K |
 | `max_tokens` | `4096` | Longest reply in tokens |
 | `enable_thinking` | `False` | Let the model reason before answering, which is slower |
 | `temperature`, `top_k`, `repetition_penalty` | `0.1`, `50`, `1.1` | Sampling, LFM3's recommended chat settings. `None` uses the model's default. Temperature is also changed with `c` |
 | `system_prompt` | `Assistant` | Preset from `prompts.json` (also changed with `c`) |
 | `tool_routing` | `True` | Send only the tool groups a question needs (see [Tool routing](#tool-routing)) |
 | `embed_model` | `mlx-community/all-MiniLM-L6-v2-4bit` | Embedding model used for tool routing |
-| `rag_embed_model` | `mlx-community/embeddinggemma-2-4bit` | Embedding model for searching long loaded files (multilingual) |
+| `rag_embed_model` | `mlx-community/embeddinggemma-2-4bit` | Embedding model for the library (multilingual) |
+| `library_path` | `~/.local/share/deckartes/library.db` | Where saved files are kept |
 | `show_token_usage` | `False` | Show token counts (toggled with `t`) |
 | `glances_host` | `http://thinkpad:61208` | Glances API of the home server |
 | `timezone` | this machine's | Used for "today" and all displayed times |
@@ -212,16 +214,18 @@ Tool definitions are most of what's sent with a short question: about 2,700 toke
 
 If the embedding model isn't available, every tool the preset allows is sent. The thresholds were checked with `all-MiniLM-L6-v2`, so a different embedding model may need new ones. To fix a question that gets routed wrong, add an example to the right group rather than lowering thresholds.
 
-## Loading a file
+## Saving files to the library
 
-Press `e`, pick a text file (notes, markdown, code, CSV...) or a PDF and press `Enter`. The file's name appears in the Output title, and every question from then on comes with the file:
+Press `e` and pick what to save: `Enter` on a text file (notes, markdown, code, CSV...) or PDF, or `l` on a file or a whole folder. Saved files stay in the library (`~/.local/share/deckartes/library.db`) between sessions, so each file only has to be loaded once, and the model searches them with the `search_library` tool when a question is about your documents. Answers name the file and the page or line.
 
-- **Short files** (up to a quarter of `context_length`, about 14,000 characters by default) are sent whole.
-- **Longer files** are split into chunks of about 1,500 characters, which are embedded with `rag_embed_model` (about 15 s per 100 chunks; the spinner shows progress, `ctrl+c` stops it). Each question then gets the 5 chunks most like it, labelled with their lines or pages. The embeddings are cached in `~/.cache/deckartes/embeddings`, so loading the same file again is instant until it changes.
+- **Loading the same file again** overwrites its old data. Other saved files aren't touched. A file that hasn't changed is skipped, so loading a folder again only embeds what's new or changed.
+- **Folders** are read with their subfolders, keeping text, code and PDF files and leaving out hidden files, `node_modules` and virtual environments. Files that can't be read are named when the load ends.
+- **Embedding** takes about 15 s per 100 chunks of about 1,500 characters. The spinner shows progress and the input is hidden until it ends. `ctrl+c` stops it, and files already finished stay saved.
+- **`/library`** lists what's saved, and **`/forget <path or file name>`** removes a file or everything under a folder after asking. A file deleted from disk stays saved until you forget it.
 
-The file stays loaded until `/unload` or `/clear`. With `t` on, the usage line shows what was sent ("file: whole" or "file: 5 excerpts"). PDFs need a text layer; scanned pages can't be read. Encrypted PDFs open if they have no password (most only restrict printing or copying); password-protected ones can't be loaded.
+Presets without the `search_library` tool, such as `Chat only`, can't see the library. PDFs need a text layer; scanned pages can't be read. Encrypted PDFs open if they have no password (most only restrict printing or copying); password-protected ones can't be loaded.
 
-Small models sometimes answer from their own knowledge instead of the file, or name the wrong lines. In tests, `granite4.1:3b` found the facts but sometimes cited the wrong lines or made up an answer for something the file doesn't contain; `qwen3.5:9B` got them all right, but took about 50 seconds per answer.
+Small models sometimes answer from their own knowledge instead of the passages, or name the wrong lines, so check an answer that matters against the file.
 
 ## Project layout
 
@@ -232,7 +236,7 @@ Small models sometimes answer from their own knowledge instead of the file, or n
 | `chat.py` | Chat widgets: messages, spinner, commands, interrupting |
 | `config_screen.py` | Settings popup |
 | `file_explorer.py` | File explorer popup |
-| `loaded_file.py` | Loading a file: reading, chunking, embedding and searching it |
+| `library.py` | The library of saved files: reading, chunking, embedding, storing and searching them |
 | `chat.tcss` | Styles |
 | `conversation.py` | Conversation history, turns, the tool-calling loop and token counting, no UI |
 | `mlx_client.py` | Chat, embeddings and the model list from the Rapid-MLX servers |

@@ -169,7 +169,7 @@ async def embed(texts: list[str]) -> list[list[float]]:
     return _vectors(response)
 
 def embed_file_text(texts: list[str]) -> list[list[float]]:
-    """Embed texts with config.rag_embed_model, for a long loaded file. Blocks: call it in a thread."""
+    """Embed texts with config.rag_embed_model, for the library. Blocks: call it in a thread."""
     mlx_server.ensure_files()
     try:
         with httpx.Client(transport=_sync_transport, timeout=TIMEOUT) as client:

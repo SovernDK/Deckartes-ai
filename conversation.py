@@ -12,10 +12,6 @@ When the last turn's context reached config.compact_at of the context window, th
 first replaces the whole history with the model's summary of it (one system message), so a long
 conversation keeps fitting. A failed summary fails that turn and leaves the history as it was.
 
-A loaded file (loaded_file.py) goes into every turn: a short file whole, at the end of the system message,
-where it stays the same each turn so the server can reuse its prompt cache; a long one as excerpts
-picked for the question, just before it. Neither is saved in the history.
-
 The time of day is a system message just before each question. It is saved in the history with
 the turn, so the earlier turns of the next prompt match the cached ones exactly.
 """
@@ -26,7 +22,6 @@ from dataclasses import dataclass, field
 
 import mlx_client
 from config import config
-from loaded_file import FileContext, LoadedFile
 from prompts import current_time_line, system_message
 from tool_router import select_tools
 from tools import run_tool
@@ -101,8 +96,6 @@ class TurnInfo:
     usage: Usage = field(default_factory=Usage)
     # Tool groups the router sent with the question; None when it didn't run
     tool_groups: list[str] | None = None
-    # What was sent from the loaded file: "whole" or "5 excerpts"; None without a file
-    file_context: str | None = None
 
     def summary(self) -> str | None:
         """The usage line; None when the turn never reached the model."""
@@ -114,8 +107,6 @@ class TurnInfo:
             text += f" · {usage.tokens_per_second:.1f} tok/s"
         if self.tool_groups is not None:
             text += f" · tools: {', '.join(self.tool_groups) or 'none'}"
-        if self.file_context:
-            text += f" · file: {self.file_context}"
         return text
 
 SUMMARY_PROMPT = (
@@ -147,7 +138,6 @@ class Conversation:
         self.last_turn = TurnInfo()
         # Tokens of the whole conversation
         self.total_usage = Usage()
-        self.file: LoadedFile | None = None
         # Size of the context of the last finished turn: its final prompt plus reply, in tokens
         self.context_tokens = 0
 
@@ -156,18 +146,14 @@ class Conversation:
         self.context_tokens = 0
         self.last_turn = TurnInfo()
         self.total_usage = Usage()
-        self.file = None
 
-    def _messages_for(self, query: str, file: FileContext | None, time_line: str) -> list[dict]:
+    def _messages_for(self, query: str, time_line: str) -> list[dict]:
         """What gets sent to the model for a new question: the current system prompt
         (read fresh, so a changed preset applies from the next turn), the history, the time and
-        the question, with the loaded file: whole in the system message, or excerpts before the time."""
+        the question."""
         system = system_message()
-        if file is not None and file.system:
-            system = f"{system}\n\n{file.system}"
         messages = [{"role": "system", "content": system}] if system else []
-        before = [{"role": "system", "content": file.excerpts}] if file is not None and file.excerpts else []
-        return [*messages, *self.history, *before, {"role": "system", "content": time_line},
+        return [*messages, *self.history, {"role": "system", "content": time_line},
                 {"role": "user", "content": query}]
 
     def _remember(self, query: str, reply: str, time_line: str) -> None:
@@ -207,19 +193,13 @@ class Conversation:
             yield Compacted()
         questions = [m["content"] for m in self.history if m["role"] == "user"]
         previous = questions[-1] if questions else None
-        try:
-            file = await self.file.context_for(query, previous) if self.file is not None else None
-        except Exception as e:
-            yield Failed(f"could not search the loaded file: {e}")
-            return
         time_line = current_time_line()
         try:
-            messages = self._messages_for(query, file, time_line)
+            messages = self._messages_for(query, time_line)
         except Exception as e:
             # e.g. a broken prompts.json
             yield Failed(f"could not load the system prompt: {e}")
             return
-        turn.file_context = file.label if file is not None else None
         reply = ""
         try:
             selection = await (self._tool_selector or select_tools)(query, previous)

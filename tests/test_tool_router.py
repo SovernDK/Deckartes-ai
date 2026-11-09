@@ -167,7 +167,7 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
             selection = await tool_router.select_tools(*ask("q"))
         self.assertEqual(selection.groups, ["cs"])
         self.assertEqual(names(selection.tools), [
-            name for name in names(TOOLS) if name in group_tools("cs") or name in ["search_web", "fetch_web_page"]])
+            name for name in names(TOOLS) if name in group_tools("cs") or name in ["search_web", "fetch_web_page", "search_library"]])
 
     async def test_preset_in_one_group_skips_routing(self):
         embed = mock.AsyncMock()

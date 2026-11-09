@@ -2,7 +2,7 @@
 
 Local models run in Rapid-MLX (`uv tool install 'rapid-mlx[embeddings]'`), in its own environment. `mlx_server` starts it as child processes and `mlx_client` is the only module that talks to it. `ToolCall`, `Delta` and `TokenCount` are what the rest of the app sees. `tool_schema.py` builds the tool definitions.
 
-**Two servers.** A Rapid-MLX server holds one embedding model and rejects any other name. The chat server (`config.host`, started on mount) holds the chat model and `config.embed_model`. The embeddings-only server (`config.file_embed_host`) holds `config.rag_embed_model` and starts the first time a long file is embedded. Each call runs `ensure_chat` or `ensure_files`, so a crashed server returns on the next turn.
+**Two servers.** A Rapid-MLX server holds one embedding model and rejects any other name. The chat server (`config.host`, started on mount) holds the chat model and `config.embed_model`. The embeddings-only server (`config.file_embed_host`) holds `config.rag_embed_model` and starts the first time the library is used in a session, by a load or a search. Each call runs `ensure_chat` or `ensure_files`, so a crashed server returns on the next turn.
 
 **Process rules.** A server already answering on a port is reused and never stopped. Logs are `~/.cache/deckartes/rapid-mlx-*.log`. Servers stop on exit through `atexit`; `/kill` stops them too, since there's no need for an unload call. The model is a launch argument, so `DecartesApp.set_model` restarts the chat server.
 

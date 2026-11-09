@@ -26,7 +26,7 @@ class DecartesApp(App):
         ("q", "quit", "Quit the app"),
         ("m", "change_model", "Change Model"),
         ("c", "config", "Config"),
-        Binding("e", "explorer", "Files", tooltip="Browse the home folder and load a file into the chat"),
+        Binding("e", "explorer", "Files", tooltip="Browse the home folder and save a file or folder to the library"),
         ("h", "help", "Help"),
         Binding("t", "toggle_usage", "Tokens", tooltip="Show token usage"),
         # priority: works while the input is hidden; only active while the model answers and

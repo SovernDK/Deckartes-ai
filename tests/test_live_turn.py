@@ -1,6 +1,6 @@
 """Whole turns through the real Rapid-MLX server. Skipped unless the chat server is already running.
 
-The long file test starts the real file embedding server, and stops it again.
+The library test starts the real file embedding server, and stops it again.
 """
 
 import tempfile
@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import loaded_file
+import library
 import mlx_server
 import tool_router
 from config import config
@@ -50,19 +50,18 @@ class LiveTurnTest(unittest.IsolatedAsyncioTestCase):
         events = await self.turn("What is my cat called?")
         self.assertIn("Mruczek", self.text(events))
 
-    async def test_long_file_is_searched_through_the_second_server(self):
+    async def test_saved_file_is_searched_through_the_second_server(self):
         self.addCleanup(mlx_server.stop_all)
         filler = "\n\n".join(f"Akapit {i} opowiada o pogodzie, drogach i zwyklych sprawach w miescie numer {i}. " * 12
                              for i in range(12))
         secret = "Kod do sejfu w piwnicy to 4417."
         with tempfile.TemporaryDirectory() as folder, \
-             mock.patch.object(config, "context_length", 500), \
-             mock.patch.object(loaded_file, "CACHE_DIR", Path(folder) / "cache"):
+             mock.patch.object(config, "library_path", Path(folder) / "library.db"):
             path = Path(folder) / "notatki.txt"
             path.write_text(f"{filler}\n\n{secret}\n\n{filler}")
-            self.conversation.file = await loaded_file.load(path)
-            events = await self.turn("Jaki jest kod do sejfu w piwnicy?")
-        self.assertIn("excerpts", self.conversation.last_turn.file_context)
+            await library.add(path)
+            events = await self.turn("Sprawdz w moich zapisanych plikach: jaki jest kod do sejfu w piwnicy?")
+        self.assertIn(ToolStarted("search_library"), events)
         self.assertIn("4417", self.text(events))
 
 if __name__ == "__main__":

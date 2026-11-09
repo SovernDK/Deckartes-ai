@@ -1,7 +1,8 @@
 """File explorer popup (key e): browse the home folder as Finder shows it, no hidden files.
 
 The highlighted entry's size is scanned in the background (a folder's size includes everything
-in it, hidden files too). Selecting a file closes the popup with its path, for the app to use.
+in it, hidden files too). Selecting a file, or pressing l on a file or folder, closes the popup
+with its path, for the app to save to the library.
 """
 
 from collections.abc import Iterable
@@ -28,7 +29,7 @@ class UserDirectoryTree(DirectoryTree):
         return [path for path in paths if disk_scan.is_user_facing(path)]
 
 class FileExplorerScreen(ModalScreen[Path | None]):
-    BINDINGS = [("e", "close", "Close"), ("escape", "close", "Close")]
+    BINDINGS = [("l", "load", "Save to library"), ("e", "close", "Close"), ("escape", "close", "Close")]
 
     def __init__(self, root: Path | None = None) -> None:
         super().__init__()
@@ -42,7 +43,7 @@ class FileExplorerScreen(ModalScreen[Path | None]):
 
     def on_mount(self) -> None:
         self.query_one("#explorer").border_title = str(self.root).replace(str(Path.home()), "~", 1)
-        self.query_one("#explorer").border_subtitle = "enter open · esc close"
+        self.query_one("#explorer").border_subtitle = "enter open · l save file or folder to library · esc close"
         self.query_one(UserDirectoryTree).focus()
 
     def on_tree_node_highlighted(self, event: DirectoryTree.NodeHighlighted) -> None:
@@ -79,6 +80,11 @@ class FileExplorerScreen(ModalScreen[Path | None]):
 
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
         self.dismiss(event.path)
+
+    def action_load(self) -> None:
+        node = self.query_one(UserDirectoryTree).cursor_node
+        if node is not None and node.data is not None:
+            self.dismiss(node.data.path)
 
     def action_close(self) -> None:
         self.dismiss(None)

@@ -10,7 +10,7 @@ from textual.containers import HorizontalGroup, VerticalGroup, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, ListItem, ListView, Markdown, Static
 
-import loaded_file
+import library
 import mlx_client
 import mlx_server
 import tools
@@ -141,8 +141,6 @@ class Chat(VerticalGroup):
     def update_usage(self) -> None:
         """Output title, with the conversation's total tokens while usage is shown."""
         title = "Output"
-        if self.conversation.file is not None:
-            title += f" · {self.conversation.file.name}"
         if config.show_token_usage:
             title += f" · {self.conversation.total_usage.total:,} tokens"
         self.query_one("#response").border_title = title
@@ -153,9 +151,12 @@ class Chat(VerticalGroup):
     COMMANDS = {
         "clear": ("command_clear", "Clear the entire conversation"),
         "kill": ("command_kill", "Stop the model servers to free their memory; the next question starts them again"),
-        "unload": ("command_unload", "Stop sending the file loaded with the file explorer (e)"),
+        "library": ("command_library", "List the files saved in the library"),
+        "forget": ("command_forget", "Remove saved files from the library: /forget <path or file name>"),
         "validate": ("command_validate", "Score the loaded model's tool use on the validation cases"),
     }
+    # These get the rest of the line as an argument
+    COMMANDS_WITH_ARGUMENT = {"forget"}
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
@@ -168,14 +169,19 @@ class Chat(VerticalGroup):
         self.set_busy(True)
         self.fetch_stream(text)
 
-    def run_command(self, name: str) -> None:
-        command = self.COMMANDS.get(name.strip().lower())
+    def run_command(self, text: str) -> None:
+        name, _, argument = text.strip().partition(" ")
+        name = name.lower()
+        command = self.COMMANDS.get(name)
         if command is None:
             available = ", ".join(f"/{name}" for name in self.COMMANDS)
             self.notify(f"Unknown command /{name}. Available: {available}", severity="warning")
             return
-        method_name, _ = command
-        getattr(self, method_name)()
+        method = getattr(self, command[0])
+        if name in self.COMMANDS_WITH_ARGUMENT:
+            method(argument.strip())
+        else:
+            method()
 
     def command_clear(self) -> None:
         self.conversation.clear()
@@ -183,14 +189,33 @@ class Chat(VerticalGroup):
         self.update_usage()
         self.notify("Conversation cleared")
 
-    def command_unload(self) -> None:
-        file = self.conversation.file
-        if file is None:
-            self.notify("No file is loaded", severity="warning")
+    @work(exclusive=True, group="library")
+    async def command_library(self) -> None:
+        """Show what's saved; the list isn't part of the conversation."""
+        try:
+            entries = await asyncio.to_thread(library.entries)
+        except Exception as e:
+            self.notify(str(e), title="Could not read the library", severity="error", markup=False)
             return
-        self.conversation.file = None
-        self.update_usage()
-        self.notify(f"Unloaded {file.name}")
+        markdown = await self.add_ai_message()
+        await markdown.update(library.report(entries))
+
+    @work(exclusive=True, group="library")
+    async def command_forget(self, name: str) -> None:
+        if not name:
+            self.notify("Usage: /forget <path or file name>", severity="warning", markup=False)
+            return
+        try:
+            matches = await asyncio.to_thread(library.matching, name)
+            if not matches:
+                self.notify(f"Nothing in the library matches {name}", severity="warning", markup=False)
+                return
+            count = f"{len(matches):,} file{'' if len(matches) == 1 else 's'}"
+            if await self.confirm(f"Remove {count} from the library ({name})?"):
+                await asyncio.to_thread(library.forget, matches)
+                self.notify(f"Removed {count} from the library", markup=False)
+        except Exception as e:
+            self.notify(str(e), title="Could not change the library", severity="error", markup=False)
 
     def command_validate(self) -> None:
         try:
@@ -234,28 +259,24 @@ class Chat(VerticalGroup):
 
     @work(exclusive=True, group="load")
     async def load_file(self, path: Path) -> None:
-        """Read a file into the conversation, embedding it first if it's too long to send whole."""
+        """Save a file or folder to the library, where every later session can search it."""
         if self.busy:
             self.notify("Wait for the reply to finish before loading a file", severity="warning")
             return
         self.set_busy(True)
         spinner = self.query_one(Spinner)
         spinner.set_label(f"Reading {path.name}...")
-        def progress(done: int, total: int) -> None:
-            spinner.set_label(f"Embedding {path.name}: {done}/{total} chunks")
         try:
-            file = await loaded_file.load(path, progress)
+            result = await library.add(path, spinner.set_label)
         except asyncio.CancelledError:
-            self.notify(f"Stopped loading {path.name}")
+            self.notify(f"Stopped loading {path.name}. Files already finished stay saved.", markup=False)
             raise
         except Exception as e:
-            self.notify(str(e), title=f"Could not load {path.name}", severity="error")
+            self.notify(str(e), title=f"Could not load {path.name}", severity="error", markup=False)
             return
         finally:
             self.set_busy(False)
-        self.conversation.file = file
-        self.update_usage()
-        self.notify(f"Loaded {file.name} ({file.how_sent}). /unload stops sending it.")
+        self.notify(result.summary, severity="warning" if result.failed else "information", markup=False)
 
     @work(exclusive=True, group="kill")
     async def command_kill(self) -> None:

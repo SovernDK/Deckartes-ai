@@ -13,6 +13,7 @@ import calendar_api as cal
 import cs_api as cs
 import disk_scan
 import glances_api as glances
+import library
 import web_search as web
 
 # Set by the UI: an async function (question) -> bool that asks the user before a tool changes
@@ -189,6 +190,18 @@ async def get_folder_size(path: str) -> dict:
         path: Folder to measure, e.g. "~/Downloads"
     """
     return await disk_scan.measure_folder(path)
+
+# In no group: the router matches questions to example questions and can't know what the user's files contain
+@tool(None)
+async def search_library(query: str) -> str:
+    """Search the user's library: documents they saved here, such as their own notes, PDFs and other
+    files. Returns the passages most related to the query, labelled with the file and page or line.
+    Use it for any question about the user's documents or what they have saved.
+
+    Args:
+        query: What to look for, in words the document would use, e.g. "notice period for ending the lease"
+    """
+    return await library.search(query)
 
 @tool("web")
 async def search_web(query: str) -> list:

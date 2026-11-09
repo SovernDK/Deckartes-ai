@@ -2,6 +2,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+
 def read_env(name: str) -> str:
     """Value from the environment, else from the .env file next to this script, else ""."""
     if os.environ.get(name):

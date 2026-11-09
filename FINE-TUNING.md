@@ -57,7 +57,7 @@ Real usage alone would take months at around 20 tool turns a day.
 
 ## Order of work
 
-1. **Baseline.** Build the test set and score the current model. Without it there's no way to tell whether tuning helped, and some failures are cheaper to fix in prompts, tool descriptions or the router.
+1. **Baseline.** Score the current model on the test set with `/validate` ([docs/validation.md](docs/validation.md)). Without it there's no way to tell whether tuning helped, and some failures are cheaper to fix in prompts, tool descriptions or the router.
 2. **Logging and `/bad`.** Useful even if the model is never tuned.
 3. **Pilot.** About 300 examples aimed at follow-ups and premature claims, compared against the baseline.
 4. **Scale up** only if the pilot clearly wins.

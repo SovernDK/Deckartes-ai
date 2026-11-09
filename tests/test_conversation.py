@@ -8,7 +8,18 @@ import mlx_client
 import prompts
 import tool_router
 from config import config
-from conversation import MAX_TOOL_ROUNDS, Compacted, Compacting, Conversation, Failed, Text, ToolsDone, ToolStarted, TurnInfo, Usage
+from conversation import (
+    MAX_TOOL_ROUNDS,
+    Compacted,
+    Compacting,
+    Conversation,
+    Failed,
+    Text,
+    ToolsDone,
+    ToolStarted,
+    TurnInfo,
+    Usage,
+)
 from frozen_clock import freeze
 from test_tool_router import FakeEmbeddings, group_tools, names
 
@@ -85,6 +96,28 @@ class TurnTest(unittest.IsolatedAsyncioTestCase):
 
     def sent_contents(self, client, index=0):
         return [message["content"] for message in client.sent[index]["messages"]]
+
+class ReplacedToolFunctionsTest(TurnTest):
+    async def test_a_replaced_tool_runner_answers_instead_of_the_real_tool(self):
+        calls = []
+        async def runner(name, arguments):
+            calls.append((name, arguments))
+            return "fake result"
+        client = self.use([chunk(tool_calls=[call("get_cs_team", name="NAVI")], done=True)], [chunk("done", done=True)])
+        self.conversation = Conversation(tool_runner=runner)
+        await self.reply()
+        self.assertEqual(calls, [("get_cs_team", {"name": "NAVI"})])
+        self.assertEqual(client.sent[1]["messages"][-1]["content"], "fake result")
+
+    async def test_a_replaced_tool_selector_decides_what_is_sent(self):
+        async def selector(question, previous):
+            self.assertEqual((question, previous), ("q", None))
+            return tool_router.Selection(None, ["cs"])
+        client = self.use([chunk("hi", done=True)])
+        self.conversation = Conversation(tool_selector=selector)
+        await self.reply()
+        self.assertIsNone(client.sent[0]["tools"])
+        self.assertEqual(self.conversation.last_turn.tool_groups, ["cs"])
 
 class FinishedTurnTest(TurnTest):
     async def test_reply_is_streamed_saved_and_counted(self):

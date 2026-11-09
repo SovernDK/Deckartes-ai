@@ -70,20 +70,22 @@ def _is_follow_up(query: str) -> bool:
     return text.startswith(FOLLOW_UP_STARTS) or text.rstrip("!. ") in FOLLOW_UP_ANSWERS \
         or any(character.isdigit() for character in text)
 
-async def _route(query: str, previous: str | None, groups: list[str]) -> list[str]:
-    """Names of the groups (among groups) to send for query; [] means no tools.
-    Raises if the embedding model can't be reached."""
+async def _route(query: str, previous: str | None, groups: list[str]) -> tuple[list[str], dict[str, float]]:
+    """Names of the groups (among groups) to send for query, [] meaning no tools, and the scores
+    they were chosen on: each group's, and "no_tools". Raises if the embedding model can't be reached."""
     examples = {name: vectors for name, vectors in (await _example_vectors()).items()
                 if name is None or name in groups}
     vectors = await _embed([query, previous] if previous else [query])
     scores = _scores(vectors[0], examples)
     no_tools = scores.pop(None)
+    def chosen(names: list[str]) -> tuple[list[str], dict[str, float]]:
+        return names, {**scores, "no_tools": no_tools}
     if not scores:
-        return []
+        return chosen([])
     best = max(scores.values())
     # Small talk ("thanks!") needs no tools, whatever the previous topic was
     if best < CONFIDENT and no_tools > best and not (previous and _is_follow_up(query)):
-        return []
+        return chosen([])
     # A vague question or a short follow-up borrows the previous question's topic
     if previous and (best < CONFIDENT or _is_follow_up(query)):
         for name, score in _scores(vectors[1], examples).items():
@@ -93,10 +95,10 @@ async def _route(query: str, previous: str | None, groups: list[str]) -> list[st
 
     ranked = sorted(scores, key=scores.get, reverse=True)
     if best >= CONFIDENT:
-        return [name for name in ranked if scores[name] >= max(CONFIDENT, best - MARGIN)]
+        return chosen([name for name in ranked if scores[name] >= max(CONFIDENT, best - MARGIN)])
     if best < MIN_SCORE:
-        return []
-    return ranked[:UNSURE_GROUPS]
+        return chosen([])
+    return chosen(ranked[:UNSURE_GROUPS])
 
 @dataclass
 class Selection:
@@ -104,6 +106,8 @@ class Selection:
     tools: list | None
     # Groups the router chose; None when it didn't run
     groups: list[str] | None
+    # What it chose them on: each group's score and "no_tools"; None when it didn't run
+    scores: dict[str, float] | None = None
 
 async def select_tools(question: str, previous: str | None) -> Selection:
     """Tools for a question (previous is the one before it, if any): those the current prompt preset allows, narrowed
@@ -118,10 +122,10 @@ async def select_tools(question: str, previous: str | None) -> Selection:
     if not config.tool_routing or len(groups) < 2:
         return Selection(tools, None)
     try:
-        chosen = await _route(question, previous, groups)
+        chosen, scores = await _route(question, previous, groups)
     except Exception:
         return Selection(tools, None)
     keep = {name for group in chosen for name in TOOL_GROUPS[group]["tools"]}
     grouped = {name for group in TOOL_GROUPS.values() for name in group["tools"]}
     routed = [tool for tool in tools if tool.__name__ in keep or tool.__name__ not in grouped]
-    return Selection(routed or None, chosen)
+    return Selection(routed or None, chosen, scores)

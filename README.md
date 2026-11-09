@@ -92,6 +92,7 @@ Typed into the input box:
 | `/clear` | Clear the conversation |
 | `/kill` | Stop the model servers to free their memory; the next question starts them again |
 | `/unload` | Stop sending the file loaded with the file explorer |
+| `/validate` | Score the loaded model's tool use on the validation cases |
 
 Select text with the mouse and press `ctrl+c` to copy it.
 

@@ -26,10 +26,11 @@ from dataclasses import dataclass, field
 
 import mlx_client
 from config import config
-from prompts import current_time_line, system_message
 from loaded_file import FileContext, LoadedFile
+from prompts import current_time_line, system_message
 from tool_router import select_tools
 from tools import run_tool
+
 
 # What a turn yields, in order
 @dataclass
@@ -131,13 +132,16 @@ def _add_tool_results(messages, content, tool_calls, results) -> None:
     for call, result in zip(tool_calls, results):
         messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
 
-async def _run_call(call: mlx_client.ToolCall) -> str:
+async def _run_call(call: mlx_client.ToolCall, runner) -> str:
     if call.arguments is None:
         return f"Tool {call.name} failed: its arguments were not valid JSON"
-    return await run_tool(call.name, call.arguments)
+    return await runner(call.name, call.arguments)
 
 class Conversation:
-    def __init__(self) -> None:
+    def __init__(self, tool_runner=None, tool_selector=None) -> None:
+        # What runs tools and picks them; a validation run replaces both (validation.py)
+        self._tool_runner = tool_runner
+        self._tool_selector = tool_selector
         # Finished turns as chat messages: for each, its time line, the question and the reply
         self.history: list[dict] = []
         self.last_turn = TurnInfo()
@@ -218,7 +222,7 @@ class Conversation:
         turn.file_context = file.label if file is not None else None
         reply = ""
         try:
-            selection = await select_tools(query, previous)
+            selection = await (self._tool_selector or select_tools)(query, previous)
             tools = selection.tools
             turn.tool_groups = selection.groups
             for _ in range(MAX_TOOL_ROUNDS):
@@ -248,7 +252,7 @@ class Conversation:
                 results = []
                 for call in tool_calls:
                     yield ToolStarted(call.name)
-                    results.append(await _run_call(call))
+                    results.append(await _run_call(call, self._tool_runner or run_tool))
                 yield ToolsDone()
                 _add_tool_results(messages, content, tool_calls, results)
 

@@ -8,21 +8,24 @@ Deckartes is a terminal chat UI (Textual) for local MLX models served by Rapid-M
 
 ## Commands
 
-There is no build step, linter or requirements file. Tests use stdlib `unittest` in `tests/`. Dependencies live in `venv/` (textual 8.2.8, textual-dev, httpx, pyobjc-framework-EventKit 12.2.2, pypdf 6.20.1, cryptography 50.0.2 for AES-encrypted PDFs).
+There is no build step or requirements file. Tests use stdlib `unittest` in `tests/`. Linting uses Ruff, configured in `pyproject.toml`. Dependencies live in `venv/` (textual 8.2.8, textual-dev, httpx, pyobjc-framework-EventKit 12.2.2, pypdf 6.20.1, cryptography 50.0.2 for AES-encrypted PDFs, ruff 0.17.4).
 
 ```bash
 venv/bin/python main.py                 # run the app
 venv/bin/textual run --dev main.py      # run with devtools; pair with `venv/bin/textual console` in another terminal to see logs/print output
 venv/bin/python -m unittest discover tests   # tests; the live tests skip themselves unless the chat server is running
+venv/bin/ruff check .                   # lint; add --fix for the automatic fixes
 ```
 
 Runtime requirements: Rapid-MLX at `config.mlx_server_command` (the app starts it and downloads the models on first use), Glances on `http://thinkpad:61208` (only for the server tools), `OLLAMA_API_KEY` (web tools) `ANIMESCHEDULE_TOKEN` (anime tools) and `PANDA_SCORE_API_TOKEN` (CS tools) in the environment or `.env`, and macOS calendar access for the terminal app (calendar tools).
 
 Verify UI changes headlessly with Textual's pilot instead of launching the app: recipe in [docs/ui.md](docs/ui.md).
 
+The `vscode-mcp` tools expose Pylance and Ruff for diagnostics, references, symbol info and renames; show a file in a tab first (`open_files` with `showEditor: true`), because `get_diagnostics` reports a background-only file as clean.
+
 ## Architecture
 
-Flat modules, no package. `main.py` → `app.py` (`DecartesApp`: bindings, model-picker, help and file-explorer screens) → `chat.py` (widgets: bubbles, spinner, busy state, interrupt) → `conversation.py` (`Conversation`: history, the whole turn including the tool loop, and the loaded file, no UI; `loaded_file.py` reads and searches the file) → `tool_router.py` (picks tool groups per question) → `tools.py` (tool registry) → `glances_api.py` / `disk_scan.py` / `web_search.py` / `animeschedule_api.py` / `cs_api.py` / `calendar_api.py` (tool backends); the HTTP ones go through `http_client.py`). `mlx_client.py` is the only module that talks to the model servers, and `mlx_server.py` starts and stops them. `clock.py` is the one owner of the current time and of conversions to `config.timezone`, and `names.py` of normalising names for matching.
+Flat modules, no package. `main.py` → `app.py` (`DecartesApp`: bindings, model-picker, help and file-explorer screens) → `chat.py` (widgets: bubbles, spinner, busy state, interrupt) → `conversation.py` (`Conversation`: history, the whole turn including the tool loop, and the loaded file, no UI; `loaded_file.py` reads and searches the file) → `tool_router.py` (picks tool groups per question) → `tools.py` (tool registry) → `glances_api.py` / `disk_scan.py` / `web_search.py` / `animeschedule_api.py` / `cs_api.py` / `calendar_api.py` (tool backends); the HTTP ones go through `http_client.py`). `mlx_client.py` is the only module that talks to the model servers, and `mlx_server.py` starts and stops them. `clock.py` is the one owner of the current time and of conversions to `config.timezone`, and `names.py` of normalising names for matching. `validation.py` runs `/validate` (no UI; `validation_screen.py` is its popup).
 
 **Shared config.** `config.py` exposes a single mutable `config` instance (host, model, context_length, temperature, system_prompt, plus tool settings and keys). Modules read it at call time rather than taking parameters; widgets change settings by assigning to it (e.g. the model picker sets `config.model`). `context_length` is the app's own budget for compaction and sending files whole; the server doesn't cut prompts to it.
 
@@ -47,4 +50,7 @@ Read the matching doc before working in that area:
 - [docs/tools-cs.md](docs/tools-cs.md): Counter-Strike tools, PandaScore and Valve ranking.
 - [docs/tools-calendar.md](docs/tools-calendar.md): Apple Calendar tools. [docs/calendar-tests.md](docs/calendar-tests.md) has the fakes, because calendar access can't be tested from Claude Code's shell.
 - [docs/loaded-file.md](docs/loaded-file.md): loading files, chunking, embeddings and excerpts (`loaded_file.py`).
+- [docs/validation.md](docs/validation.md): the `/validate` command, its case file, scoring and saved results.
 - [docs/ui.md](docs/ui.md): widgets, screens, bindings, styles, the config popup and the usage line, plus the headless pilot recipe for verifying UI changes.
+
+All architecture is kept in docs/wiki.html for human developers, any bigger change in logic should be updated there.

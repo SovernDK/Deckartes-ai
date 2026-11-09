@@ -7,6 +7,7 @@ import httpx
 
 import http_client
 
+
 class FakeServer:
     """Answers requests from a {path: response} table and records them; a response can be
     an httpx.Response, a JSON-able value, a str (text/markdown), an exception to raise,

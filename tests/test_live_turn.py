@@ -14,6 +14,7 @@ import tool_router
 from config import config
 from conversation import Conversation, Failed, Text, ToolStarted
 
+
 class LiveTurnTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         if not mlx_server.chat_is_ready():

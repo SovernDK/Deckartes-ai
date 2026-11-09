@@ -1,15 +1,16 @@
 """The app starting, restarting and stopping the model server, with mlx_server faked."""
 
-import asyncio
 import threading
 import unittest
 from unittest import mock
+
+from textual.widgets import Input
 
 import mlx_server
 from app import DecartesApp
 from chat import Chat, Spinner
 from config import config
-from textual.widgets import Input
+
 
 class ServerUiTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):

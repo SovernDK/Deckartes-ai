@@ -14,7 +14,8 @@ from unittest import mock
 import mlx_server
 import tool_router
 from config import config
-from tools import TOOL_GROUPS, TOOLS, TOOLS_BY_NAME
+from tools import TOOL_GROUPS, TOOLS
+
 
 def names(tools) -> list[str] | None:
     return None if tools is None else [tool.__name__ for tool in tools]
@@ -77,6 +78,18 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         selection = await tool_router.select_tools(*ask("Is Vitality playing?"))
         self.assertEqual(selection.groups, ["cs"])
         self.assertEqual(names(selection.tools), group_tools("cs"))
+
+    async def test_selection_reports_each_group_score_and_the_no_tools_score(self):
+        self.embed({"q": {"cs": 0.8, "anime": 0.3, None: 0.2}})
+        selection = await tool_router.select_tools(*ask("q"))
+        self.assertAlmostEqual(selection.scores["cs"], 0.8)
+        self.assertAlmostEqual(selection.scores["anime"], 0.3)
+        self.assertAlmostEqual(selection.scores["no_tools"], 0.2)
+
+    async def test_reported_scores_include_what_a_follow_up_borrowed(self):
+        self.embed({"When is NAVI's next game?": {"cs": 0.9}, "and then?": {"cs": 0.1, None: 0.05}})
+        selection = await tool_router.select_tools(*ask("When is NAVI's next game?", "and then?"))
+        self.assertAlmostEqual(selection.scores["cs"], 0.72)
 
     async def test_groups_within_margin(self):
         self.embed({"q": {"calendar": 0.7, "anime": 0.55, "cs": 0.45}})

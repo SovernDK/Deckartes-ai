@@ -91,7 +91,7 @@ async def _standings(region: str) -> tuple[str, list[dict]]:
     date = latest.removeprefix(f"standings_{region}_").removesuffix(".md").replace("_", "-")
     text = (await _github(f"{STANDINGS_RAW_URL}/{folder}/{latest}")).text
     rows = []
-    for match in re.finditer(r"^\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|", text, re.M):
+    for match in re.finditer(r"^\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|", text, re.MULTILINE):
         rows.append({"rank": int(match[1]), "team": match[3], "points": int(match[2]),
                      "roster": match[4]})
     return date, rows

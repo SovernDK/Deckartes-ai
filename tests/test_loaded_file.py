@@ -2,12 +2,12 @@
 
 import asyncio
 import re
-import threading
 import tempfile
+import threading
 from pathlib import Path
 
-import mlx_client
 import loaded_file
+import mlx_client
 from config import config
 from conversation import Failed
 from test_conversation import DATE_LINE, TIME_LINE, TurnTest, chunk
@@ -116,7 +116,7 @@ class ShortFileTest(FileTest):
     async def test_size_limit_follows_the_context_length(self):
         text = "x" * 875  # 250 tokens, a quarter of 1000
         await self.attach(text)
-        client = self.use([chunk("a", done=True)])
+        self.use([chunk("a", done=True)])
         await self.reply()
         self.assertEqual(self.conversation.last_turn.file_context, "whole")
         await self.attach(text + "xxxx")
@@ -151,7 +151,7 @@ class ExcerptsTest(FileTest):
     async def test_best_chunks_in_file_order(self):
         sent = await self.excerpts(self.long_text(), "tell me about topic3")
         # Topic 3 wins; the rest tie, and ties go to the later chunks
-        self.assertEqual(re.findall(r"^\[line (\d+)\]", sent, re.M), ["7", "9", "11", "13", "15"])
+        self.assertEqual(re.findall(r"^\[line (\d+)\]", sent, re.MULTILINE), ["7", "9", "11", "13", "15"])
         self.assertEqual(self.conversation.last_turn.file_context, "5 excerpts")
 
     async def test_previous_question_counts_at_a_lower_weight(self):
@@ -161,7 +161,7 @@ class ExcerptsTest(FileTest):
         await self.reply("topic0")
         await self.reply("topic3")
         sent = client.sent[1]["messages"][4]["content"]
-        self.assertEqual(re.findall(r"^\[line (\d+)\]", sent, re.M), ["1", "7", "11", "13", "15"])
+        self.assertEqual(re.findall(r"^\[line (\d+)\]", sent, re.MULTILINE), ["1", "7", "11", "13", "15"])
 
     async def test_chunk_starts_with_the_end_of_the_one_before(self):
         first, second = paragraph(0), paragraph(1)

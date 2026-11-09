@@ -234,3 +234,26 @@ HelpScreen, ConfirmScreen {
     width: auto;
     height: auto;
 }
+
+ValidationScreen {
+    align: center middle;
+}
+
+#validation {
+    width: 70;
+    max-width: 90%;
+    height: auto;
+    padding: 1 2;
+    background: $panel;
+    border: round $accent;
+}
+
+#validation SelectionList {
+    height: auto;
+    margin: 1 0;
+    background: $panel;
+}
+
+#validation .hint {
+    color: $text-muted;
+}

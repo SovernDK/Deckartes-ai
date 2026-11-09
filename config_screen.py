@@ -4,8 +4,8 @@ Changes go straight into the shared config and apply from the next message.
 """
 
 from textual.app import ComposeResult
-from textual.content import Content
 from textual.containers import Horizontal, Vertical
+from textual.content import Content
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Static
 

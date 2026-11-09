@@ -8,6 +8,7 @@ import tools
 from config import config
 from frozen_clock import freeze
 
+
 class RegistryTest(unittest.TestCase):
     def test_groups_hold_real_tools_once_each(self):
         grouped = [name for group in tools.TOOL_GROUPS.values() for name in group["tools"]]
@@ -39,10 +40,12 @@ class PresetTest(unittest.TestCase):
 
     def test_unknown_tool_in_preset(self):
         preset = {"name": "Typo", "prompt": "...", "tools": ["get_cs_team", "get_cs_tem"]}
-        with mock.patch.object(prompts, "load_prompts", return_value=[preset]), \
-             mock.patch.object(config, "system_prompt", "Typo"):
-            with self.assertRaisesRegex(ValueError, "^preset 'Typo' names unknown tool 'get_cs_tem'$"):
-                prompts.allowed_tool_names()
+        with (
+            mock.patch.object(prompts, "load_prompts", return_value=[preset]),
+            mock.patch.object(config, "system_prompt", "Typo"),
+            self.assertRaisesRegex(ValueError, "^preset 'Typo' names unknown tool 'get_cs_tem'$"),
+        ):
+            prompts.allowed_tool_names()
 
     def test_date_line_is_local_time(self):
         freeze(self, "2026-11-11 12:00")

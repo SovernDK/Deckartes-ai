@@ -6,16 +6,19 @@ from rich.markup import escape
 from rich.table import Table
 from textual import work
 from textual.app import ComposeResult
+from textual.containers import HorizontalGroup, VerticalGroup, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Input, Markdown, Static, ListView, ListItem, Label
-from textual.containers import VerticalScroll, VerticalGroup, HorizontalGroup
+from textual.widgets import Input, Label, ListItem, ListView, Markdown, Static
 
 import loaded_file
 import mlx_client
 import mlx_server
 import tools
+import validation
 from config import config
 from conversation import Compacted, Compacting, Conversation, Failed, Text, ToolsDone, ToolStarted
+from validation_screen import ValidationScreen
+
 
 class Spinner(Static):
     """Text spinner made of slashes, shown while the model is answering."""
@@ -86,6 +89,7 @@ class Chat(VerticalGroup):
         super().__init__(**kwargs)
         self.conversation = Conversation()
         self.busy = False
+        self.validating = False
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="response")
@@ -150,6 +154,7 @@ class Chat(VerticalGroup):
         "clear": ("command_clear", "Clear the entire conversation"),
         "kill": ("command_kill", "Stop the model servers to free their memory; the next question starts them again"),
         "unload": ("command_unload", "Stop sending the file loaded with the file explorer (e)"),
+        "validate": ("command_validate", "Score the loaded model's tool use on the validation cases"),
     }
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -186,6 +191,46 @@ class Chat(VerticalGroup):
         self.conversation.file = None
         self.update_usage()
         self.notify(f"Unloaded {file.name}")
+
+    def command_validate(self) -> None:
+        try:
+            suite = validation.load_suite()
+        except ValueError as e:
+            self.notify(str(e), title="Could not read the validation cases", severity="error")
+            return
+        def chosen(categories: list[str] | None) -> None:
+            if categories:
+                self.set_busy(True)
+                self.validating = True
+                self.run_validation(suite, categories)
+        self.app.push_screen(ValidationScreen(suite), chosen)
+
+    @work(exclusive=True)
+    async def run_validation(self, suite: validation.Suite, categories: list[str]) -> None:
+        """Run the cases, then save and show the results, also when the run is stopped."""
+        run = validation.Run(suite, categories)
+        spinner = self.query_one(Spinner)
+        def progress(done: int, total: int) -> None:
+            spinner.set_label(f"Validating {done}/{total}")
+        progress(0, len(run.cases))
+        try:
+            await run.execute(progress)
+        except Exception as e:
+            self.notify(str(e), title="The validation run failed", severity="error")
+        finally:
+            self.validating = False
+            await self.show_validation_report(run)
+            self.set_busy(False)
+
+    async def show_validation_report(self, run: validation.Run) -> None:
+        """Save a run and show its report; the report isn't part of the conversation."""
+        saved = []
+        try:
+            saved = list(run.save(validation.RESULTS_FOLDER))
+        except OSError as e:
+            self.notify(str(e), title="Could not save the validation results", severity="error")
+        markdown = await self.add_ai_message()
+        await markdown.update(validation.report(run, saved))
 
     @work(exclusive=True, group="load")
     async def load_file(self, path: Path) -> None:

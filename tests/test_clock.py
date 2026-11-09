@@ -7,6 +7,7 @@ from unittest import mock
 import clock
 from config import config
 
+
 class ClockTest(unittest.TestCase):
     def in_zone(self, name: str):
         patcher = mock.patch.object(config, "timezone", name)
@@ -32,3 +33,16 @@ class ClockTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class FrozenClockTest(unittest.TestCase):
+    MOMENT = dt.datetime(2026, 11, 11, 19, 30, tzinfo=dt.UTC)
+
+    def test_now_and_today_stay_at_the_frozen_moment(self):
+        with clock.frozen_at(self.MOMENT):
+            self.assertEqual(clock.now(), self.MOMENT)
+            self.assertEqual(clock.today(), dt.date(2026, 11, 11))
+
+    def test_the_real_time_returns_after_an_exception(self):
+        with self.assertRaises(RuntimeError), clock.frozen_at(self.MOMENT):
+            raise RuntimeError
+        self.assertLess(abs(clock.now() - dt.datetime.now(dt.UTC)), dt.timedelta(minutes=1))

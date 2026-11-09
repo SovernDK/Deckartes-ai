@@ -1,7 +1,6 @@
 """mlx_server with a small fake server program as the real child process."""
 
 import http.server
-import os
 import socket
 import stat
 import sys
@@ -108,15 +107,19 @@ class ServerTest(unittest.TestCase):
         self.assertTrue(self.answers())
 
     def test_failed_start_names_the_log(self):
-        with mock.patch.object(config, "mlx_server_command", self.program(FAILING_SERVER)):
-            with self.assertRaisesRegex(mlx_server.ModelServerError, "stopped while starting. See .*rapid-mlx-chat.log"):
-                mlx_server.ensure_chat()
+        with (
+            mock.patch.object(config, "mlx_server_command", self.program(FAILING_SERVER)),
+            self.assertRaisesRegex(mlx_server.ModelServerError, "stopped while starting. See .*rapid-mlx-chat.log"),
+        ):
+            mlx_server.ensure_chat()
         self.assertIn("no such model", (self.folder / "logs" / "rapid-mlx-chat.log").read_text())
 
     def test_missing_program_says_how_to_install(self):
-        with mock.patch.object(config, "mlx_server_command", str(self.folder / "nothing")):
-            with self.assertRaisesRegex(mlx_server.ModelServerError, "uv tool install"):
-                mlx_server.ensure_chat()
+        with (
+            mock.patch.object(config, "mlx_server_command", str(self.folder / "nothing")),
+            self.assertRaisesRegex(mlx_server.ModelServerError, "uv tool install"),
+        ):
+            mlx_server.ensure_chat()
 
     def test_chat_server_gets_the_model_and_the_routing_embedder(self):
         mlx_server.ensure_chat()

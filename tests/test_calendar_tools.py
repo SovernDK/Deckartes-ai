@@ -9,6 +9,7 @@ import calendar_api as cal
 import tools
 from frozen_clock import TIMEZONE, freeze
 
+
 def local(when: str) -> dt.datetime:
     return dt.datetime.fromisoformat(when).replace(tzinfo=ZoneInfo(TIMEZONE))
 

@@ -1,5 +1,6 @@
 from app import DecartesApp
 
+
 def main() -> None:
     app = DecartesApp()
     app.run()

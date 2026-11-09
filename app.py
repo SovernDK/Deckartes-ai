@@ -4,13 +4,13 @@ from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import Footer, Header, Static
 from textual.containers import Container
+from textual.widgets import Footer, Header, Static
 
 from chat import Chat, HelpScreen, ModelChangeScreen
+from config import config
 from config_screen import ConfigScreen
 from file_explorer import FileExplorerScreen
-from config import config
 
 BANNER = r"""
  ____            _              _
@@ -86,6 +86,9 @@ class DecartesApp(App):
         self.push_screen(HelpScreen(shortcuts, commands))
 
     def action_config(self) -> None:
+        if self.query_one(Chat).validating:
+            self.notify("Settings can't change during a validation run", severity="warning")
+            return
         self.push_screen(ConfigScreen(), self.config_saved)
 
     def config_saved(self, saved: bool | None) -> None:

@@ -9,7 +9,7 @@ from unittest import mock
 import conversation
 import mlx_server
 import tool_router
-from conversation import Conversation, Failed, Text, ToolStarted
+from conversation import Conversation, Failed, Text
 from frozen_clock import freeze
 
 EPISODE_QUESTION = "When next episode of ranma 1/2 season3 is airing?"

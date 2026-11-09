@@ -111,27 +111,29 @@ async def stream_chat(messages: list[dict], tools: list | None = None) -> AsyncI
     calls: dict[int, dict] = {}
     usage = metrics = None
     try:
-        async with httpx.AsyncClient(transport=_transport, timeout=TIMEOUT) as client:
-            async with client.stream("POST", f"{config.host}/v1/chat/completions", json=body) as response:
-                if response.status_code != 200:
-                    raise _status_error(response.status_code, (await response.aread()).decode(errors="replace"))
-                async for line in response.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    payload = line[len("data:"):].strip()
-                    if payload == "[DONE]":
-                        break
-                    data = json.loads(payload)
-                    if data.get("error"):
-                        raise ModelServerError(f"The model server failed: {data['error'].get('message', data['error'])}")
-                    usage = data.get("usage") or usage
-                    metrics = data.get("metrics") or metrics
-                    for choice in data.get("choices") or []:
-                        delta = choice.get("delta") or {}
-                        for call in delta.get("tool_calls") or []:
-                            _add_tool_call_delta(calls, call)
-                        if delta.get("content"):
-                            yield Delta(content=delta["content"])
+        async with (
+            httpx.AsyncClient(transport=_transport, timeout=TIMEOUT) as client,
+            client.stream("POST", f"{config.host}/v1/chat/completions", json=body) as response,
+        ):
+            if response.status_code != 200:
+                raise _status_error(response.status_code, (await response.aread()).decode(errors="replace"))
+            async for line in response.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                payload = line[len("data:"):].strip()
+                if payload == "[DONE]":
+                    break
+                data = json.loads(payload)
+                if data.get("error"):
+                    raise ModelServerError(f"The model server failed: {data['error'].get('message', data['error'])}")
+                usage = data.get("usage") or usage
+                metrics = data.get("metrics") or metrics
+                for choice in data.get("choices") or []:
+                    delta = choice.get("delta") or {}
+                    for call in delta.get("tool_calls") or []:
+                        _add_tool_call_delta(calls, call)
+                    if delta.get("content"):
+                        yield Delta(content=delta["content"])
     except httpx.TransportError as e:
         raise _unreachable(config.host) from e
     yield Delta(tool_calls=[_tool_call(calls[i]) for i in sorted(calls)], usage=_token_count(usage, metrics))

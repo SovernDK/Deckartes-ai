@@ -11,6 +11,7 @@ import mlx_server
 from config import config
 from mlx_client import Delta, ModelServerError, TokenCount, ToolCall
 
+
 def sse(*chunks) -> str:
     lines = [": keepalive\n\n"]
     lines += [f"data: {json.dumps(chunk)}\n\n" for chunk in chunks]

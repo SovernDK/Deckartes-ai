@@ -4,6 +4,7 @@ import unittest
 
 from tool_schema import tool_definition
 
+
 async def everything(name: str, count: int, ratio: float, flag: bool, items: list[str],
                      maybe: str | None = None, defaulted: int = 3) -> str:
     """Do everything.

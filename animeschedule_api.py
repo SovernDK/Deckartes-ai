@@ -303,8 +303,8 @@ def _season_text(season: str, year: int, shows: list[dict]) -> str:
     title = f"{season.title()} {year}"
     if not shows:
         return f"No anime found for {title}."
-    lines = [f"{title} anime, best rated first, {_count_shows(len(shows))} (ratings out of 10; shows rated "
-             f"{config.anime_min_rating:g} or lower left out; {KNOWN_ONLY}):"]
+    lines = [(f"{title} anime, best rated first, {_count_shows(len(shows))} (ratings out of 10; shows rated "
+             f"{config.anime_min_rating:g} or lower left out; {KNOWN_ONLY}):")]
     for i, show in enumerate(shows[:MAX_SEASON_LIST], 1):
         lines.append(f"{i}. {show['name']}: {_rating_text(show['rating'])}"
                      f"{_details(show, 'episodes', 'premiere')}")
@@ -397,8 +397,8 @@ def _user_list_text(status: str, shows: list[dict]) -> str:
 
     headings = {"today": "Airing today", "tomorrow": "Airing tomorrow", "this week": "Airing later this week",
                 "next week": "Airing next week", "later": "No episode in the next two weeks"}
-    lines = [f"Your anime list ({status}), {_count_shows(len(shows))} (today is {clock.today():%A %Y-%m-%d}; "
-             "a week runs Monday to Sunday):"]
+    lines = [(f"Your anime list ({status}), {_count_shows(len(shows))} (today is {clock.today():%A %Y-%m-%d}; "
+             "a week runs Monday to Sunday):")]
     for when, entries in groups.items():
         if entries:
             lines += [f"{headings[when]}:", *entries]

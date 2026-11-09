@@ -1,0 +1,11 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+# Flat modules at the root, and test helpers imported from tests/: both are first-party
+src = [".", "tests"]
+
+[tool.ruff.lint]
+ignore = [
+    "BLE001",  # catch-alls are the design at boundaries: a turn never raises, a tool failure becomes text for the model
+    "RUF012",  # Textual's BINDINGS and similar class-level tables are plain lists by convention and never mutated
+]

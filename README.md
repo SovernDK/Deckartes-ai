@@ -71,6 +71,17 @@ venv/bin/textual run --dev main.py
 venv/bin/textual console
 ```
 
+### From your phone (Telegram)
+
+Deckartes can also answer through a Telegram bot while the Mac runs it. Create a bot with @BotFather, add these to `.env`, and open `deckartes-telegram.command`:
+
+```bash
+TELEGRAM_BOT_TOKEN=...      # from @BotFather
+TELEGRAM_USER_ID=...        # your numeric Telegram id; nobody else gets an answer
+```
+
+It has to run from Terminal, because background services are refused calendar access. Add the file to Login Items to start it at login. Telegram bot chats aren't end-to-end encrypted, so questions and replies pass through Telegram's servers. See [docs/telegram.md](docs/telegram.md).
+
 ### Keys and commands
 
 | Key | Action |
@@ -238,6 +249,7 @@ Small models sometimes answer from their own knowledge instead of the passages, 
 | `file_explorer.py` | File explorer popup |
 | `library.py` | The library of saved files: reading, chunking, embedding, storing and searching them |
 | `chat.tcss` | Styles |
+| `telegram_bot.py`, `telegram_api.py`, `deckartes-telegram.command` | The Telegram bot, its Bot API calls and its launcher |
 | `conversation.py` | Conversation history, turns, the tool-calling loop and token counting, no UI |
 | `mlx_client.py` | Chat, embeddings and the model list from the Rapid-MLX servers |
 | `mlx_server.py` | Starting and stopping the Rapid-MLX servers |

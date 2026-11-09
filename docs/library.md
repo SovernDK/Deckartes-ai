@@ -16,4 +16,11 @@ The library is the files the user saved, kept in one SQLite file at `config.libr
 
 **Commands.** `/library` shows `library.report` as a message outside the conversation. `/forget <path or file name>` uses `library.matching` (starting with `/` or `~`: a file or everything under a folder; otherwise a file name in any folder, ignoring case) and asks through `Chat.confirm` before `library.forget`. The model has no tool that changes the library.
 
+**Known gaps.**
+
+- **No exact page in citations.** `_chunk` packs paragraphs across page boundaries and labels the chunk with its first and last page, so a citation can only say "pages 1-3", however few of those pages hold the answer. The label also leaves out the page that the `OVERLAP_CHARS` carried over at the start of a chunk came from.
+- **No OCR for images or scans.** Only a PDF's text layer is read. A PDF with no text on any page is refused, a PDF with some text is saved without its image-only pages and without saying so, and text inside images on other pages is lost. Image files are left out of folder loads and refused as binary when picked directly.
+- **No files over 50 MB.** `MAX_FILE_BYTES` applies to every file type. A file picked directly is refused, and in a folder load it goes in `AddResult.failed` and the load carries on.
+- **Overview questions miss.** A search returns only the `TOP_K` chunks closest in meaning, so "what classes are in this book" finds text that talks about classes in general and not the pages that are the classes or the contents page that lists them. On a 544-chunk rulebook the chunk listing them ranked 23rd. Raising `TOP_K` isn't a practical fix at that rank. Questions about one named thing rank its pages first.
+
 **Tests.** `tests/test_library.py` uses real temporary files and real SQLite with only `mlx_client.embed_file_text` faked, and `importlib.reload(library)` stands in for a new session. `tests/test_library_ui.py` drives the explorer and the commands with the pilot. Don't `await app.workers.wait_for_complete()` while the explorer is open, because `DirectoryTree`'s loader worker runs as long as the tree does.

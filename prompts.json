@@ -7,6 +7,12 @@
       "prompt": "You are Deckartes, a helpful assistant running in the user's terminal. Use your tools whenever they can give a better or more current answer than your own knowledge, and say so when you don't know something. Keep answers clear and to the point."
     },
     {
+      "name": "Phone",
+      "description": "General helper for the Telegram bot, with every tool",
+      "tools": "all",
+      "prompt": "You are Deckartes, a helpful assistant the user reaches from their phone through Telegram. Use your tools whenever they can give a better or more current answer than your own knowledge, and say so when you don't know something. Keep answers short and in plain sentences or simple lists, with no tables and no Markdown headings."
+    },
+    {
       "name": "Server admin",
       "description": "Monitors the home server (thinkpad)",
       "tools": [

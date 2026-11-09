@@ -10,4 +10,4 @@ The wording and order of tool text are load-bearing, so these tests call the too
 
 ## Confirmation (`tools.confirm`)
 
-A tool that changes something outside the app passes `tools.confirm` to its backend, which awaits `confirm(question)`. `Chat` sets `tools.confirm_handler` on mount. It pushes a `ConfirmScreen` (y / n / escape) and awaits a future its dismiss callback resolves. Interrupting while asking closes the popup. Without a UI, `confirm_handler` is `None` and changes go through.
+A tool that changes something outside the app passes `tools.confirm` to its backend, which awaits `confirm(question)`. `Chat` sets `tools.confirm_handler` on mount. It pushes a `ConfirmScreen` (y / n / escape) and awaits a future its dismiss callback resolves. Interrupting while asking closes the popup. The Telegram bot sets its own handler, which asks with Yes and No buttons (`docs/telegram.md`). Without a handler, `confirm_handler` is `None` and changes go through, so a new front end must set one before it runs a turn.

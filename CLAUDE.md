@@ -6,18 +6,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Deckartes is a terminal chat UI (Textual) for local MLX models served by Rapid-MLX, with tool calling: the model can query a home server's Glances API, scan the local disk, search the web through Ollama's web API, look up anime seasons, timetables and ratings on AnimeSchedule.net, get Counter-Strike esports teams, players and matches from PandaScore plus Valve's ranking, read and add events in Apple Calendar, and search the files the user saved to its library.
 
+## TODO
+
+[ ] Better RAG search (not just by embedded chunks)
+[ ] Scanning user1 folder on homeserver
+[x] Integration with telegram
+
 ## Commands
 
 There is no build step or requirements file. Tests use stdlib `unittest` in `tests/`. Linting uses Ruff, configured in `pyproject.toml`. Dependencies live in `venv/` (textual 8.2.8, textual-dev, httpx, pyobjc-framework-EventKit 12.2.2, pypdf 6.20.1, cryptography 50.0.2 for AES-encrypted PDFs, numpy 2.4.6, ruff 0.17.4).
 
 ```bash
 venv/bin/python main.py                 # run the app
+./deckartes-telegram.command            # run the Telegram bot (in Terminal, see docs/telegram.md)
 venv/bin/textual run --dev main.py      # run with devtools; pair with `venv/bin/textual console` in another terminal to see logs/print output
 venv/bin/python -m unittest discover tests   # tests; the live tests skip themselves unless the chat server is running
 venv/bin/ruff check .                   # lint; add --fix for the automatic fixes
 ```
 
-Runtime requirements: Rapid-MLX at `config.mlx_server_command` (the app starts it and downloads the models on first use), Glances on `http://thinkpad:61208` (only for the server tools), `OLLAMA_API_KEY` (web tools) `ANIMESCHEDULE_TOKEN` (anime tools) and `PANDA_SCORE_API_TOKEN` (CS tools) in the environment or `.env`, and macOS calendar access for the terminal app (calendar tools).
+Runtime requirements: Rapid-MLX at `config.mlx_server_command` (the app starts it and downloads the models on first use), Glances on `http://thinkpad:61208` (only for the server tools), `OLLAMA_API_KEY` (web tools) `ANIMESCHEDULE_TOKEN` (anime tools) and `PANDA_SCORE_API_TOKEN` (CS tools) in the environment or `.env`, macOS calendar access for the terminal app (calendar tools), and `TELEGRAM_BOT_TOKEN` and `TELEGRAM_USER_ID` (Telegram bot).
 
 Verify UI changes headlessly with Textual's pilot instead of launching the app: recipe in [docs/ui.md](docs/ui.md).
 
@@ -25,7 +32,7 @@ The `vscode-mcp` tools expose Pylance and Ruff for diagnostics, references, symb
 
 ## Architecture
 
-Flat modules, no package. `main.py` → `app.py` (`DecartesApp`: bindings, model-picker, help and file-explorer screens) → `chat.py` (widgets: bubbles, spinner, busy state, interrupt) → `conversation.py` (`Conversation`: history, the whole turn including the tool loop, no UI) → `tool_router.py` (picks tool groups per question) → `tools.py` (tool registry) → `glances_api.py` / `disk_scan.py` / `web_search.py` / `animeschedule_api.py` / `cs_api.py` / `calendar_api.py` / `library.py` (tool backends; `library.py` also takes the explorer's loads and owns the saved files); the HTTP ones go through `http_client.py`). `mlx_client.py` is the only module that talks to the model servers, and `mlx_server.py` starts and stops them. `clock.py` is the one owner of the current time and of conversions to `config.timezone`, and `names.py` of normalising names for matching. `validation.py` runs `/validate` (no UI; `validation_screen.py` is its popup).
+Flat modules, no package. `main.py` → `app.py` (`DecartesApp`: bindings, model-picker, help and file-explorer screens) → `chat.py` (widgets: bubbles, spinner, busy state, interrupt) → `conversation.py` (`Conversation`: history, the whole turn including the tool loop, no UI) → `tool_router.py` (picks tool groups per question) → `tools.py` (tool registry) → `glances_api.py` / `disk_scan.py` / `web_search.py` / `animeschedule_api.py` / `cs_api.py` / `calendar_api.py` / `library.py` (tool backends; `library.py` also takes the explorer's loads and owns the saved files); the HTTP ones go through `http_client.py`). `mlx_client.py` is the only module that talks to the model servers, and `mlx_server.py` starts and stops them. `clock.py` is the one owner of the current time and of conversions to `config.timezone`, and `names.py` of normalising names for matching. `validation.py` runs `/validate` (no UI; `validation_screen.py` is its popup). `telegram_bot.py` is a second, headless front end for `Conversation`, run as its own process, and `telegram_api.py` holds its Bot API calls.
 
 **Shared config.** `config.py` exposes a single mutable `config` instance (host, model, context_length, temperature, system_prompt, plus tool settings and keys). Modules read it at call time rather than taking parameters; widgets change settings by assigning to it (e.g. the model picker sets `config.model`). `context_length` is the app's own budget for compaction; the server doesn't cut prompts to it.
 
@@ -50,6 +57,7 @@ Read the matching doc before working in that area:
 - [docs/tools-cs.md](docs/tools-cs.md): Counter-Strike tools, PandaScore and Valve ranking.
 - [docs/tools-calendar.md](docs/tools-calendar.md): Apple Calendar tools. [docs/calendar-tests.md](docs/calendar-tests.md) has the fakes, because calendar access can't be tested from Claude Code's shell.
 - [docs/library.md](docs/library.md): saving files and folders, chunking, embeddings, overwriting and searching (`library.py`).
+- [docs/telegram.md](docs/telegram.md): the Telegram bot, its setup, access check, confirmations and how it runs.
 - [docs/validation.md](docs/validation.md): the `/validate` command, its case file, scoring and saved results.
 - [docs/ui.md](docs/ui.md): widgets, screens, bindings, styles, the config popup and the usage line, plus the headless pilot recipe for verifying UI changes.
 

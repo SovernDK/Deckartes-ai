@@ -42,6 +42,9 @@ class Thinking:
 class ToolStarted:
     """A tool the model called is about to run."""
     name: str
+    # What the model called it with; None when they weren't valid JSON. Left out of ==, so
+    # tests and checks can match a call by its name alone
+    arguments: dict | None = field(default=None, compare=False)
 
 @dataclass
 class ToolsDone:
@@ -244,7 +247,7 @@ class Conversation:
                     yield Text("\n\n")
                 results = []
                 for call in tool_calls:
-                    yield ToolStarted(call.name)
+                    yield ToolStarted(call.name, call.arguments)
                     results.append(await _run_call(call, self._tool_runner or run_tool))
                 yield ToolsDone()
                 _add_tool_results(messages, content, tool_calls, results)

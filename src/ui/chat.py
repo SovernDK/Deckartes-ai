@@ -1,4 +1,5 @@
 import asyncio
+import json
 from contextlib import aclosing
 from pathlib import Path
 
@@ -91,20 +92,30 @@ class Spinner(Static):
         self.timer.pause()
         self.display = False
 
+def tool_call_line(name: str, arguments: dict | None) -> str:
+    """'called tool: get_cs_team(name="NAVI")', how Detailed mode shows a tool call."""
+    if arguments is None:
+        shown = "arguments that weren't valid JSON"
+    else:
+        shown = ", ".join(f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in arguments.items())
+    return f"called tool: {name}({shown})"
+
 class Reply(VerticalGroup):
-    """One streamed reply: thinking and answer text in the order they came. Each change between
-    them starts a new part, a greyed Static for thinking (hidden by CSS outside Detailed mode) or a
-    Markdown for the answer."""
+    """One streamed reply: thinking, answer text and tool calls in the order they came. Each change
+    between them starts a new part: a greyed Static for thinking or for a round's tool calls (both
+    hidden by CSS outside Detailed mode), or a Markdown for the answer."""
 
     def __init__(self) -> None:
         super().__init__(classes="reply")
         self.markdown_stream = None
         self.thinking: Static | None = None
         self.thinking_text = ""
+        self.tool_calls: Static | None = None
+        self.tool_lines: list[str] = []
 
     async def write_text(self, text: str) -> None:
         if self.markdown_stream is None:
-            self.thinking = None
+            self.thinking = self.tool_calls = None
             markdown = Markdown()
             await self.mount(markdown)
             self.markdown_stream = Markdown.get_stream(markdown)
@@ -113,16 +124,27 @@ class Reply(VerticalGroup):
     async def write_thinking(self, text: str) -> None:
         if self.thinking is None:
             await self.stop()
+            self.tool_calls = None
             self.thinking = Static(markup=False, classes="thinking")
             self.thinking_text = ""
             await self.mount(self.thinking)
         self.thinking_text += text
         self.thinking.update(self.thinking_text.strip())
 
+    async def write_tool_call(self, name: str, arguments: dict | None) -> None:
+        if self.tool_calls is None:
+            await self.stop()
+            self.thinking = None
+            self.tool_calls = Static(markup=False, classes="tool-calls")
+            self.tool_lines = []
+            await self.mount(self.tool_calls)
+        self.tool_lines.append(tool_call_line(name, arguments))
+        self.tool_calls.update("\n".join(self.tool_lines))
+
     async def next_round(self) -> None:
         """After a tool round, the model's next thinking or text starts a part of its own."""
         await self.stop()
-        self.thinking = None
+        self.thinking = self.tool_calls = None
 
     async def stop(self) -> None:
         """Finish the answer part being streamed, if any."""
@@ -407,6 +429,7 @@ class Chat(VerticalGroup):
                         await reply.write_thinking(event.text)
                     elif isinstance(event, ToolStarted):
                         spinner.show_tool(event.name)
+                        await reply.write_tool_call(event.name, event.arguments)
                     elif isinstance(event, ToolsDone):
                         answering = False
                         spinner.show_tool(None)

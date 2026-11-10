@@ -132,6 +132,7 @@ class ThinkingTest(TurnTest):
                                   Thinking("Got it."), Text("NAVI is fine.")])
         self.assertEqual(self.conversation.history[-1], {"role": "assistant", "content": "NAVI is fine."})
         self.assertNotIn("Need the team.", str(client.sent[1]["messages"]))
+        self.assertEqual(events[1].arguments, {"name": "NAVI"})
 
     async def test_thinking_without_an_answer_fails_and_is_not_saved(self):
         self.use([think("Hmm..."), chunk(" ", done=True)])

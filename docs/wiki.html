@@ -289,7 +289,7 @@ PYTHONPATH=src venv/bin/python -m unittest discover tests  # tests; live ones sk
   <tr><th>Event</th><th>Chat reaction</th></tr>
   <tr><td><code>Thinking</code></td><td>Greyed thinking part of the <code>Reply</code>, shown in Detailed mode only; Telegram and validation ignore it</td></tr>
   <tr><td><code>Text</code></td><td>An answer part of the <code>Reply</code> (Markdown stream); the round's first text sets the spinner to "Answering..."</td></tr>
-  <tr><td><code>ToolStarted</code> / <code>ToolsDone</code></td><td>Spinner: "Using tool: name" / back to "Thinking..."; the next round starts new parts</td></tr>
+  <tr><td><code>ToolStarted</code> / <code>ToolsDone</code></td><td>Spinner: "Using tool: name" / back to "Thinking..."; the next round starts new parts. <code>ToolStarted</code> also carries the call's <code>arguments</code> (left out of <code>==</code>), shown in Detailed mode as <code>called tool: name(key=value)</code></td></tr>
   <tr><td><code>Compacting</code> / <code>Compacted</code></td><td>Spinner: "Compacting conversation..." / back to default</td></tr>
   <tr><td><code>Failed</code></td><td>An <code>**Error:**</code> paragraph</td></tr>
 </table>
@@ -572,7 +572,7 @@ async with app.run_test(size=(100, 30)) as pilot:
   <li>Each chat call's counts are summed over the turn's tool rounds (each re-sends the conversation).</li>
   <li><code>Conversation.last_turn</code> and <code>total_usage</code> are kept; <code>/clear</code> resets both; failed turns count.</li>
   <li>In Detailed mode the total also appears in the Output border title.</li>
-  <li>Default mode (yellow, bottom right) hides thinking and usage; Detailed (blue) shows both. Both are always mounted and the <code>detailed</code> class on <code>Chat</code> shows or hides them, so switching also applies to earlier replies. The app always starts in Default.</li>
+  <li>Default mode (yellow, bottom right) hides thinking, tool calls and usage; Detailed (blue) shows them. Both are always mounted and the <code>detailed</code> class on <code>Chat</code> shows or hides them, so switching also applies to earlier replies. The app always starts in Default.</li>
   <li>Prompt tokens include ones the server had cached. Speed comes from <code>metrics.mean_itl_ms</code> on the finish chunk.</li>
 </ol>
 </section>

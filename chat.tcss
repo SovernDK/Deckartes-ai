@@ -81,7 +81,16 @@ Chat {
     color: $text-muted;
 }
 
-Chat.detailed .usage, Chat.detailed .thinking {
+/* The tool calls of one round, under its thinking: also shown only in Detailed mode */
+.tool-calls {
+    display: none;
+    padding: 0 2;
+    margin-bottom: 1;
+    color: $text-muted;
+    text-style: italic;
+}
+
+Chat.detailed .usage, Chat.detailed .thinking, Chat.detailed .tool-calls {
     display: block;
 }
 

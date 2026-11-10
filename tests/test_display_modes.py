@@ -10,7 +10,7 @@ from core.config import config
 from model import mlx_client, mlx_server
 from test_conversation import FakeClient, call, chunk, think
 from ui.app import DecartesApp
-from ui.chat import Chat, Reply, Spinner
+from ui.chat import Chat, Reply, Spinner, tool_call_line
 
 
 class DisplayModeTest(unittest.IsolatedAsyncioTestCase):
@@ -67,15 +67,24 @@ class DisplayModeTest(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(config.detailed)
             self.assertFalse(thinking.display)
 
-    async def test_thinking_and_answer_keep_their_order_across_tool_rounds(self):
-        self.use([think("Need a tool."), chunk(tool_calls=[call("get_current_season")], done=True)],
+    async def test_thinking_tool_calls_and_answer_keep_their_order_across_rounds(self):
+        self.use([think("Need a tool."), chunk(tool_calls=[call("get_current_season"), call("get_cs_team", name="NAVI")],
+                                               done=True)],
                  [think("Got it."), chunk("Fall.", done=True)])
         app = DecartesApp()
         async with app.run_test(size=(100, 30)) as pilot:
             await self.ask(app, pilot)
             parts = list(app.query_one(Reply).children)
-            self.assertEqual([type(part) for part in parts], [Static, Static, Markdown])
-            self.assertEqual([str(part.render()) for part in parts[:2]], ["Need a tool.", "Got it."])
+            self.assertEqual([part.classes for part in parts],
+                             [{"thinking"}, {"tool-calls"}, {"thinking"}, set()])
+            self.assertIsInstance(parts[-1], Markdown)
+            self.assertEqual([str(part.render()) for part in parts[:3]], [
+                "Need a tool.", 'called tool: get_current_season()\ncalled tool: get_cs_team(name="NAVI")', "Got it."])
+            self.assertFalse(parts[1].display)
+            app.screen.set_focus(None)
+            await pilot.press("T")
+            await pilot.pause()
+            self.assertTrue(parts[1].display)
 
     async def test_typing_a_capital_t_does_not_switch_modes(self):
         self.use()
@@ -87,6 +96,14 @@ class DisplayModeTest(unittest.IsolatedAsyncioTestCase):
             await pilot.press("T")
             self.assertEqual(app.query_one(Input).value, "T")
             self.assertFalse(config.detailed)
+
+class ToolCallLineTest(unittest.TestCase):
+    def test_arguments_are_shown_as_json_values(self):
+        self.assertEqual(tool_call_line("search", {"query": "Frieren", "days": 7, "past": False}),
+                         'called tool: search(query="Frieren", days=7, past=false)')
+
+    def test_arguments_that_were_not_json(self):
+        self.assertEqual(tool_call_line("search", None), "called tool: search(arguments that weren't valid JSON)")
 
 class SpinnerLabelTest(unittest.IsolatedAsyncioTestCase):
     async def test_thinking_then_answering_then_tools_then_thinking_again(self):

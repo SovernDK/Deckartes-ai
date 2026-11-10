@@ -37,7 +37,7 @@ launchd doesn't re-run a failed job, and the network can be down just after waki
 
 **The token** is part of every URL. `telegram_api._call` removes it from error text and drops the exception's cause, because that text reaches the log and, through a failed tool, the model. `setup_logging` keeps `httpx` at WARNING, since its INFO lines print full URLs. Message text is never logged.
 
-**Prompt.** `run` sets `config.system_prompt` to `config.telegram_prompt`, the `Phone` preset, which affects only this process.
+**Prompt.** The bot uses the same preset as the app (`config.system_prompt`, `Assistant`). The model thinks before answering here too, but the bot ignores `Thinking` events and sends only the answer.
 
 **Alongside the terminal app.** Both share one model server. While the bot's process owns it, the terminal app's model picker can't restart it (`mlx_server._Server.stop` only stops its own process), so stop the bot before changing models. A server the terminal app started stops when that app exits, which fails a bot turn in progress, and the next turn starts it again. History is in memory, so restarting the bot forgets the conversation.
 

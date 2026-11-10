@@ -24,11 +24,17 @@ A `DirectoryTree` rooted at the home folder whose `filter_paths` keeps only what
 
 ## Config popup
 
-The config popup (`config_screen.py`, key `c`) edits `system_prompt`, `temperature` and `context_length`; it checks every field before applying any. `context_length` is picked from `config.CONTEXT_LENGTHS` (2K-32K; add values there), and a value set to something else in `config.py` is kept as an extra option. Options under `RECOMMENDED_MIN_CONTEXT` are labelled "little room with tools".
+The config popup (`config_screen.py`, key `c`) edits `temperature` and `context_length`; it checks every field before applying any. `context_length` is picked from `config.CONTEXT_LENGTHS` (2K-32K; add values there), and a value set to something else in `config.py` is kept as an extra option. Options under `RECOMMENDED_MIN_CONTEXT` are labelled "little room with tools".
+
+## Default and Detailed mode (key `shift+t`)
+
+`config.detailed` picks the mode; the app always starts in Default. Default shows questions and answers only. Detailed also shows the model's thinking (greyed `.thinking` Statics), the usage line under each reply and the total tokens in the Output title. Thinking and usage lines are always mounted, and `DecartesApp.show_mode` sets the `detailed` class on `Chat` (CSS shows or hides them all, earlier replies too) and updates `#mode`, the label at the bottom right of the footer: yellow (`$warning`) for Default, blue (`$primary`) for Detailed. The footer is `#footer_bar`, a row of `Footer` and `#mode`. The binding is `T,shift+t`, since terminals report the key either way, with `show=False` because `#mode` already shows it. Like the other single-key shortcuts it only works while the input isn't focused.
+
+Each streamed reply is a `Reply`: thinking and answer text in the order they came, each change starting a new part (a `.thinking` Static or a `Markdown`), and each tool round starting new parts (`Reply.next_round`). The spinner shows "Thinking..." until a round's first text, then "Answering...", then "Using tool: X" (held `MIN_TOOL_SECONDS`) and back to "Thinking..." for the next round. Tested in `tests/test_display_modes.py`.
 
 ## Token usage
 
-`Conversation.stream_reply` adds each chat call's `TokenCount` to the `Usage` in the turn's `TurnInfo`, summed over tool rounds, since each round re-sends the conversation. It also sums `generation_ns` for `tokens_per_second`, which is generation time only (no model loading or prompt evaluation); the usage line shows it as "tok/s". `TurnInfo` is one turn's tokens plus the tool groups it was sent with, and `TurnInfo.summary()` writes the usage line, so a change to the line belongs there and is tested without Textual. `Conversation` keeps `last_turn` and `total_usage` (tokens only), counting failed turns too because they still used tokens, and `/clear` resets both. After each reply `Chat.add_usage` mounts a `.usage` line, always. `t` toggles `config.show_token_usage`, which sets the `show-usage` class on `Chat` (CSS shows or hides every line at once) and adds the total to the Output border title (`Chat.update_usage`).
+`Conversation.stream_reply` adds each chat call's `TokenCount` to the `Usage` in the turn's `TurnInfo`, summed over tool rounds, since each round re-sends the conversation. It also sums `generation_ns` for `tokens_per_second`, which is generation time only (no model loading or prompt evaluation); the usage line shows it as "tok/s". `TurnInfo` is one turn's tokens plus the tool groups it was sent with, and `TurnInfo.summary()` writes the usage line, so a change to the line belongs there and is tested without Textual. `Conversation` keeps `last_turn` and `total_usage` (tokens only), counting failed turns too because they still used tokens, and `/clear` resets both. After each reply `Chat.add_usage` mounts a `.usage` line, always; it shows in Detailed mode, which also adds the total to the Output border title (`Chat.update_usage`).
 
 ## UI details
 

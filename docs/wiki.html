@@ -147,7 +147,7 @@
 <div class="stat">
   <div><b>33</b><span>tools</span></div>
   <div><b>6</b><span>tool groups</span></div>
-  <div><b>8</b><span>prompt presets</span></div>
+  <div><b>1</b><span>prompt preset</span></div>
   <div><b>~4,100</b><span>lines of Python</span></div>
 </div>
 <h3>What the model can reach</h3>
@@ -213,15 +213,15 @@ PYTHONPATH=src venv/bin/python -m unittest discover tests  # tests; live ones sk
   <tr><td><code>mlx_server_command</code></td><td><code>~/.local/bin/rapid-mlx</code></td><td>The Rapid-MLX program</td></tr>
   <tr><td><code>model</code></td><td><code>LiquidAI/LFM3-1.7B-MLX-4bit</code></td><td>Chat model (key <code>m</code>, restarts the server)</td></tr>
   <tr><td><code>context_length</code></td><td><code>16384</code></td><td>The app's budget: when to compact. The server doesn't cut prompts to it. Popup choices 2K–32K</td></tr>
-  <tr><td><code>max_tokens</code></td><td><code>4096</code></td><td>Longest reply</td></tr>
-  <tr><td><code>enable_thinking</code></td><td><code>False</code></td><td>Let the model reason first, which is slower</td></tr>
+  <tr><td><code>max_tokens</code></td><td><code>8192</code></td><td>Longest reply, thinking included</td></tr>
+  <tr><td><code>enable_thinking</code></td><td><code>True</code></td><td>The model reasons before each chat answer (never for the compaction summary)</td></tr>
   <tr><td><code>compact_at</code></td><td><code>0.6</code></td><td>Share of the window that triggers <a href="#compaction">compaction</a>; <code>None</code> = off</td></tr>
   <tr><td><code>temperature</code> · <code>top_k</code> · <code>repetition_penalty</code></td><td><code>0.1</code> · <code>50</code> · <code>1.1</code></td><td>LFM3's recommended settings; <code>None</code> = model's own default</td></tr>
   <tr><td><code>tool_routing</code></td><td><code>True</code></td><td>Send only the groups a question needs</td></tr>
   <tr><td><code>embed_model</code></td><td><code>mlx-community/all-MiniLM-L6-v2-4bit</code></td><td>Routing embeddings</td></tr>
   <tr><td><code>rag_embed_model</code></td><td><code>mlx-community/embeddinggemma-2-4bit</code></td><td>Library chunks and searches</td></tr>
   <tr><td><code>library_path</code></td><td><code>~/.local/share/deckartes/library.db</code></td><td>Where saved files are kept</td></tr>
-  <tr><td><code>show_token_usage</code></td><td><code>False</code></td><td>Usage lines (key <code>t</code>)</td></tr>
+  <tr><td><code>detailed</code></td><td><code>False</code></td><td>Detailed mode: thinking and usage lines (key <code>shift+t</code>)</td></tr>
   <tr><td><code>system_prompt</code></td><td><code>Assistant</code></td><td>Preset name</td></tr>
   <tr><td><code>glances_host</code></td><td><code>http://thinkpad:61208</code></td><td>Home server</td></tr>
   <tr><td><code>cs_min_tier</code></td><td><code>b</code></td><td>Min PandaScore tier in "all" lists (s–d)</td></tr>
@@ -233,7 +233,7 @@ PYTHONPATH=src venv/bin/python -m unittest discover tests  # tests; live ones sk
 </table>
 <ul>
   <li>The model is a launch argument of the chat server, so changing it restarts the server.</li>
-  <li>The popup (key <code>c</code>) edits only <code>system_prompt</code>, <code>temperature</code>, <code>context_length</code>.</li>
+  <li>The popup (key <code>c</code>) edits only <code>temperature</code>, <code>context_length</code>.</li>
 </ul>
 </section>
 
@@ -262,7 +262,7 @@ PYTHONPATH=src venv/bin/python -m unittest discover tests  # tests; live ones sk
 <h3>Model flags</h3>
 <ol>
   <li>LFM3's 4-bit build isn't in Rapid-MLX's catalog, so <code>PARSER_FLAGS</code> names its parsers: <code>nemotron</code> handles the <code>&lt;tool_call&gt;&lt;function=</code> format. A new model family that doesn't auto-detect needs an entry.</li>
-  <li>Thinking is turned off per request (<code>enable_thinking</code>). The <code>--no-thinking</code> flag is a different thing: it leaves thinking tokens in the reply.</li>
+  <li>Thinking is set per request (<code>enable_thinking</code>: on for chat turns, off for <code>complete()</code>). The <code>--reasoning-parser</code> flag makes the server stream it as <code>reasoning_content</code>, apart from the reply. The <code>--no-thinking</code> flag is a different thing: it leaves thinking tokens in the reply.</li>
   <li>EmbeddingGemma 2 must be a catalog build (<code>-4bit</code> or <code>-bf16</code>). The <code>-8bit</code> build fails with "Model type embedding_gemma2 not supported".</li>
 </ol>
 <div class="tip"><strong>Prompt cache.</strong> The server reuses the longest identical start of the prompt: about 0.15 s to first token against 3 s cold for 1,300 tokens on an M1. So the date stays at the top and the time goes just before each question. A different set of routed tool groups is a cold start, because tools are part of the first system block.</div>
@@ -282,19 +282,21 @@ PYTHONPATH=src venv/bin/python -m unittest discover tests  # tests; live ones sk
 <h3>Events a turn yields, in order</h3>
 <div class="chips">
   <span class="chip warn">Compacting</span><span class="chip warn">Compacted</span><i>optional</i><i>→</i>
-  <span class="chip">Text …</span><i>→</i><span class="chip ok">ToolStarted(name)</span><span class="chip ok">ToolsDone</span><i>per round →</i>
-  <span class="chip">Text …</span><i>→ end, or</i><span class="chip bad">Failed(message)</span>
+  <span class="chip">Thinking …</span><span class="chip">Text …</span><i>→</i><span class="chip ok">ToolStarted(name)</span><span class="chip ok">ToolsDone</span><i>per round →</i>
+  <span class="chip">Thinking …</span><span class="chip">Text …</span><i>→ end, or</i><span class="chip bad">Failed(message)</span>
 </div>
 <table>
   <tr><th>Event</th><th>Chat reaction</th></tr>
-  <tr><td><code>Text</code></td><td>Written to the Markdown stream</td></tr>
-  <tr><td><code>ToolStarted</code> / <code>ToolsDone</code></td><td>Spinner: "Using tool: name" / back to default</td></tr>
+  <tr><td><code>Thinking</code></td><td>Greyed thinking part of the <code>Reply</code>, shown in Detailed mode only; Telegram and validation ignore it</td></tr>
+  <tr><td><code>Text</code></td><td>An answer part of the <code>Reply</code> (Markdown stream); the round's first text sets the spinner to "Answering..."</td></tr>
+  <tr><td><code>ToolStarted</code> / <code>ToolsDone</code></td><td>Spinner: "Using tool: name" / back to "Thinking..."; the next round starts new parts</td></tr>
   <tr><td><code>Compacting</code> / <code>Compacted</code></td><td>Spinner: "Compacting conversation..." / back to default</td></tr>
   <tr><td><code>Failed</code></td><td>An <code>**Error:**</code> paragraph</td></tr>
 </table>
 <h3>Rules</h3>
 <ol>
-  <li>History keeps only finished turns (time line, question, reply text); tool calls and results are dropped.</li>
+  <li>History keeps only finished turns (time line, question, reply text); tool calls, results and thinking are dropped. Thinking is never sent back to the model.</li>
+  <li>A round that thinks but ends with no text and no tool call fails the turn: "the model stopped before answering".</li>
   <li>A turn is saved only after a clean finish; failed, cancelled or closed turns leave no trace.</li>
   <li>Tokens count for every turn, failed ones included.</li>
   <li>Text before a tool round is followed by <code>"\n\n"</code>, so rounds are separate paragraphs.</li>
@@ -334,14 +336,7 @@ PYTHONPATH=src venv/bin/python -m unittest discover tests  # tests; live ones sk
 <p class="lead"><code>prompts.json</code>, selected by <code>config.system_prompt</code>, re-read on every use.</p>
 <table>
   <tr><th>Preset</th><th>Purpose</th><th>Tools</th></tr>
-  <tr><td>Assistant</td><td>General helper</td><td>all</td></tr>
-  <tr><td>Server admin</td><td>Watches the home server</td><td>10</td></tr>
-  <tr><td>Anime guide</td><td>Seasons, schedule, ratings, your list</td><td>9</td></tr>
-  <tr><td>CS esports</td><td>Teams, players, matches, ranking</td><td>10</td></tr>
-  <tr><td>Planner</td><td>Calendar + anime/CS events to add</td><td>8</td></tr>
-  <tr><td>File finder</td><td>Files and disk usage, the library</td><td>4</td></tr>
-  <tr><td>Researcher</td><td>Web answers with sources, the library</td><td>3</td></tr>
-  <tr><td>Chat only</td><td>Plain conversation</td><td>0</td></tr>
+  <tr><td>Assistant</td><td>General helper, used by the app and the Telegram bot</td><td>all</td></tr>
 </table>
 <ol>
   <li><code>system_message()</code> always starts with the current local date, and <code>current_time_line()</code> puts the time just before each question, which keeps the prompt cache valid. Presets must not repeat either.</li>
@@ -530,7 +525,7 @@ PYTHONPATH=src venv/bin/python -m unittest discover tests  # tests; live ones sk
 <div class="cards">
   <div class="card"><h4>Keys</h4><ul>
     <li><code>q</code> quit</li><li><code>m</code> model</li><li><code>c</code> config</li><li><code>e</code> file explorer</li>
-    <li><code>h</code> help</li><li><code>t</code> token usage</li><li><code>ctrl+c</code> interrupt (copy if text selected)</li></ul></div>
+    <li><code>h</code> help</li><li><code>shift+t</code> Default / Detailed mode</li><li><code>ctrl+c</code> interrupt (copy if text selected)</li></ul></div>
   <div class="card"><h4>Commands</h4><ul>
     <li><code>/clear</code> forget everything</li><li><code>/kill</code> stop the model servers</li><li><code>/library</code> list saved files</li><li><code>/forget</code> remove saved files</li></ul></div>
 </div>
@@ -564,7 +559,7 @@ async with app.run_test(size=(100, 30)) as pilot:
 
 <section id="usage">
 <h2>Token usage</h2>
-<p class="lead">The line under each reply (shown with key <code>t</code>), written by <code>TurnInfo.summary()</code>.</p>
+<p class="lead">The line under each reply (shown in Detailed mode, key <code>shift+t</code>), written by <code>TurnInfo.summary()</code>.</p>
 <div class="anat">
   <div><b>1,204 in</b><span>prompt tokens, all rounds</span></div>
   <div><b>87 out</b><span>generated</span></div>
@@ -576,7 +571,8 @@ async with app.run_test(size=(100, 30)) as pilot:
 <ol>
   <li>Each chat call's counts are summed over the turn's tool rounds (each re-sends the conversation).</li>
   <li><code>Conversation.last_turn</code> and <code>total_usage</code> are kept; <code>/clear</code> resets both; failed turns count.</li>
-  <li>The total also appears in the Output border title.</li>
+  <li>In Detailed mode the total also appears in the Output border title.</li>
+  <li>Default mode (yellow, bottom right) hides thinking and usage; Detailed (blue) shows both. Both are always mounted and the <code>detailed</code> class on <code>Chat</code> shows or hides them, so switching also applies to earlier replies. The app always starts in Default.</li>
   <li>Prompt tokens include ones the server had cached. Speed comes from <code>metrics.mean_itl_ms</code> on the finish chunk.</li>
 </ol>
 </section>
@@ -615,7 +611,7 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><th>Module</th><th>Role</th></tr>
   <tr><td><code>main.py</code></td><td>Entry point</td></tr>
   <tr><td><code>app.py</code></td><td>App, bindings, model picker, help and explorer screens</td></tr>
-  <tr><td><code>chat.py</code></td><td>Bubbles, <code>Spinner</code>, busy state, interrupt, usage lines, <code>ConfirmScreen</code>, <code>HelpScreen</code></td></tr>
+  <tr><td><code>chat.py</code></td><td>Bubbles, <code>Reply</code> (thinking and answer parts), <code>Spinner</code>, busy state, interrupt, usage lines, <code>ConfirmScreen</code>, <code>HelpScreen</code></td></tr>
   <tr><td><code>chat.tcss</code></td><td>Styles</td></tr>
   <tr><td><code>config_screen.py</code></td><td>Settings popup</td></tr>
   <tr><td><code>file_explorer.py</code></td><td>Home-folder tree</td></tr>

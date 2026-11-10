@@ -85,7 +85,6 @@ class Bot:
         """Poll Telegram until cancelled."""
         # First: without a handler, tools.confirm approves every change
         tools.confirm_handler = self.confirm
-        config.system_prompt = config.telegram_prompt
         model = asyncio.create_task(self._start_model())
         try:
             await self._register_commands()

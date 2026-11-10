@@ -300,7 +300,7 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         tool_router._examples.clear()
         self.addCleanup(tool_router._examples.clear)
         self.patch(config, "model", "org/some-model")
-        self.patch(config, "system_prompt", "Chat only")
+        self.patch(config, "system_prompt", "Another preset")
         self.patch(config, "tool_routing", False)
         self.patch(config, "timezone", "Asia/Tokyo")
 
@@ -487,7 +487,8 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         system = client.sent[0]["messages"][0]["content"]
         self.assertIn("Wednesday 2026-11-11 (Europe/Warsaw)", system)
         self.assertIn("Current local time: 19:30.", [m["content"] for m in client.sent[0]["messages"]])
-        self.assertTrue(self.tool_names(client), "the Assistant preset allows tools, Chat only doesn't")
+        self.assertIn("You are Deckartes", system, "the Assistant preset's prompt, not the user's preset")
+        self.assertTrue(self.tool_names(client))
 
     async def test_settings_and_clock_are_restored_afterwards(self):
         self.route({"q": {"server": 0.9}})
@@ -496,7 +497,7 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         self.assert_restored()
 
     def assert_restored(self):
-        self.assertEqual((config.system_prompt, config.tool_routing, config.timezone), ("Chat only", False, "Asia/Tokyo"))
+        self.assertEqual((config.system_prompt, config.tool_routing, config.timezone), ("Another preset", False, "Asia/Tokyo"))
         self.assertLess(abs(clock.now() - dt.datetime.now(dt.UTC)), dt.timedelta(minutes=1))
 
     async def stopped_run(self) -> validation.Run:

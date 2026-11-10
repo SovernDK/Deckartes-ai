@@ -34,6 +34,11 @@ class Text:
     text: str
 
 @dataclass
+class Thinking:
+    """Part of the model's thinking before a round's text or tool calls. Only shown, never saved."""
+    text: str
+
+@dataclass
 class ToolStarted:
     """A tool the model called is about to run."""
     name: str
@@ -55,7 +60,7 @@ class Failed:
     """The turn failed; always the last event. The reply so far isn't saved."""
     message: str
 
-Event = Text | ToolStarted | ToolsDone | Compacting | Compacted | Failed
+Event = Text | Thinking | ToolStarted | ToolsDone | Compacting | Compacted | Failed
 
 # Stop a model that keeps calling tools instead of answering
 MAX_TOOL_ROUNDS = 10
@@ -207,11 +212,15 @@ class Conversation:
             turn.tool_groups = selection.groups
             for _ in range(MAX_TOOL_ROUNDS):
                 content = ""
+                thought = False
                 tool_calls = []
                 context = 0
                 # aclosing: a closed turn stops the model's request at once, not when Python gets to it
                 async with aclosing(mlx_client.stream_chat(messages, tools)) as stream:
                     async for delta in stream:
+                        if delta.reasoning:
+                            thought = True
+                            yield Thinking(delta.reasoning)
                         if delta.content:
                             content += delta.content
                             reply += delta.content
@@ -222,6 +231,10 @@ class Conversation:
                             context = delta.usage.prompt + delta.usage.completion
 
                 if not tool_calls:
+                    # e.g. the thinking used up max_tokens
+                    if thought and not content.strip():
+                        yield Failed("the model stopped before answering")
+                        return
                     self._remember(query, reply, time_line)
                     if reply:
                         self.context_tokens = context

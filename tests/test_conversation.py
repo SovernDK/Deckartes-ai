@@ -12,6 +12,7 @@ from agent.conversation import (
     Conversation,
     Failed,
     Text,
+    Thinking,
     ToolsDone,
     ToolStarted,
     TurnInfo,
@@ -29,6 +30,9 @@ SEASON_TEXT = "Today is Wednesday 2026-11-11. Current anime season: Fall 2026."
 
 def chunk(content="", tool_calls=None, done=False):
     return mlx_client.Delta(content, tool_calls or [], mlx_client.TokenCount(10, 5, 10**9) if done else None)
+
+def think(text):
+    return mlx_client.Delta(reasoning=text)
 
 def call(tool, **arguments):
     return mlx_client.ToolCall(f"call_{tool}", tool, arguments)
@@ -117,6 +121,24 @@ class ReplacedToolFunctionsTest(TurnTest):
         await self.reply()
         self.assertIsNone(client.sent[0]["tools"])
         self.assertEqual(self.conversation.last_turn.tool_groups, ["cs"])
+
+class ThinkingTest(TurnTest):
+    async def test_thinking_is_streamed_but_never_saved_or_sent_back(self):
+        client = self.use([think("Need the team."), chunk(tool_calls=[call("get_cs_team", name="NAVI")], done=True)],
+                          [think("Got it."), chunk("NAVI is fine.", done=True)])
+        self.conversation = Conversation(tool_runner=mock.AsyncMock(return_value="result"))
+        events = await self.reply("hi")
+        self.assertEqual(events, [Thinking("Need the team."), ToolStarted("get_cs_team"), ToolsDone(),
+                                  Thinking("Got it."), Text("NAVI is fine.")])
+        self.assertEqual(self.conversation.history[-1], {"role": "assistant", "content": "NAVI is fine."})
+        self.assertNotIn("Need the team.", str(client.sent[1]["messages"]))
+
+    async def test_thinking_without_an_answer_fails_and_is_not_saved(self):
+        self.use([think("Hmm..."), chunk(" ", done=True)])
+        events = await self.reply("hi")
+        self.assertEqual(events, [Thinking("Hmm..."), Text(" "), Failed("the model stopped before answering")])
+        self.assertEqual(self.conversation.history, [])
+        self.assertEqual(self.conversation.total_usage.total, 15)
 
 class FinishedTurnTest(TurnTest):
     async def test_reply_is_streamed_saved_and_counted(self):

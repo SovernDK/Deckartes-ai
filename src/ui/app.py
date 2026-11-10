@@ -4,7 +4,7 @@ from pathlib import Path
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container
+from textual.containers import Container, Horizontal
 from textual.widgets import Footer, Header, Static
 
 from core.config import config
@@ -28,7 +28,9 @@ class DecartesApp(App):
         ("c", "config", "Config"),
         Binding("e", "explorer", "Files", tooltip="Browse the home folder and save a file or folder to the library"),
         ("h", "help", "Help"),
-        Binding("t", "toggle_usage", "Tokens", tooltip="Show token usage"),
+        # Terminals report shift+t as "T" or as "shift+t"; the footer's mode label shows the key instead
+        Binding("T,shift+t", "toggle_detailed", "Mode", show=False, key_display="shift+t",
+                tooltip="Switch between Default and Detailed mode (the model's thinking and token usage)"),
         # priority: works while the input is hidden; only active while the model answers and
         # no text is selected (ctrl+c then copies the selection instead)
         Binding("ctrl+c", "interrupt", "Stop", priority=True,
@@ -37,7 +39,7 @@ class DecartesApp(App):
 
     def compose(self) -> ComposeResult:
             yield Header()
-            yield Footer()
+            yield Horizontal(Footer(), Static(markup=False, id="mode"), id="footer_bar")
             yield Container(
                 Static(BANNER.strip("\n"), markup=False, id="banner"),
                 Chat(),
@@ -46,18 +48,25 @@ class DecartesApp(App):
 
     def on_mount(self) -> None:
         self.title = "Decartes"
-        self.query_one(Chat).set_class(config.show_token_usage, "show-usage")
+        self.show_mode()
         self.update_subtitle()
 
     def update_subtitle(self) -> None:
         self.sub_title = f"{config.model} · {config.system_prompt}"
 
-    def action_toggle_usage(self) -> None:
-        config.show_token_usage = not config.show_token_usage
-        # Per-reply counts are always added; this class shows or hides them all at once
-        self.query_one(Chat).set_class(config.show_token_usage, "show-usage")
-        self.query_one(Chat).update_usage()
-        self.notify(f"Token usage {'shown' if config.show_token_usage else 'hidden'}", timeout=2)
+    def action_toggle_detailed(self) -> None:
+        config.detailed = not config.detailed
+        self.show_mode()
+
+    def show_mode(self) -> None:
+        """Apply config.detailed: thinking and usage lines are always added, and the chat's
+        "detailed" class shows or hides them all at once."""
+        chat = self.query_one(Chat)
+        chat.set_class(config.detailed, "detailed")
+        chat.update_usage()
+        mode = self.query_one("#mode", Static)
+        mode.update(f"{'Detailed' if config.detailed else 'Default'} · shift+t")
+        mode.set_class(config.detailed, "detailed")
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if action == "interrupt":
@@ -81,7 +90,7 @@ class DecartesApp(App):
         for binding in self.BINDINGS:
             if isinstance(binding, tuple):
                 binding = Binding(*binding)
-            shortcuts.append((binding.key, binding.tooltip or binding.description))
+            shortcuts.append((binding.key_display or binding.key, binding.tooltip or binding.description))
         commands = [(f"/{name}", description) for name, (_, description) in Chat.COMMANDS.items()]
         self.push_screen(HelpScreen(shortcuts, commands))
 

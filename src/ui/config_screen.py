@@ -1,4 +1,4 @@
-"""Pop-up for chat settings: system prompt preset, temperature and context limit.
+"""Pop-up for chat settings: temperature and context limit.
 
 Changes go straight into the shared config and apply from the next message.
 """
@@ -9,7 +9,6 @@ from textual.content import Content
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Static
 
-from agent.prompts import load_prompts
 from core.config import CONTEXT_LENGTHS, config
 
 MIN_TEMPERATURE, MAX_TEMPERATURE = 0.0, 2.0
@@ -50,26 +49,14 @@ class ConfigScreen(ModalScreen[bool]):
     BINDINGS = [("escape", "cancel", "Close")]
 
     def compose(self) -> ComposeResult:
-        try:
-            self.prompts = {prompt["name"]: prompt for prompt in load_prompts()}
-            load_error = ""
-        except Exception as e:
-            self.prompts = {}
-            load_error = f"Could not read prompts.json: {e}"
-
-        selected = config.system_prompt if config.system_prompt in self.prompts else Select.NULL
         with Vertical(id="config"):
-            yield Label("System prompt")
-            yield Select([(name, name) for name in self.prompts], value=selected,
-                         allow_blank=selected is Select.NULL, id="prompt")
-            yield Static(id="prompt_description")
             yield Label(f"Temperature ({MIN_TEMPERATURE:g}-{MAX_TEMPERATURE:g}, empty = model default)")
             yield Input(value="" if config.temperature is None else f"{config.temperature:g}",
                         placeholder="model default", type="number", select_on_focus=False,
                         id="temperature")
             yield Label("Context budget (when to compact)")
             yield Select(self.context_options(), value=config.context_length, allow_blank=False, id="context")
-            yield Static(load_error, id="config_error")
+            yield Static(id="config_error")
             with Horizontal(id="config_buttons"):
                 yield OutlineButton("Save", "primary", id="save")
                 yield OutlineButton("Cancel", "error", id="cancel")
@@ -86,22 +73,7 @@ class ConfigScreen(ModalScreen[bool]):
         return options
 
     def on_mount(self) -> None:
-        self.show_description(self.query_one("#prompt", Select).value)
-        self.query_one("#prompt", Select).focus()
-
-    def show_description(self, name) -> None:
-        prompt = self.prompts.get(name) if isinstance(name, str) else None
-        if prompt is None:
-            text = ""
-        else:
-            tools = prompt.get("tools", "all")
-            tools_text = "all tools" if tools == "all" else f"{len(tools)} tools" if tools else "no tools"
-            text = f"{prompt.get('description', '')} ({tools_text})"
-        self.query_one("#prompt_description", Static).update(text)
-
-    def on_select_changed(self, event: Select.Changed) -> None:
-        if event.select.id == "prompt":
-            self.show_description(event.value)
+        self.query_one("#temperature", Input).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save":
@@ -119,11 +91,6 @@ class ConfigScreen(ModalScreen[bool]):
         """Check every field first and only then apply, so a bad value changes nothing."""
         error = self.query_one("#config_error", Static)
 
-        prompt = self.query_one("#prompt", Select).value
-        if not isinstance(prompt, str) or prompt not in self.prompts:
-            error.update("Choose a system prompt")
-            return
-
         temperature_text = self.query_one("#temperature", Input).value.strip()
         try:
             temperature = float(temperature_text) if temperature_text else None
@@ -135,7 +102,6 @@ class ConfigScreen(ModalScreen[bool]):
 
         context = self.query_one("#context", Select).value
 
-        config.system_prompt = prompt
         config.temperature = temperature
         config.context_length = context
         self.dismiss(True)

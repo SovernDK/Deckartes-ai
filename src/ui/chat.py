@@ -10,7 +10,7 @@ from textual.containers import HorizontalGroup, VerticalGroup, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, ListItem, ListView, Markdown, Static
 
-from agent.conversation import Compacted, Compacting, Conversation, Failed, Text, ToolsDone, ToolStarted
+from agent.conversation import Compacted, Compacting, Conversation, Failed, Text, Thinking, ToolsDone, ToolStarted
 from core.config import config
 from model import mlx_client, mlx_server
 from tools import library, tools
@@ -22,12 +22,14 @@ class Spinner(Static):
     """Text spinner made of slashes, shown while the model is answering."""
     FRAMES = "|/-\\"
     DEFAULT_LABEL = "Thinking..."
+    ANSWERING_LABEL = "Answering..."
     MIN_TOOL_SECONDS = 1.0
 
     def on_mount(self) -> None:
         self.frame = 0
         self.label = self.DEFAULT_LABEL
-        self.pending: list[str | None] = []
+        # Labels waiting to be shown, each with how long it stays at least (0 = until the next)
+        self.pending: list[tuple[str | None, float]] = []
         self.hold = None
         self.timer = self.set_interval(0.1, self.spin, pause=True)
 
@@ -43,20 +45,30 @@ class Spinner(Static):
         self.label = label or self.DEFAULT_LABEL
         self.render_frame()
 
-    def show_tool(self, tool_name: str | None) -> None:
-        """Queue a tool label (None = back to default); shown once the current one has had its time."""
-        self.pending.append(f"Using tool: {tool_name}" if tool_name else None)
+    def queue(self, label: str | None, seconds: float = 0) -> None:
+        """Show a label (None = the default) once the current one has had its time."""
+        self.pending.append((label, seconds))
         if self.hold is None:
             self.show_next()
+
+    def show_tool(self, tool_name: str | None) -> None:
+        """Queue a tool label, held for MIN_TOOL_SECONDS; None goes back to the default."""
+        if tool_name:
+            self.queue(f"Using tool: {tool_name}", self.MIN_TOOL_SECONDS)
+        else:
+            self.queue(None)
+
+    def show_answering(self) -> None:
+        self.queue(self.ANSWERING_LABEL)
 
     def show_next(self) -> None:
         self.hold = None
         if not self.pending:
             return
-        label = self.pending.pop(0)
+        label, seconds = self.pending.pop(0)
         self.set_label(label)
-        if label:
-            self.hold = self.set_timer(self.MIN_TOOL_SECONDS, self.show_next)
+        if seconds:
+            self.hold = self.set_timer(seconds, self.show_next)
         else:
             self.show_next()
 
@@ -78,6 +90,45 @@ class Spinner(Static):
         self.clear_pending()
         self.timer.pause()
         self.display = False
+
+class Reply(VerticalGroup):
+    """One streamed reply: thinking and answer text in the order they came. Each change between
+    them starts a new part, a greyed Static for thinking (hidden by CSS outside Detailed mode) or a
+    Markdown for the answer."""
+
+    def __init__(self) -> None:
+        super().__init__(classes="reply")
+        self.markdown_stream = None
+        self.thinking: Static | None = None
+        self.thinking_text = ""
+
+    async def write_text(self, text: str) -> None:
+        if self.markdown_stream is None:
+            self.thinking = None
+            markdown = Markdown()
+            await self.mount(markdown)
+            self.markdown_stream = Markdown.get_stream(markdown)
+        await self.markdown_stream.write(text)
+
+    async def write_thinking(self, text: str) -> None:
+        if self.thinking is None:
+            await self.stop()
+            self.thinking = Static(markup=False, classes="thinking")
+            self.thinking_text = ""
+            await self.mount(self.thinking)
+        self.thinking_text += text
+        self.thinking.update(self.thinking_text.strip())
+
+    async def next_round(self) -> None:
+        """After a tool round, the model's next thinking or text starts a part of its own."""
+        await self.stop()
+        self.thinking = None
+
+    async def stop(self) -> None:
+        """Finish the answer part being streamed, if any."""
+        if self.markdown_stream is not None:
+            await self.markdown_stream.stop()
+            self.markdown_stream = None
 
 class Chat(VerticalGroup):
     # Unfocusing the input lets the app's single-key shortcuts (q, m, c, h) work
@@ -137,9 +188,9 @@ class Chat(VerticalGroup):
             self.app.pop_screen()
 
     def update_usage(self) -> None:
-        """Output title, with the conversation's total tokens while usage is shown."""
+        """Output title, with the conversation's total tokens in Detailed mode."""
         title = "Output"
-        if config.show_token_usage:
+        if config.detailed:
             title += f" · {self.conversation.total_usage.total:,} tokens"
         self.query_one("#response").border_title = title
 
@@ -309,7 +360,7 @@ class Chat(VerticalGroup):
         )
 
     async def add_usage(self, after) -> None:
-        """Show the latest turn's token count under its reply (hidden by CSS while usage is off)."""
+        """Show the latest turn's token count under its reply (hidden by CSS outside Detailed mode)."""
         summary = self.conversation.last_turn.summary()
         if summary:
             await self.query_one("#response", VerticalScroll).mount(
@@ -333,22 +384,33 @@ class Chat(VerticalGroup):
     async def fetch_stream(self, query) -> None:
         """Show the reply as it streams in."""
         await self.add_user_message(query)
-        markdown = await self.add_ai_message()
+        response = self.query_one("#response", VerticalScroll)
+        reply = Reply()
+        await response.mount(reply)
+        response.anchor()
 
         spinner = self.query_one(Spinner)
         interrupted = False
         wrote = False
-        markdown_stream = Markdown.get_stream(markdown)
+        # Whether this model round's answer has started, for the spinner's "Answering..."
+        answering = False
         try:
             async with aclosing(self.conversation.stream_reply(query)) as events:
                 async for event in events:
                     if isinstance(event, Text):
-                        await markdown_stream.write(event.text)
+                        await reply.write_text(event.text)
                         wrote = True
+                        if not answering and event.text.strip():
+                            answering = True
+                            spinner.show_answering()
+                    elif isinstance(event, Thinking):
+                        await reply.write_thinking(event.text)
                     elif isinstance(event, ToolStarted):
                         spinner.show_tool(event.name)
                     elif isinstance(event, ToolsDone):
+                        answering = False
                         spinner.show_tool(None)
+                        await reply.next_round()
                     elif isinstance(event, Compacting):
                         spinner.set_label("Compacting conversation...")
                     elif isinstance(event, Compacted):
@@ -356,18 +418,18 @@ class Chat(VerticalGroup):
                     elif isinstance(event, Failed):
                         # An error ends the reply as its own paragraph
                         error = f"**Error:** {event.message}"
-                        await markdown_stream.write(f"\n\n{error}" if wrote else error)
+                        await reply.write_text(f"\n\n{error}" if wrote else error)
         except asyncio.CancelledError:
             interrupted = True
             raise
         finally:
-            await markdown_stream.stop()
+            await reply.stop()
             if interrupted:
                 # Drop the unfinished reply from the screen; Conversation keeps it out of the history
-                await markdown.remove()
+                await reply.remove()
                 self.update_usage()
             else:
-                await self.add_usage(markdown)
+                await self.add_usage(reply)
             self.set_busy(False)
 
 class ModelChangeMenu(VerticalGroup):

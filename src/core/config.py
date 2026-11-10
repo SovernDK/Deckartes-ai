@@ -41,10 +41,11 @@ class Config:
     model: str = "LiquidAI/LFM3-1.7B-MLX-4bit"
     # One of CONTEXT_LENGTHS. The app's own budget (when to compact); the server doesn't cut the prompt to it
     context_length: int = 16384
-    # Longest reply in tokens
-    max_tokens: int = 4096
-    # Off for speed: a thinking model spends tokens before the reply starts
-    enable_thinking: bool = False
+    # Longest reply in tokens, thinking included
+    max_tokens: int = 8192
+    # The model reasons before each chat answer (not for the compaction summary). Its thinking is
+    # only shown, in the app's Detailed mode; it's never saved or sent back to the model
+    enable_thinking: bool = True
     # Summarise the conversation into one message once a turn's prompt plus reply reaches this
     # share of context_length (0.6 = 60%), so it stays clear of the window's limit and the
     # model's quality drop near it. None = never compact.
@@ -58,8 +59,8 @@ class Config:
     embed_model: str = "mlx-community/all-MiniLM-L6-v2-4bit"
     # Embeds the library's chunks and searches (library.py); multilingual, unlike embed_model
     rag_embed_model: str = "mlx-community/embeddinggemma-2-4bit"
-    # Show tokens used per reply and for the whole conversation (key t)
-    show_token_usage: bool = False
+    # Detailed mode (key shift+t): show the model's thinking and the tokens used; off = Default mode
+    detailed: bool = False
     # Name of a preset in prompts.json
     system_prompt: str = "Assistant"
     glances_host: str = "http://thinkpad:61208"
@@ -69,8 +70,6 @@ class Config:
     telegram_token: str = field(default_factory=lambda: read_env("TELEGRAM_BOT_TOKEN"), repr=False)
     # The only Telegram user the bot answers; the bot won't start without it
     telegram_user_id: str = field(default_factory=lambda: read_env("TELEGRAM_USER_ID"), repr=False)
-    # Name of the preset in prompts.json the Telegram bot uses
-    telegram_prompt: str = "Phone"
     # Lists of all CS matches/events keep only this PandaScore tier or better (s, a, b, c, d)
     cs_min_tier: str = "b"
     # Whose anime list the list tool reads (must be public)

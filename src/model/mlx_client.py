@@ -51,6 +51,8 @@ class Delta:
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: TokenCount | None = None
+    # The model's thinking, which the server's reasoning parser keeps out of content
+    reasoning: str = ""
 
 @dataclass
 class Reply:
@@ -64,12 +66,13 @@ def _token_count(usage: dict | None, metrics: dict | None) -> TokenCount | None:
     token_ms = (metrics or {}).get("mean_itl_ms") or 0
     return TokenCount(usage.get("prompt_tokens", 0), completion, round(completion * token_ms * 1e6))
 
-def _chat_body(messages: list[dict], tools: list | None = None) -> dict:
+def _chat_body(messages: list[dict], tools: list | None = None, thinking: bool | None = None) -> dict:
+    """thinking None = config.enable_thinking."""
     body = {
         "model": config.model,
         "messages": messages,
         "max_tokens": config.max_tokens,
-        "enable_thinking": config.enable_thinking,
+        "enable_thinking": config.enable_thinking if thinking is None else thinking,
     }
     for name in ("temperature", "top_k", "repetition_penalty"):
         if getattr(config, name) is not None:
@@ -132,6 +135,10 @@ async def stream_chat(messages: list[dict], tools: list | None = None) -> AsyncI
                     delta = choice.get("delta") or {}
                     for call in delta.get("tool_calls") or []:
                         _add_tool_call_delta(calls, call)
+                    # Rapid-MLX sends thinking as reasoning_content; other servers name it reasoning
+                    reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+                    if reasoning:
+                        yield Delta(reasoning=reasoning)
                     if delta.get("content"):
                         yield Delta(content=delta["content"])
     except httpx.TransportError as e:
@@ -139,11 +146,12 @@ async def stream_chat(messages: list[dict], tools: list | None = None) -> AsyncI
     yield Delta(tool_calls=[_tool_call(calls[i]) for i in sorted(calls)], usage=_token_count(usage, metrics))
 
 async def complete(messages: list[dict]) -> Reply:
-    """A whole reply without tools, for compacting the conversation."""
+    """A whole reply without tools or thinking, for compacting the conversation."""
     await asyncio.to_thread(mlx_server.ensure_chat)
     try:
         async with httpx.AsyncClient(transport=_transport, timeout=TIMEOUT) as client:
-            response = await client.post(f"{config.host}/v1/chat/completions", json=_chat_body(messages))
+            response = await client.post(f"{config.host}/v1/chat/completions",
+                                         json=_chat_body(messages, thinking=False))
     except httpx.TransportError as e:
         raise _unreachable(config.host) from e
     if response.status_code != 200:

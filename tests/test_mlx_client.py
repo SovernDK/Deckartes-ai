@@ -64,9 +64,9 @@ class StreamChatTest(ClientTest):
         self.serve(delta(role="assistant"), delta(content="Hel"), delta(content="lo"), FINISH, USAGE)
         self.assertEqual(await self.stream(), [Delta("Hel"), Delta("lo"), Delta(usage=TokenCount(34, 8, 160_000_000))])
 
-    async def test_reasoning_is_not_part_of_the_reply(self):
-        self.serve(delta(reasoning_content="hmm"), delta(reasoning="hmm"), delta(content="ok"))
-        self.assertEqual(await self.stream(), [Delta("ok"), Delta()])
+    async def test_reasoning_comes_apart_from_the_reply(self):
+        self.serve(delta(reasoning_content="hmm"), delta(reasoning=" so"), delta(content="ok"))
+        self.assertEqual(await self.stream(), [Delta(reasoning="hmm"), Delta(reasoning=" so"), Delta("ok"), Delta()])
 
     async def test_sends_the_settings_and_asks_for_usage(self):
         await self.stream()
@@ -131,6 +131,12 @@ class CompleteTest(ClientTest):
         reply = await mlx_client.complete([{"role": "user", "content": "x"}])
         self.assertEqual(reply, mlx_client.Reply("gist", TokenCount(9, 2, 0)))
         self.assertNotIn("stream", self.body())
+
+    async def test_the_summary_is_written_without_thinking(self):
+        self.response = httpx.Response(200, json={"choices": [{"message": {"content": "gist"}}]})
+        with mock.patch.object(config, "enable_thinking", True):
+            await mlx_client.complete([{"role": "user", "content": "x"}])
+        self.assertIs(self.body()["enable_thinking"], False)
 
 class EmbedTest(ClientTest):
     def setUp(self):

@@ -8,7 +8,7 @@ Local models run in Rapid-MLX (`uv tool install 'rapid-mlx[embeddings]'`), in it
 
 **Readiness.** Poll `/health/ready`, which is 503 until the model has loaded. `/v1/models` answers as soon as the port binds.
 
-**Model flags.** LFM3's 4-bit build isn't in Rapid-MLX's catalog, so `PARSER_FLAGS` names its parsers: `nemotron` handles the `<tool_call><function=` format. A new model family that doesn't auto-detect gets an entry there. Thinking is turned off per request (`enable_thinking`). The `--no-thinking` flag is a different thing: it leaves thinking tokens in the reply.
+**Model flags.** LFM3's 4-bit build isn't in Rapid-MLX's catalog, so `PARSER_FLAGS` names its parsers: `nemotron` handles the `<tool_call><function=` format. A new model family that doesn't auto-detect gets an entry there. Thinking is set per request (`enable_thinking`): on for chat turns (`config.enable_thinking`), always off for `complete()`, the compaction summary. The `qwen3` reasoning parser streams it as `reasoning_content`, apart from `content`, and `stream_chat` passes it on as `Delta.reasoning`. It counts toward `max_tokens` (8,192). It is never sent back: LFM3's template drops earlier turns' thinking anyway, and Rapid-MLX's message format has no field for it. The `--no-thinking` flag is a different thing: it leaves thinking tokens in the reply.
 
 **EmbeddingGemma 2** must be a catalog build (`-4bit` or `-bf16`). Rapid-MLX loads those natively, and the `-8bit` build fails with "Model type embedding_gemma2 not supported".
 

@@ -11,9 +11,9 @@ Deckartes is a terminal chat UI (Textual) for local MLX models served by Rapid-M
 [ ] Better RAG search (not just by embedded chunks)
 [ ] Scanning user1 folder on homeserver
 [x] Integration with telegram
-[ ] Remove system prompts, leave only one
+[x] Remove system prompts, leave only one
 [ ] Add bot a character in system prompt
-[ ] Add reasoning but dont display it in the answer
+[x] Add reasoning but dont display it in the answer
 [ ] Apply defered tools from this doc: https://docs.liquid.ai/lfm/models/lfm3-1.7b
 [ ] Prepare fine tuning data
 
@@ -44,7 +44,7 @@ Python lives in `src/`, in one package per feature: `core` (config, clock, names
 
 **Prompt presets.** `prompts.json` holds presets (name, description, `prompt`, `tools`: `"all"`, a list of tool names, or `[]`), selected by `config.system_prompt`. `prompts.py` re-reads the file on every use, so edits apply without a restart. `system_message()` always starts with the current local date, even when no preset matches, since models don't know it otherwise, and `current_time_line()` goes just before each question to keep the prompt cache valid. Presets shouldn't repeat either. `Conversation` puts the system message first on every turn (it isn't stored in the history), and `tool_router.select_tools` sends only the tools the preset allows. A new tool must also be added to the relevant presets, unless they use `"all"`. `allowed_tool_names` raises for a name that isn't a tool, so a typo shows as an error in the reply (and fails `tests/test_tools.py`) instead of silently dropping the tool.
 
-**Turn events.** `Conversation.stream_reply` yields events to `Chat`: `Text` (reply text), `ToolStarted(name)` / `ToolsDone` (drive the spinner label) and `Failed(message)`. It never raises: any failure is a `Failed`, always last. A turn with a `Failed` isn't saved; `Chat` shows it as a `**Error:**` paragraph. `tests/test_conversation.py` drives whole turns with only `mlx_client`'s chat calls faked. Tool failures are different: `tools.run_tool` turns exceptions into a text result that goes back to the model, not the user.
+**Turn events.** `Conversation.stream_reply` yields events to `Chat`: `Text` (reply text), `Thinking` (the model's reasoning: shown only in the app's Detailed mode, never saved, sent back or sent to Telegram), `ToolStarted(name)` / `ToolsDone` (drive the spinner label) and `Failed(message)`. It never raises: any failure is a `Failed`, always last. A turn with a `Failed` isn't saved; `Chat` shows it as a `**Error:**` paragraph. `tests/test_conversation.py` drives whole turns with only `mlx_client`'s chat calls faked. Tool failures are different: `tools.run_tool` turns exceptions into a text result that goes back to the model, not the user.
 
 **Tool loop.** `stream_reply` sends the tools `tool_router.select_tools` picks, run any tool calls, append assistant + `role: tool` messages to a local copy of `messages`, and repeat up to `MAX_TOOL_ROUNDS`. Text before a tool round is followed by `Text("\n\n")`, so rounds are separate paragraphs in the saved reply.
 
@@ -65,6 +65,6 @@ Read the matching doc before working in that area:
 - [docs/library.md](docs/library.md): saving files and folders, chunking, embeddings, overwriting and searching (`library.py`).
 - [docs/telegram.md](docs/telegram.md): the Telegram bot, its setup, access check, confirmations and how it runs.
 - [docs/validation.md](docs/validation.md): the `/validate` command, its case file, scoring and saved results.
-- [docs/ui.md](docs/ui.md): widgets, screens, bindings, styles, the config popup and the usage line, plus the headless pilot recipe for verifying UI changes.
+- [docs/ui.md](docs/ui.md): widgets, screens, bindings, styles, the config popup, Default/Detailed mode, thinking and the usage line, plus the headless pilot recipe for verifying UI changes.
 
 All architecture is kept in docs/wiki.html for human developers, any bigger change in logic should be updated there.

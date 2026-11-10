@@ -73,8 +73,47 @@ Chat {
     text-style: italic;
 }
 
-Chat.show-usage .usage {
+/* The model's thinking: always added, shown only in Detailed mode */
+.thinking {
+    display: none;
+    padding: 0 2;
+    margin-bottom: 1;
+    color: $text-muted;
+}
+
+Chat.detailed .usage, Chat.detailed .thinking {
     display: block;
+}
+
+.reply {
+    max-width: 90%;
+    margin-top: 1;
+}
+
+.reply Markdown {
+    background: transparent;
+}
+
+#footer_bar {
+    dock: bottom;
+    height: 1;
+    background: $footer-background;
+}
+
+#footer_bar Footer {
+    dock: none;
+    width: 1fr;
+}
+
+#mode {
+    width: auto;
+    padding: 0 1;
+    text-style: bold;
+    color: $warning;
+}
+
+#mode.detailed {
+    color: $primary;
 }
 
 .user-row {
@@ -162,10 +201,6 @@ ConfigScreen {
     color: black;
     background: $accent;
     text-style: bold;
-}
-
-#prompt_description {
-    color: $text-muted;
 }
 
 #config_error {

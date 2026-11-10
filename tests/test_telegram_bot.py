@@ -18,7 +18,7 @@ from model import mlx_client, mlx_server
 from telegram import telegram_api, telegram_bot
 from telegram.telegram_api import MAX_MESSAGE, split_text
 from telegram.telegram_bot import Bot, clean_markdown
-from test_conversation import FakeClient, call, chunk
+from test_conversation import FakeClient, call, chunk, think
 from tools import tools
 
 TOKEN = "123:SECRET"
@@ -171,6 +171,11 @@ class TurnTest(BotTest):
         await self.ask_and_finish()
         self.assertEqual(self.texts(), ["Partial\n\nError: server gone"])
         self.assertEqual(self.bot.conversation.history, [])
+
+    async def test_only_the_answer_is_sent_never_the_thinking(self):
+        self.use_model([think("Secret reasoning."), chunk("The answer.", done=True)])
+        await self.ask_and_finish()
+        self.assertEqual(self.texts(), ["The answer."])
 
     async def test_an_empty_reply_gets_a_note(self):
         self.use_model([chunk("", done=True)])

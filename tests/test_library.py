@@ -8,11 +8,11 @@ import threading
 import unittest
 from pathlib import Path
 
-import library
-import mlx_client
-from config import config
-from library import AddResult, Entry
+from core.config import config
+from model import mlx_client
 from test_conversation import TurnTest, call, chunk
+from tools import library
+from tools.library import AddResult, Entry
 
 TOPICS = 40
 

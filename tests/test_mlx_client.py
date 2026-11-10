@@ -6,10 +6,9 @@ from unittest import mock
 
 import httpx
 
-import mlx_client
-import mlx_server
-from config import config
-from mlx_client import Delta, ModelServerError, TokenCount, ToolCall
+from core.config import config
+from model import mlx_client, mlx_server
+from model.mlx_client import Delta, ModelServerError, TokenCount, ToolCall
 
 
 def sse(*chunks) -> str:

@@ -7,13 +7,12 @@ from unittest import mock
 
 from textual.widgets import Markdown
 
-import library
-import mlx_client
-import mlx_server
-from app import DecartesApp
-from chat import Chat, ConfirmScreen
-from config import config
-from file_explorer import FileExplorerScreen, UserDirectoryTree
+from core.config import config
+from model import mlx_client, mlx_server
+from tools import library
+from ui.app import DecartesApp
+from ui.chat import Chat, ConfirmScreen
+from ui.file_explorer import FileExplorerScreen, UserDirectoryTree
 
 
 def embed(texts):

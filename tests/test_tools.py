@@ -3,10 +3,10 @@
 import unittest
 from unittest import mock
 
-import prompts
-import tools
-from config import config
+from agent import prompts
+from core.config import config
 from frozen_clock import freeze
+from tools import tools
 
 
 class RegistryTest(unittest.TestCase):

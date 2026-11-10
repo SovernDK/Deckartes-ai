@@ -5,10 +5,10 @@ from unittest import mock
 
 import httpx
 
-import tools
-from config import config
+from core.config import config
 from frozen_clock import freeze
 from http_fake import HttpTest
+from tools import tools
 
 NAVI = {"id": 1, "name": "Natus Vincere"}
 MOUZ = {"id": 2, "name": "MOUZ"}

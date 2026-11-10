@@ -2,8 +2,8 @@
 
 import unittest
 
-import tools
 from http_fake import HttpTest
+from tools import tools
 
 GB = 1024 ** 3
 

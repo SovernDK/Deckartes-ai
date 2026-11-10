@@ -3,10 +3,10 @@
 # It has to be Terminal: a background service (launchd) is refused calendar access.
 # caffeinate -is keeps the Mac awake: -s on power, -i also on battery. Closing the window stops the bot.
 
-cd "${0:A:h}" || exit 1
+cd "${0:A:h}/src" || exit 1
 
 while true; do
-  /usr/bin/caffeinate -is venv/bin/python telegram_bot.py
+  /usr/bin/caffeinate -is ../venv/bin/python -m telegram.telegram_bot
   code=$?
   # 0: asked to stop. 2: a setting is missing, so restarting wouldn't help
   if [[ $code -eq 0 || $code -eq 2 ]]; then

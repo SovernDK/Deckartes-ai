@@ -8,10 +8,10 @@ from unittest import mock
 
 import httpx
 
-import anime_digest
-from config import config
+from core.config import config
 from frozen_clock import freeze
 from http_fake import HttpTest
+from jobs import anime_digest
 from test_anime_tools import TIMETABLE, USER_LIST, episode, on_list, weekly
 
 TOKEN = "123:SECRET"
@@ -72,6 +72,6 @@ class LaunchdJobTest(unittest.TestCase):
             job = plistlib.load(file)
         self.assertEqual(job["Label"], "com.deckartes.anime-digest")
         self.assertEqual(job["StartCalendarInterval"], {"Hour": 9, "Minute": 0})
-        self.assertEqual(job["ProgramArguments"], [str(ROOT / "venv" / "bin" / "python"), str(ROOT / "anime_digest.py")])
-        self.assertEqual(job["WorkingDirectory"], str(ROOT))
+        self.assertEqual(job["ProgramArguments"], [str(ROOT / "venv" / "bin" / "python"), "-m", "jobs.anime_digest"])
+        self.assertEqual(job["WorkingDirectory"], str(ROOT / "src"))
         self.assertNotIn("RunAtLoad", job)

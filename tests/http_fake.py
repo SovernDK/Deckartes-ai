@@ -5,7 +5,7 @@ from unittest import mock
 
 import httpx
 
-import http_client
+from core import http_client
 
 
 class FakeServer:

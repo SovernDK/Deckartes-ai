@@ -1,8 +1,8 @@
 [tool.ruff]
 target-version = "py311"
 line-length = 120
-# Flat modules at the root, and test helpers imported from tests/: both are first-party
-src = [".", "tests"]
+# Feature packages in src/, and test helpers imported from tests/: both are first-party
+src = ["src", "tests"]
 
 [tool.ruff.lint]
 ignore = [

@@ -2,7 +2,7 @@
 
 import unittest
 
-from tool_schema import tool_definition
+from model.tool_schema import tool_definition
 
 
 async def everything(name: str, count: int, ratio: float, flag: bool, items: list[str],

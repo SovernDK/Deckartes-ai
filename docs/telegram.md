@@ -6,7 +6,7 @@ A headless front end for `Conversation`, run as its own process with its own con
 
 **Setup.** `.env` needs `TELEGRAM_BOT_TOKEN` and `TELEGRAM_USER_ID` (your numeric id, as `from.id` in `https://api.telegram.org/bot<token>/getUpdates` after messaging the bot). The bot refuses to start without them, with exit status 2.
 
-**Running.** Open `deckartes-telegram.command`, which runs the bot in a Terminal window under `caffeinate -is` and restarts it after a crash, but not after a clean stop or a missing setting. To start it at login, add that file in System Settings > General > Login Items. Closing the window stops the bot. The log is `~/.cache/deckartes/telegram.log`.
+**Running.** Open `deckartes-telegram.command`, which runs `telegram.telegram_bot` from `src/` in a Terminal window under `caffeinate -is` and restarts it after a crash, but not after a clean stop or a missing setting. To start it at login, add that file in System Settings > General > Login Items. Closing the window stops the bot. The log is `~/.cache/deckartes/telegram.log`.
 
 It has to be Terminal. Tested on this Mac, a launchd LaunchAgent was refused calendar access instantly with the status left undetermined, and no prompt appeared, while the same check from Terminal saw every calendar. Folders worked from both.
 

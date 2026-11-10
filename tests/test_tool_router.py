@@ -11,10 +11,10 @@ import math
 import unittest
 from unittest import mock
 
-import mlx_server
-import tool_router
-from config import config
-from tools import TOOL_GROUPS, TOOLS
+from agent import tool_router
+from core.config import config
+from model import mlx_server
+from tools.tools import TOOL_GROUPS, TOOLS
 
 
 def names(tools) -> list[str] | None:

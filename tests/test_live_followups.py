@@ -6,11 +6,10 @@ Skipped unless the chat server is running. Tools are faked, so nothing reaches t
 import unittest
 from unittest import mock
 
-import conversation
-import mlx_server
-import tool_router
-from conversation import Conversation, Failed, Text
+from agent import conversation, tool_router
+from agent.conversation import Conversation, Failed, Text
 from frozen_clock import freeze
+from model import mlx_server
 
 EPISODE_QUESTION = "When next episode of ranma 1/2 season3 is airing?"
 EPISODE_ANSWER = ("The next episode of Ranma ½ Season 3 (Episode 7) is airing this Saturday, "

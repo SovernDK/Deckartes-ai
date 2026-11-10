@@ -11,17 +11,15 @@ from unittest import mock
 
 import httpx
 
-import mlx_client
-import mlx_server
-import telegram_api
-import telegram_bot
-import tools
-from config import config
-from conversation import Conversation
+from agent.conversation import Conversation
+from core.config import config
 from http_fake import HttpTest
-from telegram_api import MAX_MESSAGE, split_text
-from telegram_bot import Bot, clean_markdown
+from model import mlx_client, mlx_server
+from telegram import telegram_api, telegram_bot
+from telegram.telegram_api import MAX_MESSAGE, split_text
+from telegram.telegram_bot import Bot, clean_markdown
 from test_conversation import FakeClient, call, chunk
+from tools import tools
 
 TOKEN = "123:SECRET"
 OWNER = 42

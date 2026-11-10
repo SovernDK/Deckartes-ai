@@ -4,11 +4,10 @@ import datetime as dt
 import unittest
 from unittest import mock
 
-import animeschedule_api
-import tools
-from config import config
+from core.config import config
 from frozen_clock import freeze
 from http_fake import HttpTest
+from tools import animeschedule_api, tools
 
 ANIME = "/api/v3/anime"
 TIMETABLE = "/api/v3/timetables/sub"

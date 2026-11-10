@@ -12,8 +12,8 @@ from unittest import mock
 
 import httpx
 
-import mlx_server
-from config import config
+from core.config import config
+from model import mlx_server
 
 FAKE_SERVER = f"""#!{sys.executable}
 import http.server, sys

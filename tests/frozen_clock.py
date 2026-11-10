@@ -5,8 +5,8 @@ import unittest
 from unittest import mock
 from zoneinfo import ZoneInfo
 
-import clock
-from config import config
+from core import clock
+from core.config import config
 
 TIMEZONE = "Europe/Warsaw"
 

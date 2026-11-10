@@ -13,14 +13,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import clock
-import mlx_client
-import tool_router
-import validation
-from config import config
+from agent import tool_router
+from core import clock
+from core.config import config
+from model import mlx_client
 from test_conversation import FakeClient, call, chunk
 from test_tool_router import FakeEmbeddings
-from tools import TOOLS_BY_NAME
+from tools.tools import TOOLS_BY_NAME
+from validation import validation
 
 
 def suite_data(*cases: dict) -> dict:

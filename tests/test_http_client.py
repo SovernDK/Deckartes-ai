@@ -7,10 +7,10 @@ from unittest import mock
 
 import httpx
 
-import http_client
-import tools
-from config import config
+from core import http_client
+from core.config import config
 from http_fake import HttpTest
+from tools import tools
 
 
 class BackendError(Exception):

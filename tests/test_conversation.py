@@ -4,11 +4,8 @@ import unittest
 from contextlib import aclosing
 from unittest import mock
 
-import mlx_client
-import prompts
-import tool_router
-from config import config
-from conversation import (
+from agent import prompts, tool_router
+from agent.conversation import (
     MAX_TOOL_ROUNDS,
     Compacted,
     Compacting,
@@ -20,7 +17,9 @@ from conversation import (
     TurnInfo,
     Usage,
 )
+from core.config import config
 from frozen_clock import freeze
+from model import mlx_client
 from test_tool_router import FakeEmbeddings, group_tools, names
 
 DATE_LINE = "Current date: Wednesday 2026-11-11 (Europe/Warsaw)."

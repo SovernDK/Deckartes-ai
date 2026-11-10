@@ -5,9 +5,9 @@ import unittest
 from unittest import mock
 from zoneinfo import ZoneInfo
 
-import calendar_api as cal
-import tools
 from frozen_clock import TIMEZONE, freeze
+from tools import calendar_api as cal
+from tools import tools
 
 
 def local(when: str) -> dt.datetime:

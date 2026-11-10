@@ -75,7 +75,7 @@ The token is part of the URL, so it must stay out of the logs. Set the `httpx` l
 
 ### Running as a service
 
-`deckartes-telegram.command`, added to Login Items, opens Terminal and runs `/usr/bin/caffeinate -s venv/bin/python telegram_bot.py` from the repo folder, restarting it after a crash. It logs to `~/.cache/deckartes/telegram.log`. Logs never contain message text.
+`deckartes-telegram.command`, added to Login Items, opens Terminal and runs `/usr/bin/caffeinate -is ../venv/bin/python -m telegram.telegram_bot` from `src/`, restarting it after a crash. It logs to `~/.cache/deckartes/telegram.log`. Logs never contain message text.
 
 `caffeinate -s` prevents sleep only on power, so the battery behaves normally. **With the lid closed the Mac still sleeps** unless it's in clamshell mode (power plus external display), and the bot is unreachable until it wakes.
 
@@ -107,7 +107,7 @@ The token is part of the URL, so it must stay out of the logs. Set the `httpx` l
 - `/clear` and `/stop` behaviour. The offset moves on before the turn finishes. Polling recovers after an error.
 - The token doesn't appear in logged error text.
 
-Run `venv/bin/python -m unittest discover tests` and `venv/bin/ruff check .`.
+Run `PYTHONPATH=src venv/bin/python -m unittest discover tests` and `venv/bin/ruff check .`.
 
 Then on the iPhone, with the service running: ask a question that needs no tool, one for each of server, web and calendar, approve and decline a calendar add, `/stop` a long turn, send a long reply, and message the bot from a second Telegram account to confirm silence. Restart the Mac and confirm the bot comes back, then put it to sleep and confirm a queued message is answered on waking.
 

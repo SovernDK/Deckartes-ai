@@ -8,11 +8,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import library
-import mlx_server
-import tool_router
-from config import config
-from conversation import Conversation, Failed, Text, ToolStarted
+from agent import tool_router
+from agent.conversation import Conversation, Failed, Text, ToolStarted
+from core.config import config
+from model import mlx_server
+from tools import library
 
 
 class LiveTurnTest(unittest.IsolatedAsyncioTestCase):

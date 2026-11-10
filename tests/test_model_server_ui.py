@@ -6,10 +6,10 @@ from unittest import mock
 
 from textual.widgets import Input
 
-import mlx_server
-from app import DecartesApp
-from chat import Chat, Spinner
-from config import config
+from core.config import config
+from model import mlx_server
+from ui.app import DecartesApp
+from ui.chat import Chat, Spinner
 
 
 class ServerUiTest(unittest.IsolatedAsyncioTestCase):

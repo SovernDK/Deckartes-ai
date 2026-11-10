@@ -48,7 +48,7 @@ venv/bin/pip install textual textual-dev httpx pyobjc-framework-EventKit pypdf c
 
 The calendar tools use macOS's EventKit and see every calendar synced to Calendar.app (iCloud, Google, Exchange). The first calendar question shows a macOS prompt asking to give your terminal app (Terminal, iTerm, VS Code) access to your calendars. You can change that later in System Settings > Privacy & Security > Calendars.
 
-API keys go in a `.env` file next to `config.py`, or in the environment:
+API keys go in a `.env` file in the repo folder, or in the environment:
 
 ```bash
 OLLAMA_API_KEY=...          # web search and page reading
@@ -61,13 +61,13 @@ A tool whose key is missing returns an error to the model; everything else keeps
 ## Running
 
 ```bash
-venv/bin/python main.py
+venv/bin/python src/main.py
 ```
 
 To see logs, run with devtools and open the console in a second terminal:
 
 ```bash
-venv/bin/textual run --dev main.py
+PYTHONPATH=src venv/bin/textual run --dev src/main.py
 venv/bin/textual console
 ```
 
@@ -242,22 +242,22 @@ Small models sometimes answer from their own knowledge instead of the passages, 
 
 | File | What's in it |
 |---|---|
-| `main.py` | Entry point |
-| `app.py` | The app: key bindings, model picker, help screen |
-| `chat.py` | Chat widgets: messages, spinner, commands, interrupting |
-| `config_screen.py` | Settings popup |
-| `file_explorer.py` | File explorer popup |
-| `library.py` | The library of saved files: reading, chunking, embedding, storing and searching them |
+| `src/main.py` | Entry point |
+| `src/ui/app.py` | The app: key bindings, model picker, help screen |
+| `src/ui/chat.py` | Chat widgets: messages, spinner, commands, interrupting |
+| `src/ui/config_screen.py` | Settings popup |
+| `src/ui/file_explorer.py` | File explorer popup |
+| `src/tools/library.py` | The library of saved files: reading, chunking, embedding, storing and searching them |
 | `chat.tcss` | Styles |
-| `telegram_bot.py`, `telegram_api.py`, `deckartes-telegram.command` | The Telegram bot, its Bot API calls and its launcher |
-| `conversation.py` | Conversation history, turns, the tool-calling loop and token counting, no UI |
-| `mlx_client.py` | Chat, embeddings and the model list from the Rapid-MLX servers |
-| `mlx_server.py` | Starting and stopping the Rapid-MLX servers |
-| `tool_schema.py` | Builds the definition the model sees for each tool |
-| `tool_router.py` | Picks which tool groups to send with a question |
-| `tools.py` | Tool functions, `TOOLS` and `TOOL_GROUPS` |
-| `prompts.py`, `prompts.json` | System prompt presets |
-| `config.py` | Settings |
-| `glances_api.py`, `disk_scan.py`, `web_search.py`, `animeschedule_api.py`, `cs_api.py`, `calendar_api.py` | Tool backends |
+| `src/telegram/telegram_bot.py`, `src/telegram/telegram_api.py`, `deckartes-telegram.command` | The Telegram bot, its Bot API calls and its launcher |
+| `src/agent/conversation.py` | Conversation history, turns, the tool-calling loop and token counting, no UI |
+| `src/model/mlx_client.py` | Chat, embeddings and the model list from the Rapid-MLX servers |
+| `src/model/mlx_server.py` | Starting and stopping the Rapid-MLX servers |
+| `src/model/tool_schema.py` | Builds the definition the model sees for each tool |
+| `src/agent/tool_router.py` | Picks which tool groups to send with a question |
+| `src/tools/tools.py` | Tool functions, `TOOLS` and `TOOL_GROUPS` |
+| `src/agent/prompts.py`, `prompts.json` | System prompt presets |
+| `src/core/config.py` | Settings |
+| `src/tools/glances_api.py`, `src/tools/disk_scan.py`, `src/tools/web_search.py`, `src/tools/animeschedule_api.py`, `src/tools/cs_api.py`, `src/tools/calendar_api.py` | Tool backends |
 
 `CLAUDE.md` has more detail on how the parts fit together and why some things are done the way they are.

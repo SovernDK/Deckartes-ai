@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import tools
+from tools import tools
 
 
 class DiskToolTest(unittest.IsolatedAsyncioTestCase):

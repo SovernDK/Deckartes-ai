@@ -4,8 +4,8 @@ import datetime as dt
 import unittest
 from unittest import mock
 
-import clock
-from config import config
+from core import clock
+from core.config import config
 
 
 class ClockTest(unittest.TestCase):

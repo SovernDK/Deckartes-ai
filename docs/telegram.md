@@ -6,11 +6,24 @@ A headless front end for `Conversation`, run as its own process with its own con
 
 **Setup.** `.env` needs `TELEGRAM_BOT_TOKEN` and `TELEGRAM_USER_ID` (your numeric id, as `from.id` in `https://api.telegram.org/bot<token>/getUpdates` after messaging the bot). The bot refuses to start without them, with exit status 2.
 
-**Running.** Open `deckartes-telegram.command`, which runs the bot in a Terminal window under `caffeinate -s` and restarts it after a crash, but not after a clean stop or a missing setting. To start it at login, add that file in System Settings > General > Login Items. Closing the window stops the bot. The log is `~/.cache/deckartes/telegram.log`.
+**Running.** Open `deckartes-telegram.command`, which runs the bot in a Terminal window under `caffeinate -is` and restarts it after a crash, but not after a clean stop or a missing setting. To start it at login, add that file in System Settings > General > Login Items. Closing the window stops the bot. The log is `~/.cache/deckartes/telegram.log`.
 
 It has to be Terminal. Tested on this Mac, a launchd LaunchAgent was refused calendar access instantly with the status left undetermined, and no prompt appeared, while the same check from Terminal saw every calendar. Folders worked from both.
 
-`caffeinate -s` only prevents sleep on power. With the lid closed the Mac sleeps unless it's in clamshell mode (power and external display). Telegram keeps messages for 24 hours, so those sent during sleep are answered on waking.
+**Staying awake.** `caffeinate -is` prevents idle sleep on power and battery, but closing the lid still sleeps the Mac unless it's in clamshell mode (power and external display). To run with the lid closed and on battery, run `sudo pmset -a disablesleep 1` (`pmset -g | grep SleepDisabled` shows 1; `sudo pmset -a disablesleep 0` undoes it). The setting is undocumented, isn't in `man pmset`, and needs turning off before the Mac goes in a bag, because it won't sleep there and can overheat. Telegram keeps messages for 24 hours, so those sent during sleep are answered on waking.
+
+**Morning anime digest (`anime_digest.py`).** A short script, separate from the bot, that sends the episodes airing today from the shows on the user's list with a `config.anime_digest_statuses` status. It is fixed text with no model call, and an empty day sends nothing. `sendMessage` doesn't conflict with the bot's polling, so the two run side by side and the digest works when the bot is down.
+
+launchd runs it from `launchd/com.deckartes.anime-digest.plist`. It can be a launchd job because it doesn't touch the calendar; a future job that needs Apple Calendar has to run inside the bot. A `StartCalendarInterval` job missed during sleep runs on wake, and several missed ones count as one. If the Mac is off at that time the day is skipped. Install or apply a changed time with:
+
+```bash
+launchctl bootout gui/$(id -u)/com.deckartes.anime-digest   # only when replacing it
+cp launchd/com.deckartes.anime-digest.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.deckartes.anime-digest.plist
+launchctl kickstart gui/$(id -u)/com.deckartes.anime-digest  # run it now
+```
+
+launchd doesn't re-run a failed job, and the network can be down just after waking, so the script retries every 5 minutes for an hour and then exits 1. The log is `~/.cache/deckartes/anime-digest.log`, and a failure appears only there. The root logger stays at WARNING because httpx's INFO lines print the token.
 
 **Access.** Only private chats from `config.telegram_user_id` are handled, checked on messages and button presses. Anything else is dropped with no reply, and only the sender's numeric id is logged.
 

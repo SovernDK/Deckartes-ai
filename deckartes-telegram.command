@@ -1,12 +1,12 @@
 #!/bin/zsh
 # Runs the Telegram bot in a Terminal window; add this file to Login Items to start it at login.
 # It has to be Terminal: a background service (launchd) is refused calendar access.
-# caffeinate -s keeps the Mac awake while it's on power. Closing the window stops the bot.
+# caffeinate -is keeps the Mac awake: -s on power, -i also on battery. Closing the window stops the bot.
 
 cd "${0:A:h}" || exit 1
 
 while true; do
-  /usr/bin/caffeinate -s venv/bin/python telegram_bot.py
+  /usr/bin/caffeinate -is venv/bin/python telegram_bot.py
   code=$?
   # 0: asked to stop. 2: a setting is missing, so restarting wouldn't help
   if [[ $code -eq 0 || $code -eq 2 ]]; then

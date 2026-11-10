@@ -21,13 +21,11 @@ import telegram_api
 import tools
 from config import config
 from conversation import Conversation, Failed, Text
-from telegram_api import TelegramError
+from telegram_api import TelegramError, split_text
 
 log = logging.getLogger("deckartes.telegram")
 
 LOG_FILE: Path | None = Path.home() / ".cache" / "deckartes" / "telegram.log"
-# Under Telegram's limit of 4096
-MAX_MESSAGE = 4000
 # The typing status lasts at most 5 seconds
 TYPING_SECONDS = 4
 CONFIRM_SECONDS = 5 * 60
@@ -66,18 +64,6 @@ def clean_markdown(text: str) -> str:
     text = re.sub(r"^```.*\n?", "", text, flags=re.MULTILINE)
     text = re.sub(r"^#{1,6}[ \t]+", "", text, flags=re.MULTILINE)
     return text.replace("**", "")
-
-def split_text(text: str, limit: int = MAX_MESSAGE) -> list[str]:
-    """Cut text into parts of at most limit characters, at a paragraph, line or word if one is
-    in the second half of the part."""
-    parts = []
-    while len(text) > limit:
-        window = text[:limit + 1]
-        cut = next((at for at in map(window.rfind, ("\n\n", "\n", " ")) if at >= limit // 2), limit)
-        parts.append(text[:cut].rstrip())
-        text = text[cut:].lstrip()
-    parts.append(text)
-    return [part for part in parts if part.strip()]
 
 class Bot:
     def __init__(self, conversation: Conversation | None = None) -> None:

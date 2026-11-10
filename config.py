@@ -73,6 +73,8 @@ class Config:
     cs_min_tier: str = "b"
     # Whose anime list the list tool reads (must be public)
     animeschedule_user: str = "SeggyX"
+    # Which statuses on that list the morning digest covers (anime_digest.py)
+    anime_digest_statuses: tuple[str, ...] = ("watching", "to-watch")
     # Calendar that add_calendar_event adds to; "" = the default calendar in Calendar's settings
     calendar_name: str = ""
     # Used for "today" and airing times

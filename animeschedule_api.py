@@ -237,6 +237,25 @@ async def _continuing_shows(name: str) -> tuple[str, list[dict]]:
 
     return next_season, shows
 
+async def _list_entries(status: str) -> list[dict]:
+    """Raw entries on config.animeschedule_user's anime list with a status ("all" for every status)."""
+    async def fetch(index: int) -> tuple[list, None]:
+        params = {"offset": index * LIST_PAGE_SIZE, "limit": LIST_PAGE_SIZE}
+        if status != "all":
+            params["list"] = status
+        data = await _get(f"/animelists/{config.animeschedule_user}", params, max_age=LIST_CACHE_SECONDS)
+        return list((data.get("shows") or {}).values()), None
+    return [entry async for page in http_client.pages(fetch, LIST_PAGE_SIZE, MAX_PAGES) for entry in page]
+
+async def _list_airing(day: dt.date) -> list[dict]:
+    """Episodes on day of shows on the user's list with a config.anime_digest_statuses status,
+    by airing time. Reads the day's timetable rather than _next_episodes, which drops episodes
+    that have already aired, and keeps low-rated shows, since the user chose them."""
+    routes = {entry["route"] for status in config.anime_digest_statuses for entry in await _list_entries(status)}
+    airing = [(airs, entry) for airs, entry in await _timetable(day) if airs.date() == day and entry["route"] in routes]
+    return [{"name": entry.get("english") or entry["title"], "episode": entry.get("episodeNumber"), "airs": airs}
+            for airs, entry in sorted(airing, key=lambda pair: pair[0])]
+
 async def _list_shows(status: str) -> list[dict]:
     """Entries on config.animeschedule_user's anime list, filtered by status ("all" for every
     status), best scored first. Names are English where known so they match the other tools.
@@ -244,13 +263,7 @@ async def _list_shows(status: str) -> list[dict]:
     if status != "all" and status not in LIST_STATUSES:
         raise AnimeScheduleError(f"Unknown list status {status!r}; use all or one of {', '.join(LIST_STATUSES)}")
 
-    async def fetch(index: int) -> tuple[list, None]:
-        params = {"offset": index * LIST_PAGE_SIZE, "limit": LIST_PAGE_SIZE}
-        if status != "all":
-            params["list"] = status
-        data = await _get(f"/animelists/{config.animeschedule_user}", params, max_age=LIST_CACHE_SECONDS)
-        return list((data.get("shows") or {}).values()), None
-    entries = [entry async for page in http_client.pages(fetch, LIST_PAGE_SIZE, MAX_PAGES) for entry in page]
+    entries = await _list_entries(status)
 
     # List entries only carry the user's preferred (often romaji) title
     english = {a["route"]: (a.get("names") or {}).get("english")
@@ -403,6 +416,21 @@ def _user_list_text(status: str, shows: list[dict]) -> str:
         if entries:
             lines += [f"{headings[when]}:", *entries]
     return "\n".join(lines)
+
+def _digest_text(day: dt.date, shows: list[dict]) -> str | None:
+    """The morning message for the user, or None when nothing airs."""
+    if not shows:
+        return None
+    lines = [f"Airing today, {day:%A} {day.day} {day:%B}:"]
+    for show in shows:
+        number = f"episode {show['episode']} " if show["episode"] else ""
+        lines.append(f"- {show['name']}: {number}at {show['airs']:%H:%M}")
+    return "\n".join(lines)
+
+async def airing_digest() -> str | None:
+    """Today's message for anime_digest.py."""
+    day = clock.today()
+    return _digest_text(day, await _list_airing(day))
 
 # For the tools
 

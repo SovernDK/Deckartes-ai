@@ -19,7 +19,8 @@ import tools
 from config import config
 from conversation import Conversation
 from http_fake import HttpTest
-from telegram_bot import MAX_MESSAGE, Bot, clean_markdown, split_text
+from telegram_api import MAX_MESSAGE, split_text
+from telegram_bot import Bot, clean_markdown
 from test_conversation import FakeClient, call, chunk
 
 TOKEN = "123:SECRET"

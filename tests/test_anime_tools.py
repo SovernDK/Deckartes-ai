@@ -4,6 +4,7 @@ import datetime as dt
 import unittest
 from unittest import mock
 
+import animeschedule_api
 import tools
 from config import config
 from frozen_clock import freeze
@@ -36,6 +37,13 @@ def ongoing(*shows: dict) -> dict:
 def listed(route: str, title: str, *, seen: int = 0, episodes: int = 12, score: int | None = None) -> dict:
     return {"route": route, "preferredTitle": title, "listStatus": "watching", "episodesSeen": seen,
             "episodes": episodes, "useAutoScores": False, "manualScore": score}
+
+def on_list(**statuses: list[str]):
+    """The list endpoint: routes per status (to_watch for to-watch), filtered by ?list= like the API."""
+    def answer(request):
+        routes = statuses.get(request.url.params["list"].replace("-", "_"), [])
+        return {"shows": {route: listed(route, route.title()) for route in routes}}
+    return answer
 
 class AnimeToolTest(HttpTest):
     def setUp(self):
@@ -127,6 +135,51 @@ class AiringTest(AnimeToolTest):
         self.assertEqual(await tools.get_anime_airing_on("tomorrow"),
                          "No anime with a new subtitled episode on Thursday 2026-11-12 "
                          "(shows rated 6 or lower are left out).")
+
+class DigestTest(AnimeToolTest):
+    async def digest(self, timetable: list[dict], **statuses: list[str]) -> str | None:
+        self.serve({USER_LIST: on_list(**statuses), TIMETABLE: weekly(*timetable)})
+        return await animeschedule_api.airing_digest()
+
+    async def test_lists_shows_by_airing_time(self):
+        text = await self.digest([episode("f", "Sousou no Frieren", "2026-11-11T16:30:00Z", 5, "Frieren"),
+                                  episode("b", "Bocchi", "2026-11-11T13:00:00Z", 2)], watching=["f", "b"])
+        self.assertEqual(text, "Airing today, Wednesday 11 November:\n"
+                               "- Bocchi: episode 2 at 14:00\n"
+                               "- Frieren: episode 5 at 17:30")
+
+    async def test_only_watching_and_to_watch_count(self):
+        text = await self.digest([episode("w", "Watching", "2026-11-11T13:00:00Z", 1),
+                                  episode("t", "Planned", "2026-11-11T14:00:00Z", 1),
+                                  episode("h", "Held", "2026-11-11T15:00:00Z", 1),
+                                  episode("n", "Not Listed", "2026-11-11T16:00:00Z", 1)],
+                                 watching=["w"], to_watch=["t"], on_hold=["h"])
+        self.assertEqual(text, "Airing today, Wednesday 11 November:\n"
+                               "- Watching: episode 1 at 14:00\n"
+                               "- Planned: episode 1 at 15:00")
+
+    async def test_an_episode_that_already_aired_today_is_included(self):
+        # Clock is frozen at 12:00 local
+        text = await self.digest([episode("e", "Early", "2026-11-11T07:00:00Z", 3)], watching=["e"])
+        self.assertIn("- Early: episode 3 at 08:00", text)
+
+    async def test_low_rated_listed_show_is_kept(self):
+        self.serve({USER_LIST: on_list(watching=["w"]), ANIME: ongoing(show("w", "Weak", score=40)),
+                    TIMETABLE: weekly(episode("w", "Weak", "2026-11-11T13:00:00Z", 1))})
+        self.assertIn("- Weak: episode 1 at 14:00", await animeschedule_api.airing_digest())
+
+    async def test_today_means_the_local_date(self):
+        text = await self.digest([episode("a", "Past Midnight Here", "2026-11-10T23:30:00Z", 1),
+                                  episode("b", "Tomorrow Here", "2026-11-11T23:30:00Z", 1)], watching=["a", "b"])
+        self.assertEqual(text, "Airing today, Wednesday 11 November:\n"
+                               "- Past Midnight Here: episode 1 at 00:30")
+
+    async def test_unknown_episode_number_is_left_out(self):
+        text = await self.digest([episode("a", "Special", "2026-11-11T13:00:00Z", None)], watching=["a"])
+        self.assertIn("- Special: at 14:00", text)
+
+    async def test_nothing_airing_is_none(self):
+        self.assertIsNone(await self.digest([episode("o", "Other Day", "2026-11-12T13:00:00Z", 1)], watching=["o"]))
 
 class NextEpisodeTest(AnimeToolTest):
     async def test_skips_episodes_already_aired(self):

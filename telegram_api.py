@@ -9,9 +9,23 @@ from config import config
 
 # How long one getUpdates call waits for something to happen
 POLL_SECONDS = 50
+# Under Telegram's limit of 4096
+MAX_MESSAGE = 4000
 
 class TelegramError(Exception):
     """A Bot API call failed. The message says why and never contains the token."""
+
+def split_text(text: str, limit: int = MAX_MESSAGE) -> list[str]:
+    """Cut text into parts of at most limit characters, at a paragraph, line or word if one is
+    in the second half of the part."""
+    parts = []
+    while len(text) > limit:
+        window = text[:limit + 1]
+        cut = next((at for at in map(window.rfind, ("\n\n", "\n", " ")) if at >= limit // 2), limit)
+        parts.append(text[:cut].rstrip())
+        text = text[cut:].lstrip()
+    parts.append(text)
+    return [part for part in parts if part.strip()]
 
 _STATUS_MESSAGES = {
     401: "Telegram refused the bot token: check TELEGRAM_BOT_TOKEN",

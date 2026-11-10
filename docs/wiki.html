@@ -184,7 +184,8 @@
 <pre><code>venv/bin/python main.py                       # the app
 venv/bin/textual run --dev main.py            # with devtools (+ `textual console` elsewhere)
 venv/bin/python -m unittest discover tests    # tests; live ones skip unless the chat server is running
-./deckartes-telegram.command                  # the Telegram bot, in Terminal (calendar access needs it)</code></pre>
+./deckartes-telegram.command                  # the Telegram bot, in Terminal (calendar access needs it)
+venv/bin/python anime_digest.py               # send today's anime digest now (launchd runs it at 09:00)</code></pre>
 <div class="tip">If the routing embeddings fail, every allowed tool is sent with the question.</div>
 </section>
 
@@ -620,6 +621,7 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td><code>file_explorer.py</code></td><td>Home-folder tree</td></tr>
   <tr><td><code>telegram_bot.py</code></td><td>Headless Telegram front end: polling, access check, turns, Yes/No confirmations (see <code>docs/telegram.md</code>)</td></tr>
   <tr><td><code>telegram_api.py</code></td><td>Bot API calls through <code>http_client</code>, with the token kept out of errors</td></tr>
+  <tr><td><code>anime_digest.py</code></td><td>Morning Telegram message of today's anime from the user's list, run by launchd, separate from the bot (see <code>docs/telegram.md</code>)</td></tr>
   <tr><td><code>conversation.py</code></td><td><code>Conversation</code>, events, <code>Usage</code>, <code>TurnInfo</code>, tool loop, compaction</td></tr>
   <tr><td><code>library.py</code></td><td>Read, chunk, embed, store and search saved files</td></tr>
   <tr><td><code>prompts.py</code> / <code>.json</code></td><td>Presets, system message, allowed tools</td></tr>

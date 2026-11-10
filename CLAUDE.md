@@ -11,6 +11,11 @@ Deckartes is a terminal chat UI (Textual) for local MLX models served by Rapid-M
 [ ] Better RAG search (not just by embedded chunks)
 [ ] Scanning user1 folder on homeserver
 [x] Integration with telegram
+[ ] Remove system prompts, leave only one
+[ ] Add bot a character in system prompt
+[ ] Add reasoning but dont display it in the answer
+[ ] Apply defered tools from this doc: https://docs.liquid.ai/lfm/models/lfm3-1.7b
+[ ] Prepare fine tuning data
 
 ## Commands
 
@@ -19,6 +24,7 @@ There is no build step or requirements file. Tests use stdlib `unittest` in `tes
 ```bash
 venv/bin/python main.py                 # run the app
 ./deckartes-telegram.command            # run the Telegram bot (in Terminal, see docs/telegram.md)
+venv/bin/python anime_digest.py         # send today's anime digest now (launchd runs it at 09:00)
 venv/bin/textual run --dev main.py      # run with devtools; pair with `venv/bin/textual console` in another terminal to see logs/print output
 venv/bin/python -m unittest discover tests   # tests; the live tests skip themselves unless the chat server is running
 venv/bin/ruff check .                   # lint; add --fix for the automatic fixes
@@ -32,7 +38,7 @@ The `vscode-mcp` tools expose Pylance and Ruff for diagnostics, references, symb
 
 ## Architecture
 
-Flat modules, no package. `main.py` → `app.py` (`DecartesApp`: bindings, model-picker, help and file-explorer screens) → `chat.py` (widgets: bubbles, spinner, busy state, interrupt) → `conversation.py` (`Conversation`: history, the whole turn including the tool loop, no UI) → `tool_router.py` (picks tool groups per question) → `tools.py` (tool registry) → `glances_api.py` / `disk_scan.py` / `web_search.py` / `animeschedule_api.py` / `cs_api.py` / `calendar_api.py` / `library.py` (tool backends; `library.py` also takes the explorer's loads and owns the saved files); the HTTP ones go through `http_client.py`). `mlx_client.py` is the only module that talks to the model servers, and `mlx_server.py` starts and stops them. `clock.py` is the one owner of the current time and of conversions to `config.timezone`, and `names.py` of normalising names for matching. `validation.py` runs `/validate` (no UI; `validation_screen.py` is its popup). `telegram_bot.py` is a second, headless front end for `Conversation`, run as its own process, and `telegram_api.py` holds its Bot API calls.
+Flat modules, no package. `main.py` → `app.py` (`DecartesApp`: bindings, model-picker, help and file-explorer screens) → `chat.py` (widgets: bubbles, spinner, busy state, interrupt) → `conversation.py` (`Conversation`: history, the whole turn including the tool loop, no UI) → `tool_router.py` (picks tool groups per question) → `tools.py` (tool registry) → `glances_api.py` / `disk_scan.py` / `web_search.py` / `animeschedule_api.py` / `cs_api.py` / `calendar_api.py` / `library.py` (tool backends; `library.py` also takes the explorer's loads and owns the saved files); the HTTP ones go through `http_client.py`). `mlx_client.py` is the only module that talks to the model servers, and `mlx_server.py` starts and stops them. `clock.py` is the one owner of the current time and of conversions to `config.timezone`, and `names.py` of normalising names for matching. `validation.py` runs `/validate` (no UI; `validation_screen.py` is its popup). `telegram_bot.py` is a second, headless front end for `Conversation`, run as its own process, and `telegram_api.py` holds its Bot API calls. `anime_digest.py` is a short script launchd runs each morning to message the user the day's anime, with no model and without the bot.
 
 **Shared config.** `config.py` exposes a single mutable `config` instance (host, model, context_length, temperature, system_prompt, plus tool settings and keys). Modules read it at call time rather than taking parameters; widgets change settings by assigning to it (e.g. the model picker sets `config.model`). `context_length` is the app's own budget for compaction; the server doesn't cut prompts to it.
 

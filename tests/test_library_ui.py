@@ -9,6 +9,7 @@ from textual.widgets import Markdown
 
 from core.config import config
 from model import mlx_client, mlx_server
+from temp_history import temp_history
 from tools import library
 from ui.app import DecartesApp
 from ui.chat import Chat, ConfirmScreen
@@ -20,6 +21,7 @@ def embed(texts):
 
 class LibraryUiTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        temp_history(self)
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.folder = Path(folder.name).resolve()

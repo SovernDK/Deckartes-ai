@@ -41,7 +41,7 @@ launchd doesn't re-run a failed job, and the network can be down just after waki
 
 **Prompt.** The bot uses the same preset as the app (`config.system_prompt`, `Assistant`). The model thinks before answering here too, but the bot ignores `Thinking` events and sends only the answer.
 
-**Alongside the terminal app.** Both share one model server. While the bot's process owns it, the terminal app's model picker can't restart it (`mlx_server._Server.stop` only stops its own process), so stop the bot before changing models. A server the terminal app started stops when that app exits, which fails a bot turn in progress, and the next turn starts it again. History is in memory, so restarting the bot forgets the conversation.
+**Alongside the terminal app.** Both share one model server. While the bot's process owns it, the terminal app's model picker can't restart it (`mlx_server._Server.stop` only stops its own process), so stop the bot before changing models. A server the terminal app started stops when that app exits, which fails a bot turn in progress, and the next turn starts it again. Each finished turn is saved to the history (`history.py`, source `telegram`); `/clear` ends the conversation and the next message starts a new one. A restart starts a new conversation too, and the old one stays saved: the app's history panel (key `r`) can reopen it. A turn that can't be saved is still answered, and the bot logs a warning.
 
 **Tests.** `tests/test_telegram_bot.py` fakes only Telegram's HTTP (`http_fake.HttpTest`) and `mlx_client.stream_chat`. A fake poll never yields to the event loop, so to end `run` it raises `CancelledError` instead of calling `task.cancel()`. A fake model doesn't yield either, so a test that needs the typing task uses `block_model`.
 

@@ -9,8 +9,12 @@ One question from the user and everything done to answer it, including any tool 
 _Avoid_: exchange, request
 
 **Conversation**:
-The finished turns so far.
-_Avoid_: chat, session
+The turns from the first question until `/clear`, kept in the history so it can be reopened and continued later.
+_Avoid_: chat, session, thread
+
+**History**:
+The saved conversations from both the app and Telegram, kept between runs.
+_Avoid_: log, transcript, archive
 
 **Library**:
 The files the user has saved, kept between conversations, which the model can search.

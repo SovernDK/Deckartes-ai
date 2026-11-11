@@ -15,7 +15,7 @@ from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent.conversation import Conversation, Failed, Text
+from agent.conversation import Conversation, Failed, NotSaved, Text
 from core.config import config
 from model import mlx_server
 from telegram import telegram_api
@@ -65,7 +65,7 @@ class Bot:
         if not config.telegram_user_id.isdigit():
             raise SetupError("No user to answer: set TELEGRAM_USER_ID to your numeric Telegram id in .env")
         self.owner = int(config.telegram_user_id)
-        self.conversation = conversation or Conversation()
+        self.conversation = conversation or Conversation(source="telegram")
         self.offset: int | None = None
         self.turn: asyncio.Task | None = None
         self.pending: _Question | None = None
@@ -181,6 +181,8 @@ class Bot:
                     reply += event.text
                 elif isinstance(event, Failed):
                     failure = event.message
+                elif isinstance(event, NotSaved):
+                    log.warning("Could not save the turn to the history: %s", event.message)
         return reply_parts(reply, failure)
 
     async def _keep_typing(self) -> None:

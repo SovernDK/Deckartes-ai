@@ -8,12 +8,14 @@ from textual.widgets import Input
 
 from core.config import config
 from model import mlx_server
+from temp_history import temp_history
 from ui.app import DecartesApp
 from ui.chat import Chat, Spinner
 
 
 class ServerUiTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        temp_history(self)
         for target, name, value in [(mlx_server, "ensure_chat", mock.Mock()), (mlx_server, "restart_chat", mock.Mock()),
                                     (mlx_server, "stop_all", mock.Mock(return_value=["chat"])),
                                     (config, "model", "some/model")]:

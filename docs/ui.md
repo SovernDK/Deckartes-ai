@@ -22,6 +22,10 @@ On submit: `/`-prefixed input goes to `Chat.COMMANDS` (name → method name + de
 
 A `DirectoryTree` rooted at the home folder whose `filter_paths` keeps only what Finder shows (`disk_scan.is_user_facing`: no dot-files, no `UF_HIDDEN` entries like `~/Library`). The highlighted entry's size is scanned in a thread worker after `SCAN_DELAY`, capped at `SCAN_BUDGET` entries (the details line then says "at least"). Selecting a file, or pressing `l` on a file or folder, dismisses the screen with its `Path`, and `DecartesApp.file_chosen` passes it to `Chat.load_file`, which saves it to the library (`docs/library.md`).
 
+## History panel (`history_panel.py`, key `r`)
+
+`HistoryPanel` is docked right at full height, hidden by default (`display: none` in `chat.tcss`). `r` shows it, reloads the list (`history.list_conversations`, newest activity first; each entry is the title, then the date and `· Telegram` for bot conversations) and focuses it; `r` again hides it and focuses the input. Enter calls `Chat.open_conversation`, which refuses while `Chat.busy`, otherwise calls `Conversation.open` and re-renders the questions and answers (time lines and summaries aren't shown), then hides the panel. `d` asks with `ConfirmScreen` and deletes; deleting the conversation on screen calls `Chat.clear_conversation`. After each turn `Chat` posts `Chat.Saved`, and the app reloads the panel if it's shown. A `NotSaved` event is a warning notice. Tests: `tests/test_history_ui.py`; every test that mounts `Chat` calls `temp_history(self)` (`tests/temp_history.py`), or it would write to the real history.
+
 ## Config popup
 
 The config popup (`config_screen.py`, key `c`) edits `temperature` and `context_length`; it checks every field before applying any. `context_length` is picked from `config.CONTEXT_LENGTHS` (2K-32K; add values there), and a value set to something else in `config.py` is kept as an extra option. Options under `RECOMMENDED_MIN_CONTEXT` are labelled "little room with tools".

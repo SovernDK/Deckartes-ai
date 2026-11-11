@@ -5,12 +5,13 @@ from pathlib import Path
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
-from textual.widgets import Footer, Header, Static
+from textual.widgets import Footer, Header, Input, Static
 
 from core.config import config
 from ui.chat import Chat, HelpScreen, ModelChangeScreen
 from ui.config_screen import ConfigScreen
 from ui.file_explorer import FileExplorerScreen
+from ui.history_panel import HistoryPanel
 
 BANNER = r"""
  ____            _              _
@@ -27,6 +28,8 @@ class DecartesApp(App):
         ("m", "change_model", "Change Model"),
         ("c", "config", "Config"),
         Binding("e", "explorer", "Files", tooltip="Browse the home folder and save a file or folder to the library"),
+        Binding("r", "toggle_history", "History",
+                tooltip="Show or hide the saved conversations: enter opens one, d deletes it"),
         ("h", "help", "Help"),
         # Terminals report shift+t as "T" or as "shift+t"; the footer's mode label shows the key instead
         Binding("T,shift+t", "toggle_detailed", "Mode", show=False, key_display="shift+t",
@@ -40,6 +43,7 @@ class DecartesApp(App):
     def compose(self) -> ComposeResult:
             yield Header()
             yield Horizontal(Footer(), Static(markup=False, id="mode"), id="footer_bar")
+            yield HistoryPanel()
             yield Container(
                 Static(BANNER.strip("\n"), markup=False, id="banner"),
                 Chat(),
@@ -104,6 +108,19 @@ class DecartesApp(App):
         if saved:
             self.update_subtitle()
             self.notify("Settings saved; they apply from your next message")
+
+    def action_toggle_history(self) -> None:
+        panel = self.query_one(HistoryPanel)
+        if panel.display:
+            panel.hide()
+            self.query_one(Input).focus()
+        else:
+            panel.show()
+
+    def on_chat_saved(self, _: Chat.Saved) -> None:
+        panel = self.query_one(HistoryPanel)
+        if panel.display:
+            panel.reload()
 
     def action_explorer(self) -> None:
         self.push_screen(FileExplorerScreen(), self.file_chosen)

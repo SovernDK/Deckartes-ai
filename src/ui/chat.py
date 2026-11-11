@@ -8,10 +8,21 @@ from rich.table import Table
 from textual import work
 from textual.app import ComposeResult
 from textual.containers import HorizontalGroup, VerticalGroup, VerticalScroll
+from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, ListItem, ListView, Markdown, Static
 
-from agent.conversation import Compacted, Compacting, Conversation, Failed, Text, Thinking, ToolsDone, ToolStarted
+from agent.conversation import (
+    Compacted,
+    Compacting,
+    Conversation,
+    Failed,
+    NotSaved,
+    Text,
+    Thinking,
+    ToolsDone,
+    ToolStarted,
+)
 from core.config import config
 from model import mlx_client, mlx_server
 from tools import library, tools
@@ -156,9 +167,12 @@ class Chat(VerticalGroup):
     # Unfocusing the input lets the app's single-key shortcuts (q, m, c, h) work
     BINDINGS = [("escape", "unfocus", "Unfocus input")]
 
+    class Saved(Message):
+        """A finished turn was saved to the history."""
+
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.conversation = Conversation()
+        self.conversation = Conversation(source="app")
         self.busy = False
         self.validating = False
 
@@ -255,10 +269,39 @@ class Chat(VerticalGroup):
             method()
 
     def command_clear(self) -> None:
+        self.clear_conversation()
+        self.notify("Conversation cleared")
+
+    def clear_conversation(self) -> None:
+        """End the conversation and empty the screen; the next question starts a new one."""
         self.conversation.clear()
         self.query_one("#response", VerticalScroll).remove_children()
         self.update_usage()
-        self.notify("Conversation cleared")
+
+    async def open_conversation(self, saved_id: int) -> bool:
+        """Show a saved conversation and continue it with the next question; whether it opened."""
+        if self.busy:
+            self.notify("Wait for the reply to finish before opening a conversation", severity="warning")
+            return False
+        try:
+            saved = await asyncio.to_thread(self.conversation.open, saved_id)
+        except Exception as e:
+            self.notify(str(e), title="Could not open the conversation", severity="error", markup=False)
+            return False
+        response = self.query_one("#response", VerticalScroll)
+        await response.remove_children()
+        widgets = []
+        for message in saved.messages:
+            if message.role == "user":
+                widgets.append(HorizontalGroup(Static(message.content, markup=False, classes="user-msg"),
+                                               classes="user-row"))
+            elif message.role == "assistant":
+                widgets.append(Markdown(message.content, classes="ai-msg"))
+        await response.mount_all(widgets)
+        response.scroll_end(animate=False)
+        self.update_usage()
+        self.query_one(Input).focus()
+        return True
 
     @work(exclusive=True, group="library")
     async def command_library(self) -> None:
@@ -438,6 +481,8 @@ class Chat(VerticalGroup):
                         spinner.set_label("Compacting conversation...")
                     elif isinstance(event, Compacted):
                         spinner.set_label(None)
+                    elif isinstance(event, NotSaved):
+                        self.notify(f"Couldn't save to history: {event.message}", severity="warning", markup=False)
                     elif isinstance(event, Failed):
                         # An error ends the reply as its own paragraph
                         error = f"**Error:** {event.message}"
@@ -453,6 +498,7 @@ class Chat(VerticalGroup):
                 self.update_usage()
             else:
                 await self.add_usage(reply)
+                self.post_message(self.Saved())
             self.set_busy(False)
 
 class ModelChangeMenu(VerticalGroup):

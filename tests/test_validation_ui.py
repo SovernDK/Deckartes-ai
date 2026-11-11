@@ -12,6 +12,7 @@ from textual.widgets import Input, Markdown, SelectionList
 from agent import tool_router
 from core.config import config
 from model import mlx_client, mlx_server
+from temp_history import temp_history
 from test_conversation import FakeClient, call, chunk
 from test_tool_router import FakeEmbeddings
 from test_validation import case_data, suite_data
@@ -25,6 +26,7 @@ ANSWER = [[chunk(tool_calls=[call("get_cpu_usage")], done=True)], [chunk("CPU is
 
 class ValidateCommandTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        temp_history(self)
         tool_router._examples.clear()
         self.addCleanup(tool_router._examples.clear)
         folder = tempfile.TemporaryDirectory()

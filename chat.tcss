@@ -301,3 +301,22 @@ ValidationScreen {
 #validation .hint {
     color: $text-muted;
 }
+
+HistoryPanel {
+    dock: right;
+    width: 40;
+    height: 1fr;
+    display: none;
+    border-left: solid $accent;
+    border-title-color: $accent;
+    background: $panel;
+}
+
+HistoryPanel ListView {
+    height: 1fr;
+    background: $panel;
+}
+
+HistoryPanel ListItem {
+    padding: 0 1 1 1;
+}

@@ -8,6 +8,7 @@ from textual.widgets import Input, Markdown, Static
 
 from core.config import config
 from model import mlx_client, mlx_server
+from temp_history import temp_history
 from test_conversation import FakeClient, call, chunk, think
 from ui.app import DecartesApp
 from ui.chat import Chat, Reply, Spinner, tool_call_line
@@ -15,6 +16,7 @@ from ui.chat import Chat, Reply, Spinner, tool_call_line
 
 class DisplayModeTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        temp_history(self)
         for target, name, value in [(mlx_server, "ensure_chat", mock.Mock()), (config, "model", "some/model"),
                                     (config, "tool_routing", False), (config, "compact_at", None),
                                     (config, "detailed", False)]:
@@ -106,6 +108,9 @@ class ToolCallLineTest(unittest.TestCase):
         self.assertEqual(tool_call_line("search", None), "called tool: search(arguments that weren't valid JSON)")
 
 class SpinnerLabelTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        temp_history(self)
+
     async def test_thinking_then_answering_then_tools_then_thinking_again(self):
         labels = []
         release = asyncio.Event()

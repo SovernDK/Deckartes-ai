@@ -37,6 +37,8 @@ class Config:
     file_embed_host: str = "http://127.0.0.1:8001"
     # The files the user saved and their embeddings (library.py); not in ~/.cache, because it can't be rebuilt without them
     library_path: Path = Path.home() / ".local" / "share" / "deckartes" / "library.db"
+    # Saved conversations of the app and the Telegram bot (history.py)
+    history_path: Path = Path.home() / ".local" / "share" / "deckartes" / "history.db"
     mlx_server_command: str = "~/.local/bin/rapid-mlx"
     model: str = "LiquidAI/LFM3-1.7B-MLX-4bit"
     # One of CONTEXT_LENGTHS. The app's own budget (when to compact); the server doesn't cut the prompt to it

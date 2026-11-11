@@ -121,6 +121,7 @@
   <a href="#model-server">Model server</a>
   <a href="#turn">The turn</a>
   <a href="#compaction">Context compaction</a>
+  <a href="#saved">Saved conversations</a>
   <a href="#prompts">Prompt presets</a>
   <a href="#routing">Tool routing</a>
   <a href="#library">Library</a>
@@ -332,6 +333,26 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
 </table>
 </section>
 
+<section id="saved">
+<h2>Saved conversations</h2>
+<p class="lead">Every finished turn of the app and the Telegram bot goes to <code>history.db</code>, so a conversation can be reopened and continued later.</p>
+<ol>
+  <li><code>Conversation(source="app" | "telegram")</code> saves each finished turn through <code>history.add</code>: the time line, the question and the reply, each with its local date, plus the model name on the reply. <code>/validate</code> passes no source and saves nothing.</li>
+  <li>The conversation's row (source, preset name, system prompt) is written with its first finished turn, so a chat that never got an answer leaves nothing behind.</li>
+  <li><code>/clear</code> ends the conversation: the next turn starts a new one. Closing the app or restarting the bot leaves it saved; both start with an empty chat.</li>
+  <li>Compaction saves the summary as a <code>system</code> message and keeps the messages it replaced.</li>
+  <li><code>Conversation.open(id)</code> continues a saved conversation. The model gets the last summary (if any) and the turns after it; the screen shows every question and answer.</li>
+</ol>
+<h3>Edge cases</h3>
+<table>
+  <tr><th>Case</th><th>Behaviour</th></tr>
+  <tr><td>Save fails (locked database, full disk)</td><td>The turn still counts; <code>NotSaved(message)</code> follows its text. The app shows a warning, the bot logs it.</td></tr>
+  <tr><td>Conversation deleted while still open (e.g. the bot's)</td><td>Its next finished turn starts a new conversation</td></tr>
+  <tr><td>Failed or interrupted turn</td><td>Not saved, as with the in-memory history</td></tr>
+  <tr><td>Telegram conversation opened in the app</td><td>Continued in the app; its source stays <code>telegram</code></td></tr>
+</table>
+</section>
+
 <section id="prompts">
 <h2>Prompt presets</h2>
 <p class="lead"><code>prompts.json</code>, selected by <code>config.system_prompt</code>, re-read on every use.</p>
@@ -525,10 +546,10 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
 <svg class="diagram" viewBox="0 0 760 256" role="img" aria-label="Screens and popups around DecartesApp"><rect class="b3" x="275" y="100" width="210" height="70" rx="8"/><text x="380.0" y="132.0" text-anchor="middle" class="t">DecartesApp</text><text x="380.0" y="147.0" text-anchor="middle" class="s">Header · Footer · Chat</text><rect class="b1" x="10" y="20" width="230" height="44" rx="8"/><text x="125.0" y="39.0" text-anchor="middle" class="t">ModelChangeMenu</text><text x="125.0" y="54.0" text-anchor="middle" class="s">key m · pick it, restarts the server</text><polyline class="ln" points="275,135 240,42"/><rect class="b1" x="10" y="110" width="230" height="44" rx="8"/><text x="125.0" y="129.0" text-anchor="middle" class="t">ConfigScreen</text><text x="125.0" y="144.0" text-anchor="middle" class="s">key c · prompt, temperature, context</text><polyline class="ln" points="275,135 240,132"/><rect class="b1" x="10" y="200" width="230" height="44" rx="8"/><text x="125.0" y="219.0" text-anchor="middle" class="t">FileExplorer</text><text x="125.0" y="234.0" text-anchor="middle" class="s">key e · returns a Path → load_file</text><polyline class="ln" points="275,135 240,222"/><rect class="b1" x="520" y="20" width="230" height="44" rx="8"/><text x="635.0" y="39.0" text-anchor="middle" class="t">HelpScreen</text><text x="635.0" y="54.0" text-anchor="middle" class="s">key h · from BINDINGS + COMMANDS</text><polyline class="ln" points="485,135 520,42"/><rect class="b4" x="520" y="110" width="230" height="44" rx="8"/><text x="635.0" y="129.0" text-anchor="middle" class="t">ConfirmScreen</text><text x="635.0" y="144.0" text-anchor="middle" class="s">y / n · asked by add_calendar_event</text><polyline class="ln" points="485,135 520,132"/><rect class="b1" x="520" y="200" width="230" height="44" rx="8"/><text x="635.0" y="219.0" text-anchor="middle" class="t">Chat.COMMANDS</text><text x="635.0" y="234.0" text-anchor="middle" class="s">/clear · /kill · /library · /forget</text><polyline class="ln" points="485,135 520,222"/></svg>
 <div class="cards">
   <div class="card"><h4>Keys</h4><ul>
-    <li><code>q</code> quit</li><li><code>m</code> model</li><li><code>c</code> config</li><li><code>e</code> file explorer</li>
+    <li><code>q</code> quit</li><li><code>m</code> model</li><li><code>c</code> config</li><li><code>e</code> file explorer</li><li><code>r</code> history panel (<code>enter</code> open, <code>d</code> delete)</li>
     <li><code>h</code> help</li><li><code>shift+t</code> Default / Detailed mode</li><li><code>ctrl+c</code> interrupt (copy if text selected)</li></ul></div>
   <div class="card"><h4>Commands</h4><ul>
-    <li><code>/clear</code> forget everything</li><li><code>/kill</code> stop the model servers</li><li><code>/library</code> list saved files</li><li><code>/forget</code> remove saved files</li></ul></div>
+    <li><code>/clear</code> end the conversation (it stays in the history)</li><li><code>/kill</code> stop the model servers</li><li><code>/library</code> list saved files</li><li><code>/forget</code> remove saved files</li></ul></div>
 </div>
 <h3>Submit flow</h3>
 <ol>
@@ -584,6 +605,7 @@ async with app.run_test(size=(100, 30)) as pilot:
 <table>
   <tr><th>File</th><th>What is real</th><th>What is faked</th></tr>
   <tr><td><code>test_conversation.py</code></td><td>Whole turns, compaction</td><td><code>mlx_client</code>'s chat calls only</td></tr>
+  <tr><td><code>test_history.py</code> · <code>test_history_ui.py</code></td><td>Saving, reopening and deleting conversations, the history panel; real SQLite in a temporary folder</td><td><code>mlx_client</code>'s chat calls</td></tr>
   <tr><td><code>test_tool_router.py</code></td><td>Routing rules</td><td>Embedding vectors</td></tr>
   <tr><td><code>test_*_tools.py</code></td><td>Tool text, exact wording</td><td>Backend data / HTTP</td></tr>
   <tr><td><code>test_http_client.py</code></td><td>The HTTP module</td><td>Transport (<code>MockTransport</code>)</td></tr>
@@ -616,11 +638,13 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td><code>chat.tcss</code></td><td>Styles</td></tr>
   <tr><td><code>config_screen.py</code></td><td>Settings popup</td></tr>
   <tr><td><code>file_explorer.py</code></td><td>Home-folder tree</td></tr>
+  <tr><td><code>history_panel.py</code></td><td>The history panel (key <code>r</code>): open and delete saved conversations</td></tr>
   <tr><td><code>telegram_bot.py</code></td><td>Headless Telegram front end: polling, access check, turns, Yes/No confirmations (see <code>docs/telegram.md</code>)</td></tr>
   <tr><td><code>telegram_api.py</code></td><td>Bot API calls through <code>http_client</code>, with the token kept out of errors</td></tr>
   <tr><td><code>telegram_format.py</code></td><td>Turns the model's Markdown reply into Telegram messages: plain text plus formatting entities (via <code>telegramify-markdown</code>), split under the size limit</td></tr>
   <tr><td><code>anime_digest.py</code></td><td>Morning Telegram message of today's anime from the user's list, run by launchd, separate from the bot (see <code>docs/telegram.md</code>)</td></tr>
   <tr><td><code>conversation.py</code></td><td><code>Conversation</code>, events, <code>Usage</code>, <code>TurnInfo</code>, tool loop, compaction</td></tr>
+  <tr><td><code>history.py</code></td><td>Saved conversations in <code>history.db</code>: add, list, load, delete</td></tr>
   <tr><td><code>library.py</code></td><td>Read, chunk, embed, store and search saved files</td></tr>
   <tr><td><code>prompts.py</code> / <code>.json</code></td><td>Presets, system message, allowed tools</td></tr>
   <tr><td><code>tool_router.py</code></td><td>Tool groups per question</td></tr>
@@ -640,7 +664,8 @@ async with app.run_test(size=(100, 30)) as pilot:
 <table>
   <tr><th>Term</th><th>Meaning</th></tr>
   <tr><td>Turn</td><td>One question and everything done to answer it, tool rounds included</td></tr>
-  <tr><td>Conversation</td><td>The finished turns so far</td></tr>
+  <tr><td>Conversation</td><td>The turns from the first question until <code>/clear</code>, kept in the history so it can be reopened and continued</td></tr>
+  <tr><td>History</td><td>The saved conversations from both the app and Telegram, kept between runs</td></tr>
   <tr><td>Library</td><td>The files the user saved, kept between conversations, which the model can search</td></tr>
   <tr><td>Tool text</td><td>Short plain text a tool returns, worded so a small model can't misread it</td></tr>
   <tr><td>Backend</td><td>Module that gets a tool's data from one outside source</td></tr>

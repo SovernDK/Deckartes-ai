@@ -7,6 +7,8 @@ is a Failed event, always last.
 A turn is added to the history only when the model finishes it without error. A turn
 that fails or is interrupted (its stream closed or task cancelled) leaves the history as it was.
 Tokens are counted for every turn, including failed ones, since the model still used them.
+A conversation with a source also saves each finished turn to the history (history.py); clear()
+ends it and open() continues a saved one.
 
 When the last turn's context reached config.compact_at of the context window, the next turn
 first replaces the whole history with the model's summary of it (one system message), so a long
@@ -20,6 +22,7 @@ from collections.abc import AsyncIterator
 from contextlib import aclosing
 from dataclasses import dataclass, field
 
+from agent import history
 from agent.prompts import current_time_line, system_message
 from agent.tool_router import select_tools
 from core.config import config
@@ -59,11 +62,16 @@ class Compacted:
     """The history is now a summary; the question is being answered."""
 
 @dataclass
+class NotSaved:
+    """The turn finished but couldn't be saved to the history; it still counts in this conversation."""
+    message: str
+
+@dataclass
 class Failed:
     """The turn failed; always the last event. The reply so far isn't saved."""
     message: str
 
-Event = Text | Thinking | ToolStarted | ToolsDone | Compacting | Compacted | Failed
+Event = Text | Thinking | ToolStarted | ToolsDone | Compacting | Compacted | NotSaved | Failed
 
 # Stop a model that keeps calling tools instead of answering
 MAX_TOOL_ROUNDS = 10
@@ -124,6 +132,9 @@ SUMMARY_PROMPT = (
     "Write plain text, as short as the content allows."
 )
 
+# Starts the system message that replaces a compacted history; a reopened conversation is sent from its last one
+SUMMARY_PREFIX = "Summary of the conversation so far:\n"
+
 def _add_tool_results(messages, content, tool_calls, results) -> None:
     """Append the model's tool calls and their results so the next request sees them."""
     messages.append({"role": "assistant", "content": content,
@@ -137,7 +148,7 @@ async def _run_call(call: mlx_client.ToolCall, runner) -> str:
     return await runner(call.name, call.arguments)
 
 class Conversation:
-    def __init__(self, tool_runner=None, tool_selector=None) -> None:
+    def __init__(self, tool_runner=None, tool_selector=None, source: str | None = None) -> None:
         # What runs tools and picks them; a validation run replaces both (validation.py)
         self._tool_runner = tool_runner
         self._tool_selector = tool_selector
@@ -148,27 +159,54 @@ class Conversation:
         self.total_usage = Usage()
         # Size of the context of the last finished turn: its final prompt plus reply, in tokens
         self.context_tokens = 0
+        # Where finished turns are saved from ("app", "telegram"); None saves nothing (validation)
+        self.source = source
+        # The saved conversation; None until its first turn is saved
+        self.saved_id: int | None = None
 
     def clear(self) -> None:
+        """End the conversation; the next turn starts a new one."""
+        self.saved_id = None
         self.history.clear()
         self.context_tokens = 0
         self.last_turn = TurnInfo()
         self.total_usage = Usage()
 
-    def _messages_for(self, query: str, time_line: str) -> list[dict]:
+    def open(self, saved_id: int) -> history.Saved:
+        """End this conversation and continue a saved one, returning it with all its messages.
+        The model gets what it had: the last summary, if any, and the turns after it."""
+        saved = history.load(saved_id)
+        self.clear()
+        summaries = [i for i, m in enumerate(saved.messages) if m.role == "system" and m.content.startswith(SUMMARY_PREFIX)]
+        start = summaries[-1] if summaries else 0
+        self.history = [{"role": m.role, "content": m.content} for m in saved.messages[start:]]
+        self.saved_id = saved_id
+        return saved
+
+    def _messages_for(self, query: str, time_line: str, system: str) -> list[dict]:
         """What gets sent to the model for a new question: the current system prompt
-        (read fresh, so a changed preset applies from the next turn), the history, the time and
-        the question."""
-        system = system_message()
+        (read fresh each turn, so a changed preset applies from the next turn), the history,
+        the time and the question."""
         messages = [{"role": "system", "content": system}] if system else []
         return [*messages, *self.history, {"role": "system", "content": time_line},
                 {"role": "user", "content": query}]
 
-    def _remember(self, query: str, reply: str, time_line: str) -> None:
-        if reply:
-            self.history.append({"role": "system", "content": time_line})
-            self.history.append({"role": "user", "content": query})
-            self.history.append({"role": "assistant", "content": reply})
+    def _remember(self, query: str, reply: str, time_line: str, asked_at: str, system: str) -> str | None:
+        """Add a finished turn to the history and save it; the reason when it couldn't be saved."""
+        if not reply:
+            return None
+        self.history.append({"role": "system", "content": time_line})
+        self.history.append({"role": "user", "content": query})
+        self.history.append({"role": "assistant", "content": reply})
+        if self.source is not None:
+            messages = [history.Message("system", time_line, asked_at), history.Message("user", query, asked_at),
+                        history.Message("assistant", reply, history.now(), config.model)]
+            try:
+                self.saved_id = history.add(self.saved_id, messages, source=self.source,
+                                            preset=config.system_prompt, system_prompt=system)
+            except Exception as e:
+                return str(e)
+        return None
 
     def needs_compacting(self) -> bool:
         """Whether the last turn's context reached config.compact_at of the window."""
@@ -184,7 +222,7 @@ class Conversation:
         summary = response.content.strip()
         if not summary:
             raise ValueError("the model returned an empty summary")
-        self.history = [{"role": "system", "content": f"Summary of the conversation so far:\n{summary}"}]
+        self.history = [{"role": "system", "content": SUMMARY_PREFIX + summary}]
         self.context_tokens = 0
 
     async def stream_reply(self, query: str) -> AsyncIterator[Event]:
@@ -199,11 +237,18 @@ class Conversation:
                 yield Failed(f"could not compact the conversation: {e}")
                 return
             yield Compacted()
+            if self.source is not None and self.saved_id is not None:
+                try:
+                    history.add_summary(self.saved_id, history.Message("system", self.history[0]["content"], history.now()))
+                except Exception as e:
+                    yield NotSaved(str(e))
         questions = [m["content"] for m in self.history if m["role"] == "user"]
         previous = questions[-1] if questions else None
         time_line = current_time_line()
+        asked_at = history.now()
         try:
-            messages = self._messages_for(query, time_line)
+            system = system_message()
+            messages = self._messages_for(query, time_line, system)
         except Exception as e:
             # e.g. a broken prompts.json
             yield Failed(f"could not load the system prompt: {e}")
@@ -238,9 +283,11 @@ class Conversation:
                     if thought and not content.strip():
                         yield Failed("the model stopped before answering")
                         return
-                    self._remember(query, reply, time_line)
+                    not_saved = self._remember(query, reply, time_line, asked_at, system)
                     if reply:
                         self.context_tokens = context
+                    if not_saved:
+                        yield NotSaved(not_saved)
                     return
                 if content:
                     reply += "\n\n"

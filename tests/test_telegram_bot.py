@@ -5,12 +5,15 @@ import json
 import logging
 import os
 import signal
+import tempfile
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 import httpx
 
+from agent import history
 from agent.conversation import Conversation
 from core.config import config
 from frozen_clock import freeze
@@ -270,6 +273,37 @@ class CommandTest(BotTest):
         await self.bot.handle(message("/nope"))
         self.assertEqual(self.texts(), [telegram_bot.HELP])
 
+
+class HistoryTest(BotTest):
+    def setUp(self):
+        super().setUp()
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = Path(folder.name)
+        for name, value in (("history_path", self.folder / "history.db"), ("tool_routing", False)):
+            patcher = mock.patch.object(config, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.bot = Bot()
+
+    async def test_turns_are_saved_as_telegram_conversations_and_clear_starts_a_new_one(self):
+        self.use_model([chunk("Hello", done=True)], [chunk("Again", done=True)])
+        await self.ask_and_finish("First")
+        await self.bot.handle(message("/clear", update_id=2))
+        await self.bot.handle(message("Second", update_id=3))
+        await self.bot.turn
+        self.assertEqual([(c.title, c.source) for c in history.list_conversations()],
+                         [("Second", "telegram"), ("First", "telegram")])
+
+    async def test_a_turn_that_cant_be_saved_is_still_answered_and_logged(self):
+        (self.folder / "a file").write_text("")
+        patcher = mock.patch.object(config, "history_path", self.folder / "a file" / "history.db")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.use_model([chunk("Hello", done=True)])
+        with self.assertLogs(telegram_bot.log, logging.WARNING):
+            await self.ask_and_finish("First")
+        self.assertEqual(self.texts(), ["Hello"])
 
 class ConfirmationTest(BotTest):
     async def test_yes_lets_the_change_through(self):

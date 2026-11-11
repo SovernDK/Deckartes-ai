@@ -15,6 +15,9 @@ MAX_MESSAGE = 4000
 class TelegramError(Exception):
     """A Bot API call failed. The message says why and never contains the token."""
 
+class TelegramRejected(TelegramError):
+    """Telegram refused the request itself (400), so sending it again unchanged won't help."""
+
 def split_text(text: str, limit: int = MAX_MESSAGE) -> list[str]:
     """Cut text into parts of at most limit characters, at a paragraph, line or word if one is
     in the second half of the part."""
@@ -42,7 +45,9 @@ async def _call(method: str, payload: dict, timeout: float = 30):
                                              timeout=timeout, status_messages=_STATUS_MESSAGES)
         return response.json()["result"]
     except TelegramError as e:
-        raise TelegramError(str(e).replace(token, "<token>")) from None
+        text = str(e).replace(token, "<token>")
+        rejected = text.startswith("Telegram responded with status 400")
+        raise (TelegramRejected if rejected else TelegramError)(text) from None
     except (ValueError, KeyError):
         raise TelegramError(f"Telegram sent an unreadable answer to {method}") from None
 
@@ -53,9 +58,12 @@ async def get_updates(offset: int | None) -> list[dict]:
         payload["offset"] = offset
     return await _call("getUpdates", payload, timeout=POLL_SECONDS + 10)
 
-async def send_message(chat_id: int, text: str, buttons: list[tuple[str, str]] | None = None) -> dict:
-    """Send plain text, with an optional row of (label, callback data) buttons."""
+async def send_message(chat_id: int, text: str, buttons: list[tuple[str, str]] | None = None,
+                       entities: list[dict] | None = None) -> dict:
+    """Send text, with optional formatting entities and an optional row of (label, callback data) buttons."""
     payload: dict = {"chat_id": chat_id, "text": text}
+    if entities:
+        payload["entities"] = entities
     if buttons:
         payload["reply_markup"] = {"inline_keyboard": [[{"text": label, "callback_data": data}
                                                         for label, data in buttons]]}

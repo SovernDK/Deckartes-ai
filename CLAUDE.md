@@ -10,24 +10,13 @@ Deckartes is a terminal chat UI (Textual) for local MLX models served by Rapid-M
 
 [ ] Better RAG search (not just by embedded chunks)
 [ ] Scanning user1 folder on homeserver
-[x] Integration with telegram
-[x] Remove system prompts, leave only one
-[ ] Add bot a character in system prompt
-[x] Add reasoning but dont display it in the answer
-[ ] Apply defered tools from this doc: https://docs.liquid.ai/lfm/models/lfm3-1.7b
 [ ] Prepare fine tuning data
-[ ] Model routing: pick a model per question (a small one for chit-chat, a bigger one for hard questions)
-[ ] More documents: several files at once, other formats (`.docx`), a `/load <path>` command
-[ ] Vector DB for embeddings, later images and videos (LanceDB is the current pick)
 [ ] Telegram: send files from the iPhone to the library (bots download up to 20 MB; files need a permanent inbox folder, since the library identifies them by path)
-[ ] Telegram: `/library` and `/forget` commands
-[ ] Telegram: keep the conversation across bot restarts
-[ ] Telegram: real formatting in replies (bold, code blocks) instead of plain text
 [ ] Telegram: live reply preview with `sendMessageDraft`
 
 ## Commands
 
-There is no build step or requirements file. Tests use stdlib `unittest` in `tests/`. Linting uses Ruff, configured in `pyproject.toml`. Dependencies live in `venv/` (textual 8.2.8, textual-dev, httpx, pyobjc-framework-EventKit 12.2.2, pypdf 6.20.1, cryptography 50.0.2 for AES-encrypted PDFs, numpy 2.4.6, ruff 0.17.4).
+There is no build step or requirements file. Tests use stdlib `unittest` in `tests/`. Linting uses Ruff, configured in `pyproject.toml`. Dependencies live in `venv/` (textual 8.2.8, textual-dev, httpx, pyobjc-framework-EventKit 12.2.2, pypdf 6.20.1, cryptography 50.0.2 for AES-encrypted PDFs, numpy 2.4.6, telegramify-markdown 1.4.2 for Telegram formatting, ruff 0.17.4).
 
 ```bash
 venv/bin/python src/main.py             # run the app
@@ -47,7 +36,7 @@ The `vscode-mcp` tools expose Pylance and Ruff for diagnostics, references, symb
 
 ## Architecture
 
-Python lives in `src/`, in one package per feature: `core` (config, clock, names, similarity, http_client), `model` (mlx_client, mlx_server, tool_schema), `agent` (conversation, prompts, tool_router), `tools` (the registry `tools.py` and its backends), `ui` (the Textual app), `telegram`, `validation` and `jobs` (scheduled scripts). `src` is the import root (`from core.config import config`, `from tools import tools`), so scripts inside a package run with `-m` from `src/`. Data files (`.env`, `prompts.json`, `validation_cases.json`, `chat.tcss`) stay at the repo root, found through `config.PROJECT_ROOT`; tests stay in `tests/`. Modules are named below without their folder. `main.py` → `app.py` (`DecartesApp`: bindings, model-picker, help and file-explorer screens) → `chat.py` (widgets: bubbles, spinner, busy state, interrupt) → `conversation.py` (`Conversation`: history, the whole turn including the tool loop, no UI) → `tool_router.py` (picks tool groups per question) → `tools.py` (tool registry) → `glances_api.py` / `disk_scan.py` / `web_search.py` / `animeschedule_api.py` / `cs_api.py` / `calendar_api.py` / `library.py` (tool backends; `library.py` also takes the explorer's loads and owns the saved files); the HTTP ones go through `http_client.py`). `mlx_client.py` is the only module that talks to the model servers, and `mlx_server.py` starts and stops them. `clock.py` is the one owner of the current time and of conversions to `config.timezone`, and `names.py` of normalising names for matching. `validation.py` runs `/validate` (no UI; `validation_screen.py` is its popup). `telegram_bot.py` is a second, headless front end for `Conversation`, run as its own process, and `telegram_api.py` holds its Bot API calls. `anime_digest.py` is a short script launchd runs each morning to message the user the day's anime, with no model and without the bot.
+Python lives in `src/`, in one package per feature: `core` (config, clock, names, similarity, http_client), `model` (mlx_client, mlx_server, tool_schema), `agent` (conversation, prompts, tool_router), `tools` (the registry `tools.py` and its backends), `ui` (the Textual app), `telegram`, `validation` and `jobs` (scheduled scripts). `src` is the import root (`from core.config import config`, `from tools import tools`), so scripts inside a package run with `-m` from `src/`. Data files (`.env`, `prompts.json`, `validation_cases.json`, `chat.tcss`) stay at the repo root, found through `config.PROJECT_ROOT`; tests stay in `tests/`. Modules are named below without their folder. `main.py` → `app.py` (`DecartesApp`: bindings, model-picker, help and file-explorer screens) → `chat.py` (widgets: bubbles, spinner, busy state, interrupt) → `conversation.py` (`Conversation`: history, the whole turn including the tool loop, no UI) → `tool_router.py` (picks tool groups per question) → `tools.py` (tool registry) → `glances_api.py` / `disk_scan.py` / `web_search.py` / `animeschedule_api.py` / `cs_api.py` / `calendar_api.py` / `library.py` (tool backends; `library.py` also takes the explorer's loads and owns the saved files); the HTTP ones go through `http_client.py`). `mlx_client.py` is the only module that talks to the model servers, and `mlx_server.py` starts and stops them. `clock.py` is the one owner of the current time and of conversions to `config.timezone`, and `names.py` of normalising names for matching. `validation.py` runs `/validate` (no UI; `validation_screen.py` is its popup). `telegram_bot.py` is a second, headless front end for `Conversation`, run as its own process, `telegram_api.py` holds its Bot API calls and `telegram_format.py` turns replies into Telegram messages. `anime_digest.py` is a short script launchd runs each morning to message the user the day's anime, with no model and without the bot.
 
 **Shared config.** `config.py` exposes a single mutable `config` instance (host, model, context_length, temperature, system_prompt, plus tool settings and keys). Modules read it at call time rather than taking parameters; widgets change settings by assigning to it (e.g. the model picker sets `config.model`). `context_length` is the app's own budget for compaction; the server doesn't cut prompts to it.
 

@@ -8,7 +8,6 @@ Details and setup are in docs/telegram.md.
 import asyncio
 import logging
 import logging.handlers
-import re
 import secrets
 import signal
 import sys
@@ -20,7 +19,8 @@ from agent.conversation import Conversation, Failed, Text
 from core.config import config
 from model import mlx_server
 from telegram import telegram_api
-from telegram.telegram_api import TelegramError, split_text
+from telegram.telegram_api import TelegramError, TelegramRejected
+from telegram.telegram_format import Part, reply_parts
 from tools import tools
 
 log = logging.getLogger("deckartes.telegram")
@@ -46,7 +46,6 @@ HELP = ("Ask me anything, and I'll answer with the tools on your Mac.\n\n"
         "/clear forgets this conversation\n/stop stops the current answer")
 BUSY = "Still answering, /stop cancels it"
 TEXT_ONLY = "I can only read text messages for now."
-EMPTY_REPLY = "The model returned an empty reply."
 EXPIRED = "Expired"
 TIMED_OUT = "No answer after 5 minutes, so nothing was changed."
 
@@ -58,12 +57,6 @@ class _Question:
     """A yes-or-no question waiting for a button press."""
     id: str
     answer: asyncio.Future
-
-def clean_markdown(text: str) -> str:
-    """Remove the Markdown markers that would show literally: code fences, headings and bold."""
-    text = re.sub(r"^```.*\n?", "", text, flags=re.MULTILINE)
-    text = re.sub(r"^#{1,6}[ \t]+", "", text, flags=re.MULTILINE)
-    return text.replace("**", "")
 
 class Bot:
     def __init__(self, conversation: Conversation | None = None) -> None:
@@ -173,13 +166,13 @@ class Bot:
     async def _run_turn(self, question: str) -> None:
         typing = asyncio.create_task(self._keep_typing())
         try:
-            reply = await self._reply_to(question)
+            parts = await self._reply_to(question)
         finally:
             typing.cancel()
-        await self._send(reply)
+        await self._send(parts)
 
-    async def _reply_to(self, question: str) -> str:
-        """Run the turn and return the text to send."""
+    async def _reply_to(self, question: str) -> list[Part]:
+        """Run the turn and return the messages to send."""
         reply = ""
         failure = None
         async with aclosing(self.conversation.stream_reply(question)) as events:
@@ -188,10 +181,7 @@ class Bot:
                     reply += event.text
                 elif isinstance(event, Failed):
                     failure = event.message
-        text = clean_markdown(reply).strip()
-        if failure:
-            text = f"{text}\n\nError: {failure}".strip()
-        return text or EMPTY_REPLY
+        return reply_parts(reply, failure)
 
     async def _keep_typing(self) -> None:
         """Show "typing…" for the whole turn, except while waiting for the user's answer."""
@@ -203,16 +193,20 @@ class Bot:
                     log.warning("Could not show typing: %s", e)
             await asyncio.sleep(TYPING_SECONDS)
 
-    async def _send(self, text: str) -> None:
-        """Send a reply in as many parts as it needs, trying each a few times."""
-        for index, part in enumerate(split_text(text)):
+    async def _send(self, parts: list[Part]) -> None:
+        """Send a reply's parts, trying each a few times."""
+        for index, (text, entities) in enumerate(parts):
             if index:
                 await asyncio.sleep(PART_PAUSE_SECONDS)
             for attempt in range(SEND_ATTEMPTS):
                 try:
-                    await telegram_api.send_message(self.owner, part)
+                    await telegram_api.send_message(self.owner, text, entities=entities)
                     break
                 except TelegramError as e:
+                    if isinstance(e, TelegramRejected) and entities:
+                        log.warning("Telegram refused a reply's formatting, sending it as plain text: %s", e)
+                        entities = []
+                        continue
                     log.warning("Could not send a reply (attempt %d): %s", attempt + 1, e)
                     if attempt + 1 < SEND_ATTEMPTS:
                         await asyncio.sleep(SEND_RETRY_SECONDS)

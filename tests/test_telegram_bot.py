@@ -16,9 +16,9 @@ from core.config import config
 from frozen_clock import freeze
 from http_fake import HttpTest
 from model import mlx_client, mlx_server
-from telegram import telegram_api, telegram_bot
+from telegram import telegram_api, telegram_bot, telegram_format
 from telegram.telegram_api import MAX_MESSAGE, split_text
-from telegram.telegram_bot import Bot, clean_markdown
+from telegram.telegram_bot import Bot
 from test_calendar_tools import FakeCalendar
 from test_conversation import FakeClient, call, chunk, think
 from tools import calendar_api as cal
@@ -156,10 +156,16 @@ class TurnTest(BotTest):
         release.set()
         await self.bot.turn
 
-    async def test_markdown_markers_are_removed_from_the_reply(self):
-        self.use_model([chunk("# Title\n**bold** text", done=True)])
+    async def test_markdown_arrives_as_formatting_not_markers(self):
+        self.use_model([chunk("# Title\n**bold** and `x`", done=True)])
         await self.ask_and_finish()
-        self.assertEqual(self.texts(), ["Title\nbold text"])
+        sent = self.calls("sendMessage")[0]
+        self.assertEqual(sent["text"], "📌 Title\nbold and x")
+        # Offsets count UTF-16 units, so the emoji counts as two
+        self.assertEqual(sent["entities"], [
+            {"type": "underline", "offset": 3, "length": 5}, {"type": "bold", "offset": 3, "length": 5},
+            {"type": "bold", "offset": 9, "length": 4}, {"type": "code", "offset": 18, "length": 1}])
+        self.assertNotIn("parse_mode", sent)
 
     async def test_a_long_reply_arrives_in_parts_under_the_limit(self):
         paragraph = "word " * 500
@@ -169,9 +175,11 @@ class TurnTest(BotTest):
         self.assertTrue(all(len(text) <= MAX_MESSAGE for text in self.texts()))
 
     async def test_a_failed_turn_keeps_the_partial_reply_and_adds_the_error(self):
-        self.use_model([chunk("Partial"), ConnectionError("server gone")])
+        self.use_model([chunk("Partial"), ConnectionError("server *gone*")])
         await self.ask_and_finish()
-        self.assertEqual(self.texts(), ["Partial\n\nError: server gone"])
+        self.assertEqual(self.texts(), ["Partial\n\nError: server *gone*"])
+        # Only "Error:" is bold: the message is never read as Markdown
+        self.assertEqual(self.calls("sendMessage")[0]["entities"], [{"type": "bold", "offset": 9, "length": 6}])
         self.assertEqual(self.bot.conversation.history, [])
 
     async def test_only_the_answer_is_sent_never_the_thinking(self):
@@ -182,7 +190,7 @@ class TurnTest(BotTest):
     async def test_an_empty_reply_gets_a_note(self):
         self.use_model([chunk("", done=True)])
         await self.ask_and_finish()
-        self.assertEqual(self.texts(), [telegram_bot.EMPTY_REPLY])
+        self.assertEqual(self.texts(), [telegram_format.EMPTY_REPLY])
 
     async def test_a_question_during_a_turn_gets_the_busy_reply(self):
         started, release = self.block_model()
@@ -210,6 +218,17 @@ class TurnTest(BotTest):
         self.assertEqual(len(self.calls("sendMessage")), 2)
         self.assertEqual(answers, [])
 
+
+    async def test_formatting_telegram_rejects_is_resent_as_plain_text(self):
+        answers = [httpx.Response(400, json={"ok": False, "description": "Bad Request: can't parse entities"}),
+                   ok({"message_id": 7})]
+        self.routes[PATH + "sendMessage"] = lambda request: answers.pop(0)
+        self.use_model([chunk("**Hello**", done=True)])
+        await self.ask_and_finish()
+        first, second = self.calls("sendMessage")
+        self.assertIn("entities", first)
+        self.assertEqual(second["text"], "Hello")
+        self.assertNotIn("entities", second)
 
 class CommandTest(BotTest):
     async def test_help_and_start_explain_the_bot(self):
@@ -425,13 +444,6 @@ class ShutdownTest(BotTest):
 
 
 class TextTest(BotTest):
-    def test_clean_markdown_leaves_ordinary_text_alone(self):
-        text = "a_b __init__ 2 * 3 #hashtag `code`"
-        self.assertEqual(clean_markdown(text), text)
-
-    def test_clean_markdown_removes_fences_headings_and_bold(self):
-        self.assertEqual(clean_markdown("## Head\n```python\nx = 1\n```\n**b**"), "Head\nx = 1\nb")
-
     def test_short_text_is_one_part(self):
         self.assertEqual(split_text("hello"), ["hello"])
 

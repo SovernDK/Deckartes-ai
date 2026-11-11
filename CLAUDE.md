@@ -16,6 +16,14 @@ Deckartes is a terminal chat UI (Textual) for local MLX models served by Rapid-M
 [x] Add reasoning but dont display it in the answer
 [ ] Apply defered tools from this doc: https://docs.liquid.ai/lfm/models/lfm3-1.7b
 [ ] Prepare fine tuning data
+[ ] Model routing: pick a model per question (a small one for chit-chat, a bigger one for hard questions)
+[ ] More documents: several files at once, other formats (`.docx`), a `/load <path>` command
+[ ] Vector DB for embeddings, later images and videos (LanceDB is the current pick)
+[ ] Telegram: send files from the iPhone to the library (bots download up to 20 MB; files need a permanent inbox folder, since the library identifies them by path)
+[ ] Telegram: `/library` and `/forget` commands
+[ ] Telegram: keep the conversation across bot restarts
+[ ] Telegram: real formatting in replies (bold, code blocks) instead of plain text
+[ ] Telegram: live reply preview with `sendMessageDraft`
 
 ## Commands
 

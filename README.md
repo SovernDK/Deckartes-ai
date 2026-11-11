@@ -8,256 +8,113 @@
   <img src="screnshots/3.png" alt="File explorer for saving files to the library" width="395">
 </p>
 
-A terminal chat app ([Textual](https://textual.textualize.io/)) for local MLX models on Apple Silicon, served by [Rapid-MLX](https://github.com/raullenchai/Rapid-MLX), with tools the model can call:
+A personal assistant that runs on your Mac, in the terminal or on your phone through Telegram.
 
-- **Home server**: CPU, RAM, disk, temperatures and Docker containers of the home server (through its Glances API).
-- **This computer**: list folders, find files, folder sizes.
-- **Web**: search and read pages through Ollama's web API.
-- **Anime**: seasons, ratings, airing schedule and your own list, from AnimeSchedule.net.
-- **Counter-Strike**: teams, players, matches and tournaments from PandaScore, and Valve's ranking.
-- **Your files**: save text files, PDFs or whole folders from the file explorer (`e`) once, and ask about them in any session.
-- **Calendar**: read and search your Apple Calendar and add events (you confirm each one), e.g. an anime episode or a CS match.
+## Philosophy
 
-## TODO
+- **Local first.** The model runs on Apple Silicon with [Rapid-MLX](https://github.com/raullenchai/Rapid-MLX). Your questions and files stay on the Mac. Only tool calls to web APIs leave it.
+- **Small model, good tools.** A 1.7B model doesn't know today's date, your server or your calendar. Tools give it fresh, short, plain-text facts, so it answers from data instead of guessing.
+- **Only the tools a question needs.** A router picks the relevant tool groups per question, which keeps prompts short and choices easy for a small model.
+- **You approve every change.** Anything that changes the world outside the app, like adding a calendar event, asks first.
 
-- [ ] **Model routing**: pick a model per question, e.g. a small local one for chit-chat and a bigger one for hard questions.
-- [x] **RAG over your documents**: a library of saved files and folders, searched with embeddings.
-- [ ] **More documents**: several files at once, other formats (`.docx`), and a `/load <path>` command.
-- [ ] **Vector DB**: store embeddings for documents, and later images and videos (LanceDB is the current pick).
-- [ ] **Fine-tuning**: tune the model on this app's tools, starting with a test set and turn logging (plan in [FINE-TUNING.md](FINE-TUNING.md)).
+## Overview
+
+A chat app built with [Textual](https://textual.textualize.io/). The model can call tools for:
+
+- **Home server:** CPU, RAM, disks, temperatures and Docker containers, through Glances.
+- **This computer:** folders, file search, folder sizes.
+- **Web:** search and page reading, through Ollama's web API.
+- **Anime:** seasons, ratings, airing times and your list, from AnimeSchedule.net.
+- **Counter-Strike:** teams, players, matches and Valve's ranking, from PandaScore.
+- **Calendar:** read, search and add events in Apple Calendar.
+- **Your files:** a library of saved documents, searched with embeddings.
+
+Long conversations are summarised automatically when they near the context limit.
 
 ## Setup
 
-Requirements:
-
-- Python 3.11+
-- An Apple Silicon Mac with [Rapid-MLX](https://github.com/raullenchai/Rapid-MLX) installed. The app starts its servers and stops them on exit, and the models download the first time they're needed:
-
-  ```bash
-  uv tool install 'rapid-mlx[embeddings]'
-  ```
-
-- For the server tools: [Glances](https://nicolargo.github.io/glances/) running in web server mode on the home server (default `http://thinkpad:61208`).
-
-Install the dependencies into a virtual environment (there is no requirements file yet):
+You need an Apple Silicon Mac, Python 3.11+ and Rapid-MLX:
 
 ```bash
+uv tool install 'rapid-mlx[embeddings]'
 python3 -m venv venv
 venv/bin/pip install textual textual-dev httpx pyobjc-framework-EventKit pypdf cryptography numpy
 ```
 
-The calendar tools use macOS's EventKit and see every calendar synced to Calendar.app (iCloud, Google, Exchange). The first calendar question shows a macOS prompt asking to give your terminal app (Terminal, iTerm, VS Code) access to your calendars. You can change that later in System Settings > Privacy & Security > Calendars.
+The app starts the model servers itself and downloads models on first use.
 
-API keys go in a `.env` file in the repo folder, or in the environment:
+Put API keys in `.env` in the repo folder. A tool without its key reports an error; the rest keep working.
 
 ```bash
-OLLAMA_API_KEY=...          # web search and page reading
-ANIMESCHEDULE_TOKEN=...     # anime tools (animeschedule.net application token)
-PANDA_SCORE_API_TOKEN=...   # Counter-Strike tools (pandascore.co, the free plan works)
+OLLAMA_API_KEY=...          # web tools
+ANIMESCHEDULE_TOKEN=...     # anime tools
+PANDA_SCORE_API_TOKEN=...   # Counter-Strike tools (free plan works)
+TELEGRAM_BOT_TOKEN=...      # Telegram bot
+TELEGRAM_USER_ID=...        # your numeric Telegram id
 ```
 
-A tool whose key is missing returns an error to the model; everything else keeps working.
+The server tools need [Glances](https://nicolargo.github.io/glances/) in web server mode on the home server (`http://thinkpad:61208` by default). The calendar tools ask macOS for calendar access on first use.
 
-## Running
+## Usage
 
 ```bash
 venv/bin/python src/main.py
 ```
 
-To see logs, run with devtools and open the console in a second terminal:
-
-```bash
-PYTHONPATH=src venv/bin/textual run --dev src/main.py
-venv/bin/textual console
-```
-
-### From your phone (Telegram)
-
-Deckartes can also answer through a Telegram bot while the Mac runs it. Create a bot with @BotFather, add these to `.env`, and open `deckartes-telegram.command`:
-
-```bash
-TELEGRAM_BOT_TOKEN=...      # from @BotFather
-TELEGRAM_USER_ID=...        # your numeric Telegram id; nobody else gets an answer
-```
-
-It has to run from Terminal, because background services are refused calendar access. Add the file to Login Items to start it at login. Telegram bot chats aren't end-to-end encrypted, so questions and replies pass through Telegram's servers. See [docs/telegram.md](docs/telegram.md).
-
-### Keys and commands
-
 | Key | Action |
 |---|---|
-| `Enter` | Send the message |
-| `Esc` | Leave the input box, so the single-key shortcuts below work |
-| `c` | Settings: system prompt preset, temperature, context limit |
+| `Enter` | Send |
+| `Esc` | Leave the input box, so the single-key shortcuts work |
+| `c` | Settings: prompt, temperature, context limit |
 | `m` | Change model |
-| `e` | File explorer: browse the home folder (hidden files left out), with sizes of the highlighted file or folder. `Enter` on a file or `l` on a file or folder saves it to the library (see [Saving files to the library](#saving-files-to-the-library)) |
-| `t` | Show or hide token usage (per reply, and the total in the Output title) |
+| `e` | File explorer, to save files to the library |
+| `shift+t` | Detailed mode: thinking, tool calls and token usage |
 | `h` | Help |
 | `q` | Quit |
-| `ctrl+c` | Stop the reply being generated, or copy selected text |
-
-Typed into the input box:
+| `ctrl+c` | Stop the reply, or copy selected text |
 
 | Command | Action |
 |---|---|
 | `/clear` | Clear the conversation |
-| `/kill` | Stop the model servers to free their memory; the next question starts them again |
-| `/library` | List the files saved in the library |
-| `/forget <path or file name>` | Remove saved files from the library |
-| `/validate` | Score the loaded model's tool use on the validation cases |
+| `/kill` | Stop the model servers to free memory |
+| `/library` | List saved files |
+| `/forget <path or name>` | Remove files from the library |
+| `/validate` | Score the model's tool use on test cases |
 
-Select text with the mouse and press `ctrl+c` to copy it.
+## Library
 
-## Configuration
+Press `e`, then `Enter` on a file or `l` on a file or folder to save it. Text files, code and PDFs with a text layer work. Saved files stay between sessions, and answers name the file and the page or line.
 
-Settings live in `config.py`, as fields of the shared `config` object. The settings popup (`c`) and the model picker (`m`) change some of them while the app runs. Others are changed by editing the file.
+Loading a folder again only embeds new or changed files. Small models sometimes answer from their own knowledge, so check answers that matter. Details: [docs/library.md](docs/library.md).
 
-| Setting | Default | What it does |
-|---|---|---|
-| `host` | `http://127.0.0.1:8000` | Chat server the app starts |
-| `file_embed_host` | `http://127.0.0.1:8001` | Embeddings-only server, started when the library is used |
-| `mlx_server_command` | `~/.local/bin/rapid-mlx` | The Rapid-MLX program |
-| `model` | `LiquidAI/LFM3-1.7B-MLX-4bit` | Chat model (also changed with `m`, which restarts the server) |
-| `context_length` | `16384` | The app's budget in tokens, for deciding when to compact. Chosen with `c` from `CONTEXT_LENGTHS` in `config.py`: 2K, 4K, 8K, 16K or 32K |
-| `max_tokens` | `4096` | Longest reply in tokens |
-| `enable_thinking` | `False` | Let the model reason before answering, which is slower |
-| `temperature`, `top_k`, `repetition_penalty` | `0.1`, `50`, `1.1` | Sampling, LFM3's recommended chat settings. `None` uses the model's default. Temperature is also changed with `c` |
-| `system_prompt` | `Assistant` | Preset from `prompts.json` (also changed with `c`) |
-| `tool_routing` | `True` | Send only the tool groups a question needs (see [Tool routing](#tool-routing)) |
-| `embed_model` | `mlx-community/all-MiniLM-L6-v2-4bit` | Embedding model used for tool routing |
-| `rag_embed_model` | `mlx-community/embeddinggemma-2-4bit` | Embedding model for the library (multilingual) |
-| `library_path` | `~/.local/share/deckartes/library.db` | Where saved files are kept |
-| `show_token_usage` | `False` | Show token counts (toggled with `t`) |
-| `glances_host` | `http://thinkpad:61208` | Glances API of the home server |
-| `timezone` | this machine's | Used for "today" and all displayed times |
-| `animeschedule_user` | `SeggyX` | Whose public anime list the list tool reads |
-| `anime_air_type` | `sub` | Timetable to follow: `sub`, `raw` or `dub` |
-| `anime_min_rating` | `6.0` | Anime rated at or below this (0–10) are left out; unrated ones are kept |
-| `calendar_name` | `""` | Calendar that new events go to. Empty uses the default calendar from Calendar's settings |
-| `cs_min_tier` | `b` | "All matches" CS lists keep events of this PandaScore tier or better (`s`, `a`, `b`, `c`, `d`), plus any match of a team in Valve's top 30 |
-| `ollama_api_key`, `animeschedule_token`, `pandascore_token` | from `.env` | API keys, read from the environment or `.env` |
+## Telegram
 
-### Prompt presets
+A Telegram bot gives the same assistant on your phone. It answers only your user id and asks before calendar changes with Yes and No buttons. Start it with `deckartes-telegram.command`, and add that file to Login Items to start it at login. It must run from Terminal, because background services are refused calendar access.
 
-`prompts.json` holds the system prompt presets you can pick with `c`. Each has a name, a description, the prompt text and the tools it may use (`"all"`, a list of tool names, or `[]` for none). The file is re-read on every message, so edits apply without a restart. The current date is always added in front of the prompt and the time just before each question, so presets don't need to mention them.
+Telegram chats aren't end-to-end encrypted, so questions and replies pass through Telegram's servers.
 
-| Preset | Tools |
-|---|---|
-| Assistant | All |
-| Server admin | Home server |
-| Anime guide | Anime, web |
-| CS esports | Counter-Strike, web |
-| Planner | Calendar, plus the anime and CS tools for adding episodes and matches |
-| File finder | This computer |
-| Researcher | Web |
-| Chat only | None |
+A separate morning job sends the day's anime episodes from your list, run by launchd.
 
-## Adding a tool
-
-A tool is an async function in `tools.py`. `tool_schema.py` builds the definition the model sees from the function's name, type hints and docstring, so these are what tell the model when and how to use it.
-
-### 1. Write the function
-
-```python
-async def get_exchange_rate(base: str, target: str) -> str:
-    """Get today's exchange rate between two currencies, e.g. how many PLN one EUR buys.
-
-    Args:
-        base: Currency to convert from, as a 3-letter code, e.g. "EUR"
-        target: Currency to convert to, as a 3-letter code, e.g. "PLN"
-    """
-    rate = await currency.rate(base.upper(), target.upper())
-    return f"1 {base.upper()} = {rate:.4f} {target.upper()} (today's rate)"
-```
-
-Guidelines:
-
-- **Google-style docstring with an `Args:` section.** Say what the tool returns and when to use it. For the server and disk tools, say "home server (thinkpad)" or "this computer", so the model can tell them apart.
-- **Keep parameters few.** Every parameter is marked as required, even ones with defaults.
-- **One tool per common question.** A tool that answers "when does X air next" directly is better than one the model has to call day by day. Small models don't chain tools reliably.
-- **Return short plain text, not raw API JSON.** One line per item, readable units (GB, %, °C, local times), shared context stated once in a header, and no `null` fields. It costs about half the tokens, and small models misread raw values such as byte counts. Strings are passed to the model as they are; anything else is JSON-encoded.
-- **Include the reference values the model would otherwise guess,** such as limits, totals or "this week ends Sunday". When a small model can't find something in a result, it makes it up.
-- **Say explicitly when nothing is found**, e.g. `"No team found with that name."`, never an empty list.
-- **Cap the size of what you return** (see `MAX_PAGE_CHARS`), so results fit in the context window.
-- **Raise exceptions for errors.** `run_tool` turns them into a message for the model, so it can tell the user what went wrong.
-- **Run blocking work with `asyncio.to_thread`.**
-- **Ask before changing anything outside the app.** Call `await confirm("...?")` from `tools.py` first: it shows a yes/no popup and returns the answer (see `add_calendar_event`).
-
-Calls to an outside API belong in their own module (like `cs_api.py` or `glances_api.py`), with the tool in `tools.py` as a thin wrapper. Read API keys from `config`, and add them to `config.py` with `read_env("YOUR_KEY_NAME")`.
-
-### 2. Register it
-
-Add the function to the `TOOLS` list in `tools.py`.
-
-### 3. Put it in a routing group
-
-Add the tool's name to a group in `TOOL_GROUPS` (in `tools.py`), or create a new group with 7–10 example questions:
-
-```python
-"money": {
-    "tools": ["get_exchange_rate"],
-    "examples": [
-        "How much is 100 euro in zloty?", "What's the dollar exchange rate?",
-        "Convert 50 USD to PLN", "Is the euro stronger than last week?",
-        # ...questions phrased the way you'd actually ask them
-    ],
-},
-```
-
-A tool that's in no group is sent with every question, which works but costs tokens.
-
-### 4. Add it to the presets
-
-Add the tool's name to the `tools` list of each preset in `prompts.json` that should be able to use it. Presets with `"tools": "all"` get it automatically.
-
-### 5. Try it
-
-Ask a few questions the way you normally would, with `t` on. The usage line shows which tool groups were sent ("tools: money"). If the tool doesn't get picked, add an example question similar to yours to its group.
+Details: [docs/telegram.md](docs/telegram.md).
 
 ## Tool routing
 
-Tool definitions are most of what's sent with a short question: about 2,700 tokens for all tools, against 90 for "hi" without them. Before each question, `tool_router.py` embeds it with `embed_model` and compares it with each group's example questions, plus a set of questions that need no tools:
+Tool definitions cost about 2,700 tokens per question. Before each question, the router compares it with example questions per tool group and sends only the groups that match. Small talk gets no tools, and vague follow-ups reuse the previous topic. To fix a wrong pick, add an example question to the right group. Details: [docs/tool-routing.md](docs/tool-routing.md).
 
-- **Groups that clearly match** are sent, for example only the CS tools for "who's the best CS team?".
-- **Small talk** ("thanks!", "tell me a joke") gets no tools.
-- **Vague follow-ups** ("and Vitality?") use the previous question's topic.
-- **Unsure questions** get the two closest groups.
+## Configuration
 
-If the embedding model isn't available, every tool the preset allows is sent. The thresholds were checked with `all-MiniLM-L6-v2`, so a different embedding model may need new ones. To fix a question that gets routed wrong, add an example to the right group rather than lowering thresholds.
+Settings live in `src/core/config.py`. The settings popup (`c`) and model picker (`m`) change some of them while the app runs. The system prompt is in `prompts.json` and is re-read on every message.
 
-## Saving files to the library
+## Development
 
-Press `e` and pick what to save: `Enter` on a text file (notes, markdown, code, CSV...) or PDF, or `l` on a file or a whole folder. Saved files stay in the library (`~/.local/share/deckartes/library.db`) between sessions, so each file only has to be loaded once, and the model searches them with the `search_library` tool when a question is about your documents. Answers name the file and the page or line.
+```bash
+PYTHONPATH=src venv/bin/python -m unittest discover tests   # tests
+venv/bin/ruff check .                                       # lint
+PYTHONPATH=src venv/bin/textual run --dev src/main.py       # with devtools; logs in `venv/bin/textual console`
+```
 
-- **Loading the same file again** overwrites its old data. Other saved files aren't touched. A file that hasn't changed is skipped, so loading a folder again only embeds what's new or changed.
-- **Folders** are read with their subfolders, keeping text, code and PDF files and leaving out hidden files, `node_modules` and virtual environments. Files that can't be read are named when the load ends.
-- **Embedding** takes about 15 s per 100 chunks of about 1,500 characters. The spinner shows progress and the input is hidden until it ends. `ctrl+c` stops it, and files already finished stay saved.
-- **`/library`** lists what's saved, and **`/forget <path or file name>`** removes a file or everything under a folder after asking. A file deleted from disk stays saved until you forget it.
+Code lives in `src/`, one package per feature: `ui`, `agent`, `model`, `tools`, `telegram`, `core`, `validation` and `jobs`.
 
-Presets without the `search_library` tool, such as `Chat only`, can't see the library. PDFs need a text layer; scanned pages can't be read. Encrypted PDFs open if they have no password (most only restrict printing or copying); password-protected ones can't be loaded.
-
-Small models sometimes answer from their own knowledge instead of the passages, or name the wrong lines, so check an answer that matters against the file.
-
-## Project layout
-
-| File | What's in it |
-|---|---|
-| `src/main.py` | Entry point |
-| `src/ui/app.py` | The app: key bindings, model picker, help screen |
-| `src/ui/chat.py` | Chat widgets: messages, spinner, commands, interrupting |
-| `src/ui/config_screen.py` | Settings popup |
-| `src/ui/file_explorer.py` | File explorer popup |
-| `src/tools/library.py` | The library of saved files: reading, chunking, embedding, storing and searching them |
-| `chat.tcss` | Styles |
-| `src/telegram/telegram_bot.py`, `src/telegram/telegram_api.py`, `deckartes-telegram.command` | The Telegram bot, its Bot API calls and its launcher |
-| `src/agent/conversation.py` | Conversation history, turns, the tool-calling loop and token counting, no UI |
-| `src/model/mlx_client.py` | Chat, embeddings and the model list from the Rapid-MLX servers |
-| `src/model/mlx_server.py` | Starting and stopping the Rapid-MLX servers |
-| `src/model/tool_schema.py` | Builds the definition the model sees for each tool |
-| `src/agent/tool_router.py` | Picks which tool groups to send with a question |
-| `src/tools/tools.py` | Tool functions, `TOOLS` and `TOOL_GROUPS` |
-| `src/agent/prompts.py`, `prompts.json` | System prompt presets |
-| `src/core/config.py` | Settings |
-| `src/tools/glances_api.py`, `src/tools/disk_scan.py`, `src/tools/web_search.py`, `src/tools/animeschedule_api.py`, `src/tools/cs_api.py`, `src/tools/calendar_api.py` | Tool backends |
-
-`CLAUDE.md` has more detail on how the parts fit together and why some things are done the way they are.
+- Adding a tool: [docs/adding-a-tool.md](docs/adding-a-tool.md)
+- Architecture: [CLAUDE.md](CLAUDE.md) and [docs/wiki.html](docs/wiki.html)
+- Plans: [FINE-TUNING.md](FINE-TUNING.md)

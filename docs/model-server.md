@@ -16,4 +16,4 @@ Local models run in Rapid-MLX (`uv tool install 'rapid-mlx[embeddings]'`), in it
 
 **Usage.** `prompt_tokens` includes cached tokens. Speed comes from `metrics.mean_itl_ms` on the finish chunk.
 
-**Tests.** `tests/test_mlx_client.py` uses `httpx.MockTransport` with SSE in the real server's shape, and `tests/test_mlx_server.py` runs a fake server program as the child. `tests/test_live_turn.py` and the live router test skip unless the chat server is already running. Rerun them with it up after changing the model, the flags or the message format.
+**Tests.** `tests/test_mlx_client.py` uses `httpx.MockTransport` with SSE in the real server's shape, and `tests/test_mlx_server.py` runs a fake server program as the child. The live tests (`tests/test_live_*.py`) use the real server and run only with `LIVE=1` and the chat server up. Run them after changing the model, the flags or the message format.

@@ -25,7 +25,7 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(tools.get_cs_team.__name__, "get_cs_team")
         self.assertIn("Args:", tools.get_cs_team.__doc__)
 
-    def test_unknown_group(self):
+    def test_registering_in_an_unknown_group_raises(self):
         async def new_tool() -> str:
             return ""
         with self.assertRaisesRegex(ValueError, "unknown tool group 'nope'"):
@@ -38,7 +38,7 @@ class PresetTest(unittest.TestCase):
                 with self.subTest(preset["name"]):
                     self.assertLessEqual(set(preset["tools"]), set(tools.TOOLS_BY_NAME))
 
-    def test_unknown_tool_in_preset(self):
+    def test_unknown_tool_in_a_preset_raises(self):
         preset = {"name": "Typo", "prompt": "...", "tools": ["get_cs_team", "get_cs_tem"]}
         with (
             mock.patch.object(prompts, "load_prompts", return_value=[preset]),
@@ -60,7 +60,7 @@ class PresetTest(unittest.TestCase):
             with mock.patch.object(config, "system_prompt", "B"):
                 self.assertTrue(prompts.system_message().endswith("Chat."))
 
-    def test_tools_for(self):
+    def test_tools_for_picks_named_tools_and_none_means_all(self):
         self.assertEqual(tools.tools_for(["get_cs_team"]), [tools.get_cs_team])
         self.assertIs(tools.tools_for(None), tools.TOOLS)
 

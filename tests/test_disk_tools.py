@@ -17,7 +17,7 @@ class DiskToolTest(unittest.IsolatedAsyncioTestCase):
         (self.root / "sub").mkdir()
         (self.root / "sub" / "b.bin").write_bytes(b"x" * 2048)
 
-    async def test_list_folder_biggest_first(self):
+    async def test_list_folder_puts_folders_and_files_biggest_first(self):
         self.assertEqual(await tools.run_tool("list_folder", {"path": str(self.root)}), json.dumps({
             "path": str(self.root), "size_human": "2.0 KB", "count": 2,
             "folders": [{"name": "sub", "type": "folder", "size": 2048, "size_human": "2.0 KB"}],
@@ -30,17 +30,17 @@ class DiskToolTest(unittest.IsolatedAsyncioTestCase):
         listing = await tools.list_folder(str(self.root))
         self.assertEqual((listing["count"], len(listing["folders"]) + len(listing["files"]), listing["truncated"]), (102, 100, True))
 
-    async def test_search_files(self):
+    async def test_search_files_matches_names_case_insensitively_in_subfolders(self):
         self.assertEqual(await tools.run_tool("search_files", {"name": "BIN", "path": str(self.root)}), json.dumps({
             "path": str(self.root), "pattern": "BIN", "count": 1,
             "matches": [{"path": str(self.root / "sub" / "b.bin"), "type": "file", "size": 2048, "size_human": "2.0 KB"}],
             "complete": True}))
 
-    async def test_get_folder_size(self):
+    async def test_folder_size_counts_every_file(self):
         self.assertEqual(await tools.run_tool("get_folder_size", {"path": str(self.root)}), json.dumps({
             "path": str(self.root), "size": 2051, "size_human": "2.0 KB", "files": 2, "complete": True}))
 
-    async def test_not_a_folder(self):
+    async def test_listing_a_file_says_it_is_not_a_folder(self):
         path = self.root / "a.txt"
         self.assertEqual(await tools.run_tool("list_folder", {"path": str(path)}),
                          f"Tool list_folder failed: Not a folder: {path}")

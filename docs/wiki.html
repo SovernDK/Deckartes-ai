@@ -183,7 +183,8 @@
 <h3>Run</h3>
 <pre><code>venv/bin/python src/main.py                   # the app
 PYTHONPATH=src venv/bin/textual run --dev src/main.py  # with devtools (+ `textual console` elsewhere)
-PYTHONPATH=src venv/bin/python -m unittest discover tests  # tests; live ones skip unless the chat server is running
+PYTHONPATH=src venv/bin/python -m unittest discover tests  # tests; live ones skip unless LIVE=1
+LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_live_*.py'  # live tests only
 ./deckartes-telegram.command                  # the Telegram bot, in Terminal (calendar access needs it)
 (cd src &amp;&amp; ../venv/bin/python -m jobs.anime_digest)  # send today's anime digest now (launchd runs it at 09:00)</code></pre>
 <div class="tip">If the routing embeddings fail, every allowed tool is sent with the question.</div>
@@ -583,7 +584,7 @@ async with app.run_test(size=(100, 30)) as pilot:
 <table>
   <tr><th>File</th><th>What is real</th><th>What is faked</th></tr>
   <tr><td><code>test_conversation.py</code></td><td>Whole turns, compaction</td><td><code>mlx_client</code>'s chat calls only</td></tr>
-  <tr><td><code>test_tool_router.py</code></td><td>Rules; live cases need the chat server</td><td>Embedding vectors</td></tr>
+  <tr><td><code>test_tool_router.py</code></td><td>Routing rules</td><td>Embedding vectors</td></tr>
   <tr><td><code>test_*_tools.py</code></td><td>Tool text, exact wording</td><td>Backend data / HTTP</td></tr>
   <tr><td><code>test_http_client.py</code></td><td>The HTTP module</td><td>Transport (<code>MockTransport</code>)</td></tr>
   <tr><td><code>test_library.py</code></td><td>Real temporary files and SQLite</td><td>Embedding client</td></tr>
@@ -593,15 +594,15 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td><code>test_mlx_server.py</code></td><td>Starting and stopping child processes</td><td>A fake server program as the child</td></tr>
   <tr><td><code>test_model_server_ui.py</code></td><td>The app starting, restarting, stopping the server</td><td><code>mlx_server</code></td></tr>
   <tr><td><code>test_tool_schema.py</code></td><td>Definitions built from tool functions</td><td>Nothing</td></tr>
-  <tr><td><code>test_live_turn.py</code></td><td>Whole turns on real Rapid-MLX; skipped unless the chat server is running</td><td>Nothing</td></tr>
-  <tr><td><code>test_live_followups.py</code></td><td>Follow-ups through the real router and model; skipped likewise</td><td>Tools</td></tr>
+  <tr><td><code>test_live_turn.py</code></td><td>Whole turns on real Rapid-MLX; only with <code>LIVE=1</code> and the chat server up</td><td>Nothing</td></tr>
+  <tr><td><code>test_live_routing.py</code></td><td>Real questions through the router and embedding model; likewise</td><td>Nothing</td></tr>
 </table>
 <ol>
   <li><code>http_fake.HttpTest.serve</code> fakes HTTP responses.</li>
   <li><code>frozen_clock.freeze(test, "2026-11-11 12:00")</code> fixes time and zone.</li>
   <li>Calendar access can't be tested from Claude Code's shell; the EventKit code needs a manual check in a terminal that has calendar access.</li>
   <li>Exact-wording assertions are deliberate: a wording change should fail a test and be reviewed.</li>
-  <li>Rerun the live tests with the chat server up after changing the model, the flags or the message format.</li>
+  <li>Run the live tests (<code>LIVE=1</code>, chat server up) after changing the model, the flags, the message format or the routing examples.</li>
 </ol>
 </section>
 

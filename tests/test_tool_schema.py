@@ -31,7 +31,7 @@ async def no_arguments() -> str:
     return ""
 
 class ToolDefinitionTest(unittest.TestCase):
-    def test_description_types_and_required(self):
+    def test_definition_has_the_docstring_types_and_required(self):
         self.assertEqual(tool_definition(everything), {"type": "function", "function": {
             "name": "everything",
             "description": "Do everything.\n\nSecond line of the description.",
@@ -50,7 +50,7 @@ class ToolDefinitionTest(unittest.TestCase):
             },
         }})
 
-    def test_no_arguments(self):
+    def test_tool_without_arguments_gets_empty_parameters(self):
         self.assertEqual(tool_definition(no_arguments)["function"]["parameters"],
                          {"type": "object", "required": [], "properties": {}})
 

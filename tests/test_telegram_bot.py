@@ -13,12 +13,15 @@ import httpx
 
 from agent.conversation import Conversation
 from core.config import config
+from frozen_clock import freeze
 from http_fake import HttpTest
 from model import mlx_client, mlx_server
 from telegram import telegram_api, telegram_bot
 from telegram.telegram_api import MAX_MESSAGE, split_text
 from telegram.telegram_bot import Bot, clean_markdown
+from test_calendar_tools import FakeCalendar
 from test_conversation import FakeClient, call, chunk, think
+from tools import calendar_api as cal
 from tools import tools
 
 TOKEN = "123:SECRET"
@@ -123,7 +126,6 @@ class AccessTest(BotTest):
     async def test_another_users_button_press_changes_nothing(self):
         data = await self.start_confirmation()
         await self.bot.handle(press(data, sender=999))
-        await asyncio.sleep(0.01)
         self.assertFalse(self.bot.pending.answer.done())
         self.assertEqual(self.calls("answerCallbackQuery"), [])
         self.bot.turn.cancel()
@@ -297,16 +299,22 @@ class ConfirmationTest(BotTest):
         await self.bot.turn
 
     async def test_a_question_that_cannot_be_sent_adds_nothing(self):
+        freeze(self, "2026-11-11 12:00")
+        save = mock.Mock()
+        for name, value in (("_events_between", lambda start, end: []),
+                            ("_target_calendar", lambda: FakeCalendar("Home")), ("save_event", save)):
+            patcher = mock.patch.object(cal, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.routes[PATH + "sendMessage"] = httpx.Response(500, text="down")
         tools.confirm_handler = self.bot.confirm
-        async def add_event():
-            return "saved" if await tools.confirm("Add this event?") else "declined"
         self.bot.conversation = Conversation(tool_selector=select_nothing)
-        client = self.use_model([chunk(tool_calls=[call("add_event")], done=True)], [chunk("Sorry", done=True)])
-        with mock.patch.dict(tools.TOOLS_BY_NAME, {"add_event": add_event}):
-            await self.ask_and_finish("Add it")
-        self.assertIn("Tool add_event failed", self.tool_result(client))
+        add = call("add_calendar_event", title="Dentist", date="tomorrow", start_time="14:30")
+        client = self.use_model([chunk(tool_calls=[add], done=True)], [chunk("Sorry", done=True)])
+        await self.ask_and_finish("Add it")
+        self.assertIn("Tool add_calendar_event failed", self.tool_result(client))
         self.assertNotIn(TOKEN, self.tool_result(client))
+        save.assert_not_called()
 
 
 class PollingTest(BotTest):

@@ -117,7 +117,6 @@ class SpinnerLabelTest(unittest.IsolatedAsyncioTestCase):
                 yield think("hmm")
                 labels.append(spinner.label)
                 yield chunk("Checking.")
-                await asyncio.sleep(0.05)
                 labels.append(spinner.label)
                 yield chunk(tool_calls=[call("get_current_season")], done=True)
             else:

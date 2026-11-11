@@ -1,4 +1,4 @@
-"""Whole turns through the real Rapid-MLX server. Skipped unless the chat server is already running.
+"""Whole turns through the real Rapid-MLX server. Live: runs only with LIVE=1 and the chat server up.
 
 The library test starts the real file embedding server, and stops it again.
 """
@@ -11,14 +11,14 @@ from unittest import mock
 from agent import tool_router
 from agent.conversation import Conversation, Failed, Text, ToolStarted
 from core.config import config
+from live import require_live
 from model import mlx_server
 from tools import library
 
 
 class LiveTurnTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        if not mlx_server.chat_is_ready():
-            self.skipTest("the chat server isn't running")
+        require_live(self)
         tool_router._examples.clear()
         self.addCleanup(tool_router._examples.clear)
         self.conversation = Conversation()

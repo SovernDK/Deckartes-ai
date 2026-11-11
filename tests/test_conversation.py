@@ -90,7 +90,7 @@ class TurnTest(unittest.IsolatedAsyncioTestCase):
 
     def route(self, scores: dict[str, dict]) -> None:
         self.patch(config, "tool_routing", True)
-        self.patch(tool_router, "_embed", FakeEmbeddings(scores))
+        self.patch(mlx_client, "embed", FakeEmbeddings(scores))
         tool_router._examples.clear()
         self.addCleanup(tool_router._examples.clear)
 
@@ -225,7 +225,7 @@ class CompactTest(TurnTest):
         self.assertEqual(await self.reply("two"), [Text("second")])
         self.assertEqual(self.sent_contents(client, 1), [DATE_LINE, TIME_LINE, "one", "first", TIME_LINE, "two"])
 
-    async def test_none_never_compacts(self):
+    async def test_compact_at_none_never_compacts(self):
         self.patch(config, "compact_at", None)
         self.use([chunk("first", done=True)], [chunk("second", done=True)])
         await self.reply("one")
@@ -308,11 +308,11 @@ class FailedTurnTest(TurnTest):
         self.assertEqual(self.conversation.history, [])
         self.assertEqual(self.conversation.total_usage.input, 10)
 
-    async def test_failure_before_any_text(self):
+    async def test_failure_before_any_text_is_the_only_event(self):
         self.use()
         self.assertEqual(await self.reply(), [Failed("no more rounds")])
 
-    async def test_system_prompt_error(self):
+    async def test_unreadable_prompts_fail_the_turn_before_the_model_is_called(self):
         client = self.use([chunk("never", done=True)])
         self.patch(prompts, "load_prompts", mock.Mock(side_effect=ValueError("bad json")))
         self.assertEqual(await self.reply(), [Failed("could not load the system prompt: bad json")])
@@ -336,24 +336,24 @@ class FailedTurnTest(TurnTest):
         self.assertEqual(client.closed, 1)
 
 class SummaryTest(unittest.TestCase):
-    def test_nothing_sent_to_the_model(self):
+    def test_no_summary_when_nothing_was_sent(self):
         self.assertIsNone(TurnInfo().summary())
 
-    def test_tokens_only(self):
+    def test_summary_counts_tokens_in_and_out(self):
         self.assertEqual(TurnInfo(Usage(input=1200, output=34)).summary(), "1,200 in · 34 out · 1,234 tokens")
 
     def test_one_token_is_singular(self):
         self.assertEqual(TurnInfo(Usage(input=1)).summary(), "1 in · 0 out · 1 token")
 
-    def test_generation_speed(self):
+    def test_summary_adds_the_generation_speed_when_known(self):
         self.assertEqual(TurnInfo(Usage(input=1, output=5, output_ns=2_000_000_000)).summary(),
                          "1 in · 5 out · 6 tokens · 2.5 tok/s")
 
-    def test_tool_groups(self):
+    def test_summary_names_the_tool_groups_sent(self):
         self.assertEqual(TurnInfo(Usage(input=1), tool_groups=["cs", "anime"]).summary(),
                          "1 in · 0 out · 1 token · tools: cs, anime")
 
-    def test_router_chose_no_tools(self):
+    def test_summary_says_none_when_the_router_chose_no_tools(self):
         self.assertEqual(TurnInfo(Usage(input=1), tool_groups=[]).summary(), "1 in · 0 out · 1 token · tools: none")
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@
 
 import unittest
 
+import httpx
+
 from http_fake import HttpTest
 from tools import tools
 
@@ -36,11 +38,11 @@ class ServerToolTest(HttpTest):
         self.assertEqual(await tools.get_system_load(),
                          "Load average: 1.00 (1 min), 2.00 (5 min), 3.00 (15 min) on 4 cores = 50% of capacity")
 
-    async def test_memory(self):
+    async def test_memory_shows_used_total_and_available(self):
         self.serve(api(mem=MEM))
         self.assertEqual(await tools.get_memory_usage(), "RAM: 4.0 GB of 16.0 GB used (25.0%), 12.0 GB available")
 
-    async def test_no_swap(self):
+    async def test_zero_swap_is_none(self):
         self.serve(api(memswap=SWAP))
         self.assertEqual(await tools.get_swap_usage(), "Swap: none")
 
@@ -48,11 +50,11 @@ class ServerToolTest(HttpTest):
         self.serve(api(fs=FS))
         self.assertEqual(await tools.get_disk_usage(), "Disk /dev/sda1 (ext4): 50.0 GB of 100.0 GB used (50.0%), 50.0 GB free")
 
-    async def test_gpu_with_unknown_load(self):
+    async def test_gpu_without_a_load_says_unknown(self):
         self.serve(api(gpu=[{"gpu_id": "gpu0", "proc": None, "mem": 10, "temperature": 50}]))
         self.assertEqual(await tools.get_gpu_usage(), "GPU gpu0: load unknown, memory 10% used, 50°C")
 
-    async def test_no_gpu(self):
+    async def test_says_when_no_gpu_is_reported(self):
         self.serve(api(gpu=[]))
         self.assertEqual(await tools.get_gpu_usage(), "No GPU reported")
 
@@ -72,7 +74,7 @@ class ServerToolTest(HttpTest):
                          "busy: running, CPU 40.0%, RAM 3.0 GB\n"
                          "idle: running, CPU 0.5%, RAM 200 MB")
 
-    async def test_no_containers(self):
+    async def test_says_when_no_containers_are_reported(self):
         self.serve(api(containers=[]))
         self.assertEqual(await tools.get_containers(), "No containers reported")
 
@@ -80,7 +82,7 @@ class ServerToolTest(HttpTest):
         self.serve(api(status={"version": "4.3"}, uptime='"5 days"', cpu=CPU, load=LOAD, mem=MEM, memswap=SWAP, fs=FS,
                        gpu=[], sensors=[], containers=containers))
 
-    async def test_overview(self):
+    async def test_overview_has_one_line_per_area_and_ranks_containers(self):
         self.serve_overview(CONTAINERS)
         self.assertEqual(await tools.get_server_overview(),
                          "Online (Glances 4.3), up 5 days\n"
@@ -96,9 +98,14 @@ class ServerToolTest(HttpTest):
                          "Most CPU: busy 40.0%; idle 0.5%; crashed 0.0%\n"
                          "Most RAM: busy 3.0 GB; idle 200 MB; crashed 0 MB")
 
-    async def test_overview_without_containers(self):
+    async def test_overview_without_containers_ends_by_saying_so(self):
         self.serve_overview([])
         self.assertTrue((await tools.get_server_overview()).endswith("\nNo sensors reported\nNo containers reported"))
+
+    async def test_unreachable_glances_is_reported(self):
+        self.serve({"/api/4/cpu": httpx.ConnectError("no route to host")})
+        self.assertEqual(await tools.run_tool("get_cpu_usage", {}),
+                         "Tool get_cpu_usage failed: Could not reach Glances: no route to host")
 
 if __name__ == "__main__":
     unittest.main()

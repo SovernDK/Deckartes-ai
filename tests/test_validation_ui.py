@@ -37,7 +37,7 @@ class ValidateCommandTest(unittest.IsolatedAsyncioTestCase):
                 (mlx_server, "ensure_chat", mock.Mock()), (config, "model", "org/some-model"),
                 (validation, "RESULTS_FOLDER", self.folder), (validation, "load_suite", mock.Mock(return_value=self.suite)),
                 (mlx_client, "stream_chat", self.client.stream_chat), (mlx_client, "complete", self.client.complete),
-                (tool_router, "_embed", FakeEmbeddings({"one": {"server": 0.9}, "two": {"server": 0.9}}))]:
+                (mlx_client, "embed", FakeEmbeddings({"one": {"server": 0.9}, "two": {"server": 0.9}}))]:
             patcher = mock.patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -159,11 +159,13 @@ class ValidateCommandTest(unittest.IsolatedAsyncioTestCase):
             await self.settle(app, pilot)
 
     async def test_a_results_file_that_cannot_be_written_still_shows_the_report(self):
+        blocker = self.folder / "a file"
+        blocker.write_text("")
         app = DecartesApp()
-        with mock.patch.object(validation.Run, "save", side_effect=OSError("disk full")):
+        with mock.patch.object(validation, "RESULTS_FOLDER", blocker / "results"):
             async with app.run_test(size=(100, 30)) as pilot:
                 await self.open_screen(app, pilot)
                 await pilot.press("r")
                 await self.settle(app, pilot)
                 self.assertIn("Full score", app.query_one(Markdown).source)
-                self.assertTrue(any("disk full" in n.message for n in app._notifications))
+                self.assertTrue(any("Not a directory" in n.message for n in app._notifications))

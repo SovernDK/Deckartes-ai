@@ -70,7 +70,7 @@ class TeamResultsTest(CsToolTest):
         self.serve_results(result)
         return (await tools.get_cs_match_results("Natus Vincere")).split("\n")[-1]
 
-    async def test_header_and_day(self):
+    async def test_results_are_grouped_under_their_local_day(self):
         self.serve_results(finished(NAVI, MOUZ, (2, 1), NAVI))
         self.assertEqual(await tools.get_cs_match_results("Natus Vincere"),
                          "Recent results of Natus Vincere, newest first (local time):\n"
@@ -80,22 +80,22 @@ class TeamResultsTest(CsToolTest):
     async def test_score_is_from_the_teams_side_when_listed_second(self):
         self.assertEqual(await self.line(finished(MOUZ, NAVI, (1, 2), NAVI)), f"- 18:30 won 2-1 vs MOUZ ({DETAILS})")
 
-    async def test_lost(self):
+    async def test_lost_match_shows_the_teams_score_first(self):
         self.assertEqual(await self.line(finished(NAVI, MOUZ, (0, 2), MOUZ)), f"- 18:30 lost 0-2 vs MOUZ ({DETAILS})")
 
-    async def test_drew(self):
+    async def test_match_without_a_winner_is_a_draw(self):
         self.assertEqual(await self.line(finished(NAVI, MOUZ, (1, 1), None)), f"- 18:30 drew 1-1 vs MOUZ ({DETAILS})")
 
-    async def test_forfeit(self):
+    async def test_forfeit_is_marked(self):
         self.assertEqual(await self.line(finished(NAVI, MOUZ, (1, 0), NAVI, forfeit=True)),
                          f"- 18:30 won 1-0 vs MOUZ ({DETAILS}, forfeit)")
 
-    async def test_no_results(self):
+    async def test_team_without_finished_matches_says_so(self):
         self.serve_results()
         self.assertEqual(await tools.get_cs_match_results("Natus Vincere"),
                          "Recent results of Natus Vincere: No finished matches found")
 
-    async def test_no_such_team(self):
+    async def test_unknown_team_has_no_results(self):
         self.serve({"/csgo/teams": []})
         self.assertEqual(await tools.get_cs_match_results("Nope"), "Nope: No team found with that name.")
 
@@ -146,7 +146,7 @@ class AllMatchesTest(CsToolTest):
         await tools.get_cs_match_results("all")
         self.assertEqual(self.pages_requested(server), ["1", "2", "3", "4"])
 
-    async def test_nothing_major(self):
+    async def test_minor_tier_matches_are_left_out(self):
         self.serve({**standings(), "/csgo/matches/upcoming": [not_started(MINOR, OTHER, tier="c")]})
         self.assertEqual(await tools.get_cs_upcoming_matches("all"),
                          "Upcoming matches in major CS events: No upcoming matches scheduled in major events")
@@ -164,7 +164,7 @@ class LiveTest(CsToolTest):
                                                              running(OTHER, MINOR, tier="c")]})
         self.assertIn("\n2 smaller-league matches are live but not listed.", await tools.get_cs_live_matches())
 
-    async def test_nothing_live(self):
+    async def test_says_when_no_major_match_is_live(self):
         self.serve({**standings(), "/csgo/matches/running": []})
         self.assertEqual(await tools.get_cs_live_matches(), "No major matches are being played right now.")
 
@@ -173,7 +173,7 @@ class TeamTest(CsToolTest):
         self.serve({**standings(), "/csgo/teams": [team], "/csgo/matches/past": list(past),
                     "/csgo/matches/upcoming": list(upcoming), "/csgo/matches/running": list(live)})
 
-    async def test_everything_known(self):
+    async def test_team_card_shows_rank_roster_live_next_and_recent(self):
         self.serve_team(past=[finished(MOUZ, NAVI, (1, 2), NAVI)], upcoming=[not_started(NAVI, MOUZ)],
                         live=[running(NAVI, MOUZ)], team=TEAM | {"name": "MOUZ", "id": 2})
         self.assertEqual(await tools.get_cs_team("MOUZ"),
@@ -184,7 +184,7 @@ class TeamTest(CsToolTest):
                          "Recent results (newest first):\n"
                          f"- Tuesday 2026-11-10 18:30: lost 1-2 vs Natus Vincere ({DETAILS})")
 
-    async def test_nothing_scheduled(self):
+    async def test_team_card_says_what_is_missing(self):
         self.serve_team(team=TEAM | {"players": []})
         self.assertEqual(await tools.get_cs_team("Natus Vincere"),
                          "Natus Vincere (NAVI, UA), not in Valve's global standings\n"
@@ -208,7 +208,7 @@ class TeamTest(CsToolTest):
         self.serve_team(past=[finished(NAVI, MOUZ, (1, 0), NAVI, end_at=None)])
         self.assertIn(f"\n- date unknown: won 1-0 vs MOUZ ({DETAILS})", await tools.get_cs_team("Natus Vincere"))
 
-    async def test_no_such_team(self):
+    async def test_unknown_team_gets_a_spelling_hint(self):
         self.serve({"/csgo/teams": []})
         self.assertEqual(await tools.get_cs_team("Nope"),
                          "Nope: No team found with that name. Check the spelling or try the full name "
@@ -227,11 +227,16 @@ class PlayerTest(CsToolTest):
                          "Valve rank 1 (2010 points, as of 2026-10-06)\n"
                          "Performance stats (rating, K/D, ADR) aren't available from this data source.")
 
+    async def test_data_outside_the_pandascore_plan_says_so(self):
+        self.serve({"/csgo/players": httpx.Response(403, text="forbidden")})
+        self.assertEqual(await tools.run_tool("get_cs_player", {"name": "ZywOo"}),
+                         "Tool get_cs_player failed: Access denied: this data isn't included in the PandaScore plan")
+
 class RankingTest(CsToolTest):
     EXPECTED = ("Valve Regional Standings (global), as of {year}-10-06:\n"
                 "1. Vitality: 2010 points (apEX, ZywOo)")
 
-    async def test_current_year(self):
+    async def test_world_reads_this_years_latest_global_standings(self):
         self.serve(standings())
         self.assertEqual(await tools.get_cs_ranking("world", 1), self.EXPECTED.format(year=2026))
 

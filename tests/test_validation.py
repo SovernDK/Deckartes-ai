@@ -183,28 +183,28 @@ class SuiteChecksTest(unittest.TestCase):
             validation.parse_suite(suite_data(*cases))
         self.assertIn(mentioning, str(caught.exception))
 
-    def test_unknown_expected_tool(self):
+    def test_unknown_expected_tool_is_rejected(self):
         self.assert_rejected("nope", case_data(expect=["nope"]))
 
-    def test_unknown_alternative_tool(self):
+    def test_unknown_alternative_tool_is_rejected(self):
         self.assert_rejected("nope", case_data(expect=[["get_cpu_usage", "nope"]]))
 
-    def test_unknown_forbidden_tool(self):
+    def test_unknown_forbidden_tool_is_rejected(self):
         self.assert_rejected("nope", case_data(forbid=["nope"]))
 
-    def test_unknown_result_tool(self):
+    def test_unknown_result_tool_is_rejected(self):
         self.assert_rejected("nope", case_data(results={"nope": "x"}))
 
     def test_argument_check_on_an_unknown_parameter(self):
         self.assert_rejected("team", case_data(expect=["get_cs_team"], arguments={"get_cs_team": {"team": "x"}}))
 
-    def test_unknown_category(self):
+    def test_unknown_category_is_rejected(self):
         self.assert_rejected("hard", case_data(category="hard"))
 
-    def test_duplicate_ids(self):
+    def test_duplicate_ids_are_rejected(self):
         self.assert_rejected("twice", case_data(), case_data())
 
-    def test_unknown_field(self):
+    def test_unknown_field_is_rejected(self):
         self.assert_rejected("expects", case_data(expects=[]))
 
     def test_a_tool_case_needs_an_expected_tool(self):
@@ -216,7 +216,7 @@ class SuiteChecksTest(unittest.TestCase):
     def test_a_no_tool_case_needs_tempting_groups(self):
         self.assert_rejected("tempt", case_data(category="no-tool", expect=[]))
 
-    def test_unknown_tempting_group(self):
+    def test_unknown_tempting_group_is_rejected(self):
         self.assert_rejected("nope", case_data(category="no-tool", expect=[], tempt=["nope"]))
 
     def test_a_follow_up_needs_earlier_turns(self):
@@ -233,7 +233,7 @@ class SuiteChecksTest(unittest.TestCase):
             category="chained", expect=["get_next_episode", "add_calendar_event"],
             carry={"add_calendar_event": {"date": "2026-11-14"}}))
 
-    def test_a_broken_claim_pattern(self):
+    def test_broken_claim_pattern_is_rejected(self):
         self.assert_rejected("claim", case_data(claim_patterns=["("]))
 
     def test_every_tool_needs_a_default_result(self):
@@ -316,7 +316,7 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         return client
 
     def route(self, scores: dict) -> None:
-        self.patch(tool_router, "_embed", FakeEmbeddings(scores))
+        self.patch(mlx_client, "embed", FakeEmbeddings(scores))
 
     async def run_cases(self, *cases: dict, categories=None, progress=None) -> validation.Run:
         run = validation.Run(validation.parse_suite(suite_data(*cases)), categories)
@@ -412,7 +412,7 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run.router_records[0]["status"], "extra")
 
     async def test_a_router_that_could_not_run_is_recorded_and_all_expected_tools_still_sent(self):
-        self.patch(tool_router, "_embed", mock.AsyncMock(side_effect=ConnectionError))
+        self.patch(mlx_client, "embed", mock.AsyncMock(side_effect=ConnectionError))
         client = self.use([chunk("ok", done=True)])
         run = await self.run_cases(case_data())
         self.assertEqual(run.router_records[0]["status"], "error")

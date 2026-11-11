@@ -1,6 +1,8 @@
 """mlx_server with a small fake server program as the real child process."""
 
 import http.server
+import os
+import signal
 import socket
 import stat
 import sys
@@ -16,9 +18,11 @@ from core.config import config
 from model import mlx_server
 
 FAKE_SERVER = f"""#!{sys.executable}
-import http.server, sys
+import http.server, os, sys
 with open(sys.argv[0] + ".args", "w") as out:
     out.write(" ".join(sys.argv[1:]))
+with open(sys.argv[0] + ".pids", "a") as out:
+    print(os.getpid(), file=out)
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -59,6 +63,11 @@ class ServerTest(unittest.TestCase):
     def arguments(self) -> str:
         return Path(config.mlx_server_command + ".args").read_text()
 
+    def launches(self) -> list[int]:
+        """The process id of every server program started, in order."""
+        pids = Path(config.mlx_server_command + ".pids")
+        return [int(line) for line in pids.read_text().split()] if pids.exists() else []
+
     def answers(self) -> bool:
         try:
             return httpx.get(self.url + mlx_server.READY_PATH, timeout=2).status_code == 200
@@ -86,23 +95,22 @@ class ServerTest(unittest.TestCase):
 
     def test_second_call_keeps_the_same_process(self):
         mlx_server.ensure_chat()
-        process = mlx_server._chat.process
         mlx_server.ensure_chat()
-        self.assertIs(mlx_server._chat.process, process)
+        self.assertEqual(len(self.launches()), 1)
 
     def test_crashed_server_is_started_again(self):
         mlx_server.ensure_chat()
-        crashed = mlx_server._chat.process
-        crashed.kill()
-        crashed.wait()
+        os.kill(self.launches()[0], signal.SIGKILL)
+        while self.answers():
+            pass
         mlx_server.ensure_chat()
-        self.assertIsNot(mlx_server._chat.process, crashed)
+        self.assertEqual(len(self.launches()), 2)
         self.assertTrue(mlx_server.chat_is_ready())
 
     def test_running_server_is_reused_and_never_stopped(self):
         self.start_other_server()
         mlx_server.ensure_chat()
-        self.assertIsNone(mlx_server._chat.process)
+        self.assertEqual(self.launches(), [])
         self.assertEqual(mlx_server.stop_all(), [])
         self.assertTrue(self.answers())
 
@@ -129,9 +137,8 @@ class ServerTest(unittest.TestCase):
 
     def test_lfm3_gets_its_parsers(self):
         with mock.patch.object(config, "model", "LiquidAI/LFM3-1.7B-MLX-4bit"):
-            arguments = mlx_server._chat_arguments()
-        self.assertIn("nemotron", arguments)
-        self.assertIn("qwen3", arguments)
+            mlx_server.ensure_chat()
+        self.assertIn("--tool-call-parser nemotron --reasoning-parser qwen3", self.arguments())
 
     def test_file_server_is_embeddings_only(self):
         mlx_server.ensure_files()
@@ -142,14 +149,14 @@ class ServerTest(unittest.TestCase):
 
     def test_restart_uses_the_new_model(self):
         mlx_server.ensure_chat()
-        first = mlx_server._chat.process
         with mock.patch.object(config, "model", "other/model"):
             mlx_server.restart_chat()
-        self.assertIsNot(mlx_server._chat.process, first)
+        self.assertEqual(len(self.launches()), 2)
         self.assertIn("serve other/model", self.arguments())
 
     def test_stop_ends_a_start_that_is_still_waiting(self):
-        slow = f"#!{sys.executable}\nimport time\ntime.sleep(60)\n"
+        slow = (f"#!{sys.executable}\nimport os, sys, time\n"
+                "with open(sys.argv[0] + '.pids', 'a') as out:\n    print(os.getpid(), file=out)\ntime.sleep(60)\n")
         errors = []
         def start():
             try:
@@ -159,7 +166,7 @@ class ServerTest(unittest.TestCase):
         with mock.patch.object(config, "mlx_server_command", self.program(slow)):
             thread = threading.Thread(target=start)
             thread.start()
-            while mlx_server._chat.process is None:
+            while not self.launches():
                 pass
             self.assertEqual(mlx_server.stop_all(), ["chat"])
             thread.join(10)

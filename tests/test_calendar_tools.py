@@ -5,6 +5,8 @@ import unittest
 from unittest import mock
 from zoneinfo import ZoneInfo
 
+from Foundation import NSDate
+
 from frozen_clock import TIMEZONE, freeze
 from tools import calendar_api as cal
 from tools import tools
@@ -39,10 +41,10 @@ class FakeEvent:
         return self.values[2]
 
     def startDate(self):
-        return cal._nsdate(self.start)
+        return NSDate.dateWithTimeIntervalSince1970_(self.start.timestamp())
 
     def endDate(self):
-        return cal._nsdate(self.end)
+        return NSDate.dateWithTimeIntervalSince1970_(self.end.timestamp())
 
     def isAllDay(self) -> bool:
         return self.all_day
@@ -73,18 +75,18 @@ class CalendarToolTest(unittest.IsolatedAsyncioTestCase):
         return self.answer
 
 class ReadTest(CalendarToolTest):
-    async def test_one_day(self):
+    async def test_lists_only_the_asked_days_events_with_location_on_one_line(self):
         self.events = [FakeEvent("Dentist", "2026-11-12 14:30", "2026-11-12 15:00", location="Clinic\nMain St"),
                        FakeEvent("Elsewhere", "2026-11-13 09:00", "2026-11-13 10:00")]
         self.assertEqual(await tools.get_calendar_events("tomorrow"),
                          "Calendar events for Thursday 2026-11-12 (local time):\n"
                          "- Dentist: 14:30-15:00 (calendar Home; at Clinic, Main St)")
 
-    async def test_empty_day(self):
+    async def test_day_without_events_says_so(self):
         self.assertEqual(await tools.get_calendar_events("tomorrow"),
                          "No events in the calendar for Thursday 2026-11-12.")
 
-    async def test_all_day(self):
+    async def test_all_day_event_has_no_times(self):
         self.events = [FakeEvent("Holiday", "2026-11-12 00:00", "2026-11-12 23:59:59", all_day=True)]
         self.assertEqual(await tools.get_calendar_events("thursday"),
                          "Calendar events for Thursday 2026-11-12 (local time):\n"
@@ -96,7 +98,7 @@ class ReadTest(CalendarToolTest):
         self.assertEqual(await tools.get_calendar_events("next wednesday"),
                          "No events in the calendar for Wednesday 2026-11-18.")
 
-    async def test_unknown_day(self):
+    async def test_unknown_date_lists_the_accepted_forms(self):
         self.assertEqual(await tools.run_tool("get_calendar_events", {"date": "soon"}),
                          "Tool get_calendar_events failed: Date 'soon' must be today, tomorrow, yesterday, "
                          "a weekday or YYYY-MM-DD")
@@ -172,7 +174,7 @@ class AddTest(CalendarToolTest):
         return await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": date, "start_time": start,
                                                            "end_date": end_date or date, "end_time": end})
 
-    async def test_confirmed_is_saved(self):
+    async def test_confirmed_event_is_saved_after_one_question(self):
         self.assertEqual(await self.add(), f"Added to the calendar: {self.SUMMARY}")
         self.assertEqual(self.questions, [f"Add this event to your calendar?\n\n{self.SUMMARY}"])
         saved = self.save.call_args.args[0]
@@ -203,7 +205,7 @@ class AddTest(CalendarToolTest):
         saved = self.save.call_args.args[0]
         self.assertEqual((saved["end"], saved["all_day"]), (local("2026-11-14 00:00"), True))
 
-    async def test_timed_event_over_several_days(self):
+    async def test_timed_event_can_end_on_a_later_day(self):
         self.assertEqual(await self.add(end_date="2026-11-15", end="10:00"),
                          "Added to the calendar: Dentist: Friday 2026-11-13 14:30 to Sunday 2026-11-15 10:00 "
                          "(calendar Home)")
@@ -240,11 +242,11 @@ class AddTest(CalendarToolTest):
         self.assertEqual(await self.add("today", "all-day", end=""),
                          "Added to the calendar: Dentist: Wednesday 2026-11-11, all day (calendar Home)")
 
-    async def test_bad_start_time(self):
+    async def test_bad_start_time_names_the_accepted_forms(self):
         self.assertEqual(await self.add(start="noon"),
                          "Tool add_calendar_event failed: Start time 'noon' must be HH:MM (24-hour) or \"all-day\"")
 
-    async def test_bad_end_time(self):
+    async def test_bad_end_time_names_the_accepted_form(self):
         self.assertEqual(await self.add(end="later"),
                          "Tool add_calendar_event failed: End time 'later' must be HH:MM (24-hour)")
 

@@ -6,6 +6,7 @@ import re
 import tempfile
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from core.config import config
@@ -100,13 +101,18 @@ class LibraryTest(TurnTest):
         return started, release
 
     async def cancel_during_embedding(self, path, started, release):
+        # The cancelled add's thread runs on in its own pool, so the test can wait for exactly that thread
+        loop = asyncio.get_running_loop()
+        pool = ThreadPoolExecutor()
+        loop.set_default_executor(pool)
         task = asyncio.create_task(library.add(path))
         await asyncio.to_thread(started.wait, 5)
         task.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await task
+        loop.set_default_executor(ThreadPoolExecutor())
         release.set()
-        await asyncio.sleep(0.1)
+        await asyncio.to_thread(pool.shutdown)
 
 class PersistenceTest(LibraryTest):
     async def test_a_new_session_finds_a_file_saved_earlier(self):
@@ -279,7 +285,7 @@ class EmbeddingTest(LibraryTest):
         self.assertEqual(self.embedder.calls[-1][1], ["task: search result | query: topic1"])
 
 class SearchTest(LibraryTest):
-    async def test_tool_text(self):
+    async def test_search_returns_labelled_passages_with_answering_rules(self):
         await library.add(self.write("First part.\n\nSecond part."))
         self.assertEqual(await library.search("q"), (
             "Passages from the user's saved files most related to the search, best match first, each labelled with "
@@ -288,7 +294,7 @@ class SearchTest(LibraryTest):
             "the one you used. If none of them answers it, say the saved files don't mention it; don't answer from "
             "your own knowledge or make up a file, page or line."))
 
-    async def test_empty_library(self):
+    async def test_empty_library_says_so_without_embedding(self):
         self.assertEqual(await library.search("q"), "The library is empty: the user hasn't saved any files yet.")
         self.assertEqual(self.embedder.calls, [])
 
@@ -354,7 +360,7 @@ class ChunkTest(LibraryTest):
         found = await self.found(pdf("First page", "Second page"), "paper.pdf")
         self.assertIn("[paper.pdf, pages 1-2]\nFirst page\n\nSecond page\n\n", found)
 
-    async def test_cp1250_text(self):
+    async def test_cp1250_text_is_decoded(self):
         self.assertIn("zażółć", await self.found("zażółć".encode("cp1250")))
 
 class RefusedFileTest(LibraryTest):
@@ -363,17 +369,17 @@ class RefusedFileTest(LibraryTest):
             await library.add(path)
         self.assertEqual(library.entries(), [])
 
-    async def test_binary(self):
+    async def test_binary_file_is_refused(self):
         await self.refused(self.write(b"\0binary"), "this looks like a binary file; only text files and PDFs can be loaded")
 
-    async def test_empty(self):
+    async def test_empty_file_is_refused(self):
         await self.refused(self.write("  \n"), "the file is empty")
 
-    async def test_too_big(self):
+    async def test_file_over_the_size_limit_is_refused(self):
         self.patch(library, "MAX_FILE_BYTES", 1024 * 1024)
         await self.refused(self.write("x" * (1024 * 1024 + 1)), "the file is bigger than 1 MB")
 
-    async def test_too_many_chunks(self):
+    async def test_file_over_the_chunk_limit_is_refused_before_embedding(self):
         self.patch(library, "MAX_CHUNKS", 3)
         await self.refused(self.write(long_text(4)), r"the file is too long \(4 chunks, at most 3\)")
         self.assertEqual(self.embedder.calls, [])
@@ -419,7 +425,7 @@ class ForgetTest(LibraryTest):
         self.assertEqual(result.saved, ["notes.txt"])
 
 class ReportTest(LibraryTest):
-    def test_empty(self):
+    def test_empty_library_tells_how_to_load_files(self):
         self.assertEqual(library.report([]), "The library is empty. Press **e** to load a file or folder.")
 
     def test_lists_files_and_totals(self):
@@ -438,16 +444,16 @@ class ReportTest(LibraryTest):
         self.assertEqual(library.entries()[0].saved_at, "2026-11-11 12:00")
 
 class SummaryTest(unittest.TestCase):
-    def test_saved_files(self):
+    def test_summary_counts_saved_files_and_chunks(self):
         self.assertEqual(AddResult(["a", "b"], [], [], 16).summary, "Saved 2 files (16 chunks) to the library.")
 
-    def test_one_file(self):
+    def test_summary_uses_the_singular_for_one(self):
         self.assertEqual(AddResult(["a"], [], [], 1).summary, "Saved 1 file (1 chunk) to the library.")
 
-    def test_unchanged_files(self):
+    def test_summary_adds_unchanged_files(self):
         self.assertEqual(AddResult(["a"], ["b", "c"], [], 4).summary, "Saved 1 file (4 chunks) to the library, 2 unchanged.")
 
-    def test_nothing_new(self):
+    def test_summary_says_when_nothing_new_was_saved(self):
         self.assertEqual(AddResult([], ["a"], [], 0).summary, "Nothing new to save, 1 unchanged.")
 
     def test_failed_files_are_named(self):

@@ -55,7 +55,7 @@ class AnimeToolTest(HttpTest):
             self.addCleanup(patcher.stop)
 
 class SeasonTest(AnimeToolTest):
-    async def test_current_season(self):
+    async def test_current_season_is_named_with_todays_date(self):
         self.assertEqual(await tools.get_current_season(),
                          "Today is Wednesday 2026-11-11. Current anime season: Fall 2026.")
 
@@ -109,6 +109,7 @@ class SeasonTest(AnimeToolTest):
                          "2. Much Tracked: unrated (tracked by 500 users)")
         self.assertEqual(server.requests[0].url.params["seasons"], "winter")
         self.assertEqual(server.requests[0].url.params["years"], "2027")
+        self.assertEqual(server.requests[0].headers["authorization"], "Bearer token")
 
     async def test_several_rated_shows_are_plural(self):
         self.serve({ANIME: ongoing(show("a", "One", score=80), show("b", "Two", score=70), show("c", "Three"))})
@@ -129,7 +130,7 @@ class AiringTest(AnimeToolTest):
                          "Frieren: episode 5 at 17:30 (rated 9.1)")
         self.assertEqual(server.requests[0].url.params["week"], "46")
 
-    async def test_tomorrow_with_nothing_airing(self):
+    async def test_day_with_nothing_airing_says_low_rated_shows_are_left_out(self):
         self.serve({TIMETABLE: [], ANIME: ongoing()})
         self.assertEqual(await tools.get_anime_airing_on("tomorrow"),
                          "No anime with a new subtitled episode on Thursday 2026-11-12 "
@@ -209,7 +210,7 @@ class NextSeasonTest(AnimeToolTest):
         self.serve({TIMETABLE: weekly(*timetable), ANIME: ongoing(show("f", "Frieren", episodes=episodes))})
         return await tools.will_air_next_season("Frieren")
 
-    async def test_yes(self):
+    async def test_show_whose_finale_falls_after_the_season_starts_will_still_air(self):
         self.assertEqual(await self.answer(28),
                          "Next season: Winter 2027 (starts 2027-01-01)\n"
                          "Frieren WILL still be airing next season. The next episode is 20 of 28, on 2026-11-13. "
@@ -223,7 +224,7 @@ class NextSeasonTest(AnimeToolTest):
                          "At one episode a week, the final episode (24) airs around 2026-12-11, before next season "
                          "starts on 2027-01-01. Breaks or delays can push it later.")
 
-    async def test_unknown_without_an_episode_count(self):
+    async def test_unannounced_episode_count_makes_it_unknown(self):
         self.assertEqual(await self.answer(None),
                          "Next season: Winter 2027 (starts 2027-01-01)\n"
                          "Frieren might or might not air next season; it is unknown. "
@@ -242,7 +243,7 @@ class NextSeasonTest(AnimeToolTest):
                          "Frieren might or might not air next season; it is unknown. "
                          "The announced episode count is already exceeded, so it is out of date.")
 
-    async def test_no_such_show(self):
+    async def test_unknown_show_is_reported_as_unknown(self):
         self.serve({TIMETABLE: [], ANIME: ongoing()})
         self.assertEqual(await tools.will_air_next_season("Nope"),
                          "Nope: No currently airing anime matches that name, so it is unknown whether it will air "
@@ -307,11 +308,11 @@ class UserListTest(AnimeToolTest):
         await tools.get_my_anime_list("watching")
         self.assertEqual(len([r for r in server.requests if r.url.path == USER_LIST]), 20)
 
-    async def test_empty(self):
+    async def test_empty_status_says_no_shows(self):
         self.serve_list([], [])
         self.assertEqual(await tools.get_my_anime_list("watching"), "No shows with status 'watching' on your anime list.")
 
-    async def test_unknown_status(self):
+    async def test_unknown_status_lists_the_valid_ones(self):
         self.assertEqual(await tools.run_tool("get_my_anime_list", {"status": "x"}),
                          "Tool get_my_anime_list failed: Unknown list status 'x'; use all or one of "
                          "watching, completed, on-hold, dropped, to-watch")

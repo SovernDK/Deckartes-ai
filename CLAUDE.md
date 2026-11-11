@@ -26,7 +26,8 @@ venv/bin/python src/main.py             # run the app
 ./deckartes-telegram.command            # run the Telegram bot (in Terminal, see docs/telegram.md)
 (cd src && ../venv/bin/python -m jobs.anime_digest)   # send today's anime digest now (launchd runs it at 09:00)
 PYTHONPATH=src venv/bin/textual run --dev src/main.py   # run with devtools; pair with `venv/bin/textual console` in another terminal to see logs/print output
-PYTHONPATH=src venv/bin/python -m unittest discover tests   # tests; the live tests skip themselves unless the chat server is running
+PYTHONPATH=src venv/bin/python -m unittest discover tests   # tests; live tests skip unless LIVE=1
+LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_live_*.py'   # live tests only, on the running chat server
 venv/bin/ruff check .                   # lint; add --fix for the automatic fixes
 ```
 

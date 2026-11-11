@@ -1,8 +1,8 @@
 """Tests for tool_router.select_tools.
 
-The rule tests swap tool_router._embed for fake vectors, so each question gets exactly the
-similarity scores a test asks for. The live test embeds real questions with config.embed_model
-and skips itself when the chat server isn't already running.
+The rule tests swap mlx_client.embed for fake vectors, so each question gets exactly the
+similarity scores a test asks for. Real questions through the embedding model are in
+test_live_routing.py.
 
 Run: venv/bin/python -m unittest discover tests
 """
@@ -11,9 +11,9 @@ import math
 import unittest
 from unittest import mock
 
-from agent import tool_router
+from agent import prompts, tool_router
 from core.config import config
-from model import mlx_server
+from model import mlx_client
 from tools.tools import TOOL_GROUPS, TOOLS
 
 
@@ -29,6 +29,15 @@ def group_tools(*groups: str) -> list[str]:
 def ask(*questions: str) -> tuple[str, str | None]:
     """The arguments of select_tools for the last of these questions."""
     return questions[-1], questions[-2] if len(questions) > 1 else None
+
+def use_preset(test: unittest.TestCase, tools: str | list[str]) -> None:
+    """Make the current preset one allowing these tools ("all" or names) for the rest of the test."""
+    preset = {"name": "Test", "prompt": "", "tools": tools}
+    for target, name, value in [(prompts, "load_prompts", mock.Mock(return_value=[preset])),
+                                (config, "system_prompt", "Test")]:
+        patcher = mock.patch.object(target, name, value)
+        patcher.start()
+        test.addCleanup(patcher.stop)
 
 class FakeEmbeddings:
     """Embeds every example as a unit vector on its group's axis (None = no-tools examples), and
@@ -63,17 +72,17 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         tool_router._examples.clear()
         self.addCleanup(tool_router._examples.clear)
-        for patcher in [mock.patch.object(config, "tool_routing", True),
-                        mock.patch.object(tool_router, "allowed_tool_names", return_value=None)]:
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(config, "tool_routing", True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        use_preset(self, "all")
 
     def embed(self, scores: dict[str, dict]):
-        patcher = mock.patch.object(tool_router, "_embed", FakeEmbeddings(scores))
+        patcher = mock.patch.object(mlx_client, "embed", FakeEmbeddings(scores))
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    async def test_confident_group(self):
+    async def test_a_clear_winner_is_the_only_group_sent(self):
         self.embed({"Is Vitality playing?": {"cs": 0.8, "anime": 0.3, None: 0.2}})
         selection = await tool_router.select_tools(*ask("Is Vitality playing?"))
         self.assertEqual(selection.groups, ["cs"])
@@ -91,13 +100,13 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         selection = await tool_router.select_tools(*ask("When is NAVI's next game?", "and then?"))
         self.assertAlmostEqual(selection.scores["cs"], 0.72)
 
-    async def test_groups_within_margin(self):
+    async def test_groups_within_the_margin_of_the_best_are_sent_too(self):
         self.embed({"q": {"calendar": 0.7, "anime": 0.55, "cs": 0.45}})
         selection = await tool_router.select_tools(*ask("q"))
         self.assertEqual(selection.groups, ["calendar", "anime"])
         self.assertEqual(names(selection.tools), group_tools("anime", "calendar"))
 
-    async def test_group_outside_margin_left_out(self):
+    async def test_group_outside_the_margin_is_left_out(self):
         self.embed({"q": {"anime": 0.8, "cs": 0.5}})
         selection = await tool_router.select_tools(*ask("q"))
         self.assertEqual(selection.groups, ["anime"])
@@ -160,7 +169,7 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(selection.groups, [])
         self.assertEqual(names(selection.tools) or [], group_tools())
 
-    async def test_ungrouped_tools_always_sent(self):
+    async def test_ungrouped_tools_are_always_sent(self):
         self.embed({"q": {"cs": 0.8}})
         groups = {name: group for name, group in TOOL_GROUPS.items() if name != "web"}
         with mock.patch.dict(TOOL_GROUPS, groups, clear=True):
@@ -171,8 +180,8 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_preset_in_one_group_skips_routing(self):
         embed = mock.AsyncMock()
-        with mock.patch.object(tool_router, "_embed", embed), \
-             mock.patch.object(tool_router, "allowed_tool_names", return_value=group_tools("cs")):
+        use_preset(self, group_tools("cs"))
+        with mock.patch.object(mlx_client, "embed", embed):
             selection = await tool_router.select_tools(*ask("hello"))
         embed.assert_not_called()
         self.assertIsNone(selection.groups)
@@ -181,15 +190,15 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
     async def test_preset_narrows_routing(self):
         self.embed({"q": {"anime": 0.9, "cs": 0.3, "calendar": 0.25}})
         allowed = ["get_cs_team", "get_calendar_events"]
-        with mock.patch.object(tool_router, "allowed_tool_names", return_value=allowed):
-            selection = await tool_router.select_tools(*ask("q"))
+        use_preset(self, allowed)
+        selection = await tool_router.select_tools(*ask("q"))
         # anime isn't allowed, so the best of cs and calendar wins, unsure
         self.assertEqual(selection.groups, ["cs", "calendar"])
         self.assertEqual(names(selection.tools), allowed)
 
-    async def test_preset_without_tools(self):
-        with mock.patch.object(tool_router, "allowed_tool_names", return_value=[]):
-            selection = await tool_router.select_tools(*ask("hello"))
+    async def test_preset_without_tools_sends_none(self):
+        use_preset(self, [])
+        selection = await tool_router.select_tools(*ask("hello"))
         self.assertIsNone(selection.tools)
         self.assertIsNone(selection.groups)
 
@@ -200,97 +209,10 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(selection.groups)
 
     async def test_router_error_sends_every_allowed_tool(self):
-        with mock.patch.object(tool_router, "_embed", mock.AsyncMock(side_effect=ConnectionError("down"))):
+        with mock.patch.object(mlx_client, "embed", mock.AsyncMock(side_effect=ConnectionError("down"))):
             selection = await tool_router.select_tools(*ask("hello"))
         self.assertEqual(names(selection.tools), names(TOOLS))
         self.assertIsNone(selection.groups)
-
-# The most groups a one-topic question may send; a fixed number, so that loosening the router fails
-MAX_GROUPS = 2
-
-# (previous questions..., question, groups that must be chosen; [] = no tools at all)
-LIVE_CASES = [
-    # server
-    (("Is the thinkpad online right now?",), ["server"]),
-    (("How warm is my server running?",), ["server"]),
-    (("Are all my containers healthy?",), ["server"]),
-    (("How much memory is free on the home server?",), ["server"]),
-    # disk
-    (("Show me what's in my Desktop folder",), ["disk"]),
-    (("Where did I put my tax return pdf?",), ["disk"]),
-    (("How much space does my Pictures folder take?",), ["disk"]),
-    # web
-    (("What's the latest news about the iPhone?",), ["web"]),
-    (("Look up how tall the Eiffel Tower is online",), ["web"]),
-    (("Read this page for me: https://example.com",), ["web"]),
-    # anime
-    (("Which anime are premiering this fall?",), ["anime"]),
-    (("What's the highest rated show this season?",), ["anime"]),
-    (("When does Dandadan air next?",), ["anime"]),
-    (("Is Spy x Family getting another season?",), ["anime"]),
-    (("Which shows from my list come out tomorrow?",), ["anime"]),
-    # cs
-    (("Who's ranked first in CS2 right now?",), ["cs"]),
-    (("Did FaZe win yesterday?",), ["cs"]),
-    (("Who plays for G2?",), ["cs"]),
-    (("Any Counter-Strike games on right now?",), ["cs"]),
-    # calendar
-    (("Do I have anything planned this weekend?",), ["calendar"]),
-    (("Am I busy on Tuesday afternoon?",), ["calendar"]),
-    (("Add lunch with Tom on Wednesday at 13:00",), ["calendar"]),
-    (("When was my last haircut?",), ["calendar"]),
-    # two tools
-    (("Put the next Dandadan episode in my calendar",), ["calendar", "anime"]),
-    (("Add Vitality's next match to my calendar",), ["calendar", "cs"]),
-    # no tools
-    (("Hi there!",), []),
-    (("Write a haiku about autumn",), []),
-    (("What's 15% of 80?",), []),
-    (("Explain what a linked list is",), []),
-    (("Thanks a lot!",), []),
-    # unknown names: the right group must be among the unsure picks
-    (("Who is ropz?",), ["cs"]),
-    (("Is Kaiju No. 8 any good?",), ["anime"]),
-    # follow-ups
-    (("When does MOUZ play next?", "and Spirit?"), ["cs"]),
-    (("Which anime come out today?", "and tomorrow?"), ["anime"]),
-    (("Is Vitality playing today?", "and tomorrow?"), ["cs"]),
-    (("What do I have on today?", "what about Friday?"), ["calendar"]),
-    (("Who won the last CS major?", "thanks!"), []),
-    # answers to something the model asked
-    (("Add this event to calendar", "18 to 20"), ["calendar"]),
-    (("Add the next Frieren episode to my calendar", "yes"), ["calendar"]),
-]
-
-class LiveRoutingTest(unittest.IsolatedAsyncioTestCase):
-    """Real questions through config.embed_model. Rerun after changing the embedding model,
-    the group examples or the thresholds."""
-
-    async def asyncSetUp(self):
-        tool_router._examples.clear()
-        self.addCleanup(tool_router._examples.clear)
-        if not mlx_server.chat_is_ready():
-            self.skipTest("the chat server isn't running")
-
-    async def scores(self, question: str) -> str:
-        examples = await tool_router._example_vectors()
-        vector = (await tool_router._embed([question]))[0]
-        scores = tool_router._scores(vector, examples)
-        return ", ".join(f"{name or 'no tools'} {score:.2f}"
-                         for name, score in sorted(scores.items(), key=lambda s: -s[1]))
-
-    async def test_questions_reach_their_groups(self):
-        with mock.patch.object(config, "tool_routing", True), \
-             mock.patch.object(tool_router, "allowed_tool_names", return_value=None):
-            for questions, expected in LIVE_CASES:
-                with self.subTest(questions[-1]):
-                    groups = (await tool_router.select_tools(*ask(*questions))).groups
-                    detail = f"chose {groups}; scores: {await self.scores(questions[-1])}"
-                    if expected:
-                        self.assertLessEqual(set(expected), set(groups), detail)
-                        self.assertLessEqual(len(groups), max(len(expected), MAX_GROUPS), detail)
-                    else:
-                        self.assertEqual(groups, [], detail)
 
 if __name__ == "__main__":
     unittest.main()

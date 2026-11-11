@@ -105,17 +105,17 @@ class StreamChatTest(ClientTest):
         with self.assertRaisesRegex(ModelServerError, "^The model server responded with status 400: bad model$"):
             await self.stream()
 
-    async def test_status_error_without_json(self):
+    async def test_status_error_without_json_shows_the_body(self):
         self.response = httpx.Response(500, text="boom")
         with self.assertRaisesRegex(ModelServerError, "status 500: boom$"):
             await self.stream()
 
-    async def test_error_in_the_stream(self):
+    async def test_error_in_the_stream_is_raised(self):
         self.serve({"error": {"message": "out of memory"}})
         with self.assertRaisesRegex(ModelServerError, "^The model server failed: out of memory$"):
             await self.stream()
 
-    async def test_unreachable(self):
+    async def test_unreachable_server_names_its_address(self):
         self.response = httpx.ConnectError("refused")
         with self.assertRaisesRegex(ModelServerError, "^Could not reach the model server at "):
             await self.stream()
@@ -125,7 +125,7 @@ class StreamChatTest(ClientTest):
         mlx_server.ensure_chat.assert_called_once_with()
 
 class CompleteTest(ClientTest):
-    async def test_reply_and_tokens(self):
+    async def test_complete_returns_the_reply_and_token_counts(self):
         self.response = httpx.Response(200, json={"choices": [{"message": {"content": "gist"}}],
                                                   "usage": {"prompt_tokens": 9, "completion_tokens": 2}})
         reply = await mlx_client.complete([{"role": "user", "content": "x"}])
@@ -156,7 +156,7 @@ class EmbedTest(ClientTest):
         self.assertEqual(self.body()["model"], config.rag_embed_model)
         mlx_server.ensure_files.assert_called_once_with()
 
-    def test_file_text_error(self):
+    def test_file_text_error_uses_the_server_message(self):
         self.response = httpx.Response(400, json={"error": {"message": "too long"}})
         with self.assertRaisesRegex(ModelServerError, "too long"):
             mlx_client.embed_file_text(["a"])

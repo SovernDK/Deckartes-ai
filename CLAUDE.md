@@ -50,6 +50,14 @@ Python lives in `src/`, in one package per feature: `core` (config, clock, names
 
 **Saved conversations (`history.py`).** `Conversation(source="app" | "telegram")` also saves each finished turn to `config.history_path` (SQLite), and a compaction summary as a `system` message without dropping what it replaced; no source (`/validate`) saves nothing. `clear()` ends the conversation, so the next turn starts a new one; `open(id)` continues a saved one, sending the model the last summary and what follows it. The app's history panel (key `r`, `history_panel.py`) lists, opens and deletes them. Details in [docs/ui.md](docs/ui.md); tests that mount `Chat` must call `temp_history(self)`.
 
+## Git
+
+Commit any changes unless user specifiec otherwise if:
+- You finished new feature
+- You fixed a bug
+- You optimized something
+Always commit on main unless user specifiec otherwise.
+
 ## Reference docs
 
 Read the matching doc before working in that area:

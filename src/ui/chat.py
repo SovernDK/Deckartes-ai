@@ -10,7 +10,8 @@ from textual.app import ComposeResult
 from textual.containers import HorizontalGroup, VerticalGroup, VerticalScroll
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Input, Label, ListItem, ListView, Markdown, Static
+from textual.widgets import Input, Label, ListItem, ListView, Markdown, OptionList, Static
+from textual.widgets.option_list import Option
 
 from agent.conversation import (
     Compacted,
@@ -165,7 +166,12 @@ class Reply(VerticalGroup):
 
 class Chat(VerticalGroup):
     # Unfocusing the input lets the app's single-key shortcuts (q, m, c, h) work
-    BINDINGS = [("escape", "unfocus", "Unfocus input")]
+    BINDINGS = [
+        ("escape", "escape", "Unfocus input"),
+        ("down", "suggestion_move(1)", "Next command"),
+        ("up", "suggestion_move(-1)", "Previous command"),
+        ("tab", "suggestion_accept", "Complete command"),
+    ]
 
     class Saved(Message):
         """A finished turn was saved to the history."""
@@ -178,6 +184,7 @@ class Chat(VerticalGroup):
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="response")
+        yield OptionList(id="suggestions")
         yield HorizontalGroup(          
             Input(placeholder="Ask question..."),
             Spinner(markup=False, id="spinner"),
@@ -230,8 +237,65 @@ class Chat(VerticalGroup):
             title += f" · {self.conversation.total_usage.total:,} tokens"
         self.query_one("#response").border_title = title
 
-    def action_unfocus(self) -> None:
-        self.screen.set_focus(None)
+    def action_escape(self) -> None:
+        suggestions = self.query_one("#suggestions", OptionList)
+        if suggestions.display:
+            suggestions.display = False
+        else:
+            self.screen.set_focus(None)
+
+    # Command suggestions: a list above the input that filters /commands as you type
+    def on_input_changed(self, event: Input.Changed) -> None:
+        self.update_suggestions(event.value)
+
+    def update_suggestions(self, value: str) -> None:
+        suggestions = self.query_one("#suggestions", OptionList)
+        names = self.matching_commands(value)
+        suggestions.clear_options()
+        if not names:
+            suggestions.display = False
+            return
+        suggestions.add_options(
+            [Option(f"/{name}  [dim]{self.COMMANDS[name][1]}[/dim]", id=name) for name in names]
+        )
+        suggestions.highlighted = 0
+        suggestions.display = True
+
+    @classmethod
+    def matching_commands(cls, value: str) -> list[str]:
+        """Command names to suggest for what's typed: only while the first word is being typed,
+        prefix matches first, then names that merely contain it."""
+        if not value.startswith("/") or " " in value:
+            return []
+        typed = value[1:].lower()
+        names = list(cls.COMMANDS)
+        return ([n for n in names if n.startswith(typed)]
+                + [n for n in names if typed in n and not n.startswith(typed)])
+
+    def action_suggestion_move(self, step: int) -> None:
+        suggestions = self.query_one("#suggestions", OptionList)
+        if suggestions.display:
+            suggestions.action_cursor_down() if step > 0 else suggestions.action_cursor_up()
+
+    def action_suggestion_accept(self) -> None:
+        self.accept_suggestion()
+
+    def accept_suggestion(self) -> bool:
+        """Put the highlighted command in the input; whether the list was open."""
+        suggestions = self.query_one("#suggestions", OptionList)
+        if not suggestions.display or suggestions.highlighted is None:
+            return False
+        name = suggestions.get_option_at_index(suggestions.highlighted).id
+        input = self.query_one(Input)
+        suffix = " " if name in self.COMMANDS_WITH_ARGUMENT else ""
+        input.value = f"/{name}{suffix}"
+        input.cursor_position = len(input.value)
+        return True
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        self.accept_suggestion()
+        self.query_one(Input).focus()
 
     COMMANDS = {
         "clear": ("command_clear", "Clear the entire conversation"),
@@ -246,6 +310,12 @@ class Chat(VerticalGroup):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         if not text:
+            return
+        # Enter on a half-typed command completes it first; on a complete one it runs
+        suggestions = self.query_one("#suggestions", OptionList)
+        if (suggestions.display and suggestions.highlighted is not None
+                and text[1:].lower() != suggestions.get_option_at_index(suggestions.highlighted).id):
+            self.accept_suggestion()
             return
         event.input.clear()
         if text.startswith("/"):

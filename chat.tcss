@@ -46,6 +46,16 @@ Chat {
     border: round $accent;
 }
 
+#suggestions {
+    display: none;
+    dock: bottom;
+    height: auto;
+    max-height: 8;
+    margin-bottom: 6;
+    background: $panel;
+    border: round $accent;
+}
+
 #spinner {
     display: none;
     width: 1fr;

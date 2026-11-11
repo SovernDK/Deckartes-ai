@@ -18,6 +18,8 @@ async with app.run_test(size=(100, 30)) as pilot:
 
 On submit: `/`-prefixed input goes to `Chat.COMMANDS` (name → method name + description; the help screen reads the descriptions; those in `COMMANDS_WITH_ARGUMENT` get the rest of the line); otherwise `set_busy(True)` swaps the `Input` for the `Spinner` and starts the `fetch_stream` worker. The worker's `finally` always calls `set_busy(False)`. Interrupting (`ctrl+c`, a priority app binding enabled through `check_action` only while `Chat.busy` and no text is selected, so otherwise `ctrl+c` falls through to Textual's copy-selection; `copy_to_clipboard` also pipes to `pbcopy` because some terminals ignore OSC 52) cancels the worker; the worker then removes the unfinished reply bubble.
 
+Typing `/` shows `#suggestions`, an `OptionList` docked above the input that filters `Chat.COMMANDS` as you type (prefix matches first, then names containing the text; hidden once a space is typed). Up/Down move, Tab or Enter completes (Enter on an already complete name runs it), Escape closes it. Tests: `tests/test_command_suggestions.py`.
+
 ## File explorer (`file_explorer.py`, key `e`)
 
 A `DirectoryTree` rooted at the home folder whose `filter_paths` keeps only what Finder shows (`disk_scan.is_user_facing`: no dot-files, no `UF_HIDDEN` entries like `~/Library`). The highlighted entry's size is scanned in a thread worker after `SCAN_DELAY`, capped at `SCAN_BUDGET` entries (the details line then says "at least"). Selecting a file, or pressing `l` on a file or folder, dismisses the screen with its `Path`, and `DecartesApp.file_chosen` passes it to `Chat.load_file`, which saves it to the library (`docs/library.md`).

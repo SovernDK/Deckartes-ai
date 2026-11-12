@@ -18,6 +18,7 @@ The time of day is a system message just before each question. It is saved in th
 the turn, so the earlier turns of the next prompt match the cached ones exactly.
 """
 
+import datetime as dt
 from collections.abc import AsyncIterator
 from contextlib import aclosing
 from dataclasses import dataclass, field
@@ -25,6 +26,7 @@ from dataclasses import dataclass, field
 from agent import history
 from agent.prompts import current_time_line, system_message
 from agent.tool_router import select_tools
+from core import clock
 from core.config import config
 from model import mlx_client
 from tools.tools import Confirm, run_tool
@@ -132,9 +134,6 @@ SUMMARY_PROMPT = (
     "Write plain text, as short as the content allows."
 )
 
-# Starts the system message that replaces a compacted history; a reopened conversation is sent from its last one
-SUMMARY_PREFIX = "Summary of the conversation so far:\n"
-
 def _add_tool_results(messages, content, tool_calls, results) -> None:
     """Append the model's tool calls and their results so the next request sees them."""
     messages.append({"role": "assistant", "content": content,
@@ -155,29 +154,27 @@ class Conversation:
         self.total_usage = Usage()
         # Size of the context of the last finished turn: its final prompt plus reply, in tokens
         self.context_tokens = 0
-        # Where finished turns are saved from ("app", "telegram"); None saves nothing (validation)
-        self.source = source
-        # The saved conversation; None until its first turn is saved
-        self.saved_id: int | None = None
+        # Saves finished turns, from source ("app", "telegram"); with None it saves nothing (validation)
+        self.saver = history.Saver(source)
 
-    def clear(self) -> None:
-        """End the conversation; the next turn starts a new one."""
-        self.saved_id = None
-        self.history.clear()
+    def _reset(self) -> None:
+        self.history = []
         self.context_tokens = 0
         self.last_turn = TurnInfo()
         self.total_usage = Usage()
 
-    def open(self, saved_id: int) -> history.Saved:
-        """End this conversation and continue a saved one, returning it with all its messages.
+    def clear(self) -> None:
+        """End the conversation; the next turn starts a new one."""
+        self.saver.end()
+        self._reset()
+
+    def open(self, saved_id: int) -> list[history.Message]:
+        """End this conversation and continue a saved one, returning its questions and replies to show.
         The model gets what it had: the last summary, if any, and the turns after it."""
-        saved = history.load(saved_id)
-        self.clear()
-        summaries = [i for i, m in enumerate(saved.messages) if m.role == "system" and m.content.startswith(SUMMARY_PREFIX)]
-        start = summaries[-1] if summaries else 0
-        self.history = [{"role": m.role, "content": m.content} for m in saved.messages[start:]]
-        self.saved_id = saved_id
-        return saved
+        resumed = self.saver.resume(saved_id)
+        self._reset()
+        self.history = resumed.for_model
+        return resumed.shown
 
     def _messages_for(self, query: str, time_line: str, system: str) -> list[dict]:
         """What gets sent to the model for a new question: the current system prompt
@@ -187,21 +184,17 @@ class Conversation:
         return [*messages, *self.history, {"role": "system", "content": time_line},
                 {"role": "user", "content": query}]
 
-    def _remember(self, query: str, reply: str, time_line: str, asked_at: str, system: str) -> str | None:
+    def _remember(self, query: str, reply: str, time_line: str, asked_at: dt.datetime, system: str) -> str | None:
         """Add a finished turn to the history and save it; the reason when it couldn't be saved."""
         if not reply:
             return None
         self.history.append({"role": "system", "content": time_line})
         self.history.append({"role": "user", "content": query})
         self.history.append({"role": "assistant", "content": reply})
-        if self.source is not None:
-            messages = [history.Message("system", time_line, asked_at), history.Message("user", query, asked_at),
-                        history.Message("assistant", reply, history.now(), config.model)]
-            try:
-                self.saved_id = history.add(self.saved_id, messages, source=self.source,
-                                            preset=config.system_prompt, system_prompt=system)
-            except Exception as e:
-                return str(e)
+        try:
+            self.saver.turn(time_line, query, reply, asked_at, system)
+        except Exception as e:
+            return str(e)
         return None
 
     def needs_compacting(self) -> bool:
@@ -209,8 +202,8 @@ class Conversation:
         return bool(self.history and config.compact_at
                     and self.context_tokens >= config.compact_at * config.context_length)
 
-    async def _compact(self, usage: Usage) -> None:
-        """Replace the history with the model's summary of it."""
+    async def _compact(self, usage: Usage) -> str:
+        """Replace the history with the model's summary of it, and return the summary."""
         transcript = "\n\n".join(f"{m['role']}: {m['content']}" for m in self.history)
         response = await mlx_client.complete([{"role": "system", "content": SUMMARY_PROMPT},
                                               {"role": "user", "content": transcript}])
@@ -218,8 +211,9 @@ class Conversation:
         summary = response.content.strip()
         if not summary:
             raise ValueError("the model returned an empty summary")
-        self.history = [{"role": "system", "content": SUMMARY_PREFIX + summary}]
+        self.history = [history.summary_message(summary)]
         self.context_tokens = 0
+        return summary
 
     async def stream_reply(self, query: str, confirm: Confirm | None = None) -> AsyncIterator[Event]:
         """Run one turn, yielding its events. A Failed comes last and the turn isn't saved.
@@ -228,21 +222,20 @@ class Conversation:
         if self.needs_compacting():
             yield Compacting()
             try:
-                await self._compact(turn.usage)
+                summary = await self._compact(turn.usage)
             except Exception as e:
                 self.total_usage.add(turn.usage)
                 yield Failed(f"could not compact the conversation: {e}")
                 return
             yield Compacted()
-            if self.source is not None and self.saved_id is not None:
-                try:
-                    history.add_summary(self.saved_id, history.Message("system", self.history[0]["content"], history.now()))
-                except Exception as e:
-                    yield NotSaved(str(e))
+            try:
+                self.saver.summary(summary)
+            except Exception as e:
+                yield NotSaved(str(e))
         questions = [m["content"] for m in self.history if m["role"] == "user"]
         previous = questions[-1] if questions else None
         time_line = current_time_line()
-        asked_at = history.now()
+        asked_at = clock.now()
         try:
             system = system_message()
             messages = self._messages_for(query, time_line, system)

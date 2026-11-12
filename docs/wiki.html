@@ -337,11 +337,11 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
 <h2>Saved conversations</h2>
 <p class="lead">Every finished turn of the app and the Telegram bot goes to <code>history.db</code>, so a conversation can be reopened and continued later.</p>
 <ol>
-  <li><code>Conversation(source="app" | "telegram")</code> saves each finished turn through <code>history.add</code>: the time line, the question and the reply, each with its local date, plus the model name on the reply. <code>/validate</code> passes no source and saves nothing.</li>
+  <li><code>Conversation(source="app" | "telegram")</code> saves each finished turn through its <code>history.Saver</code>, the only way to write: the time line, the question and the reply, each with its local date, plus the model name on the reply. <code>/validate</code> passes no source and saves nothing.</li>
   <li>The conversation's row (source, preset name, system prompt) is written with its first finished turn, so a chat that never got an answer leaves nothing behind.</li>
   <li><code>/clear</code> ends the conversation: the next turn starts a new one. Closing the app or restarting the bot leaves it saved; both start with an empty chat.</li>
   <li>Compaction saves the summary as a <code>system</code> message and keeps the messages it replaced.</li>
-  <li><code>Conversation.open(id)</code> continues a saved conversation. The model gets the last summary (if any) and the turns after it; the screen shows every question and answer.</li>
+  <li><code>Conversation.open(id)</code> continues a saved conversation through <code>Saver.resume</code>, which knows the summary prefix: the model gets the last summary (if any) and the turns after it; the screen gets every question and answer.</li>
 </ol>
 <h3>Edge cases</h3>
 <table>
@@ -644,7 +644,7 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td><code>telegram_format.py</code></td><td>Turns the model's Markdown reply into Telegram messages: plain text plus formatting entities (via <code>telegramify-markdown</code>), split under the size limit</td></tr>
   <tr><td><code>anime_digest.py</code></td><td>Morning Telegram message of today's anime from the user's list, run by launchd, separate from the bot (see <code>docs/telegram.md</code>)</td></tr>
   <tr><td><code>conversation.py</code></td><td><code>Conversation</code>, events, <code>Usage</code>, <code>TurnInfo</code>, tool loop, compaction</td></tr>
-  <tr><td><code>history.py</code></td><td>Saved conversations in <code>history.db</code>: add, list, load, delete</td></tr>
+  <tr><td><code>history.py</code></td><td>Saved conversations in <code>history.db</code>: <code>Saver</code> (save turns and summaries, resume), list, load, delete</td></tr>
   <tr><td><code>library.py</code></td><td>Read, chunk, embed, store and search saved files</td></tr>
   <tr><td><code>prompts.py</code> / <code>.json</code></td><td>Presets, system message, allowed tools</td></tr>
   <tr><td><code>tool_router.py</code></td><td>Tool groups per question</td></tr>

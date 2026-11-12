@@ -8,17 +8,12 @@ from textual.widgets import Input, ListView, Markdown, Static
 from agent import history
 from core.config import config
 from model import mlx_client, mlx_server
-from temp_history import temp_history
+from temp_history import save, temp_history
 from test_conversation import FakeClient, chunk
 from ui.app import DecartesApp
 from ui.chat import Chat, ConfirmScreen
 from ui.history_panel import HistoryPanel
 
-
-def save(question: str, answer: str, at: str, source: str = "app") -> int:
-    return history.add(None, [history.Message("system", "Current local time: 12:00.", at),
-                              history.Message("user", question, at), history.Message("assistant", answer, at, "m")],
-                       source=source, preset="p", system_prompt="")
 
 class HistoryUiTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):

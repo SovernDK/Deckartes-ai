@@ -84,7 +84,7 @@ class HistoryPanel(VerticalGroup):
             self.notify(str(e), title="Could not delete the conversation", severity="error", markup=False)
             return
         chat = self.app.query_one(Chat)
-        if chat.conversation.saved_id == listed.id:
+        if chat.conversation.saver.id == listed.id:
             chat.clear_conversation()
         self.notify(f"Deleted '{listed.title}'", markup=False)
         self.reload(focus=True)

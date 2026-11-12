@@ -1,10 +1,12 @@
 """Saved conversations: every finished turn of the app and the Telegram bot, kept between runs.
 
-Conversation writes here (start, add, add_summary); the app's history panel reads (list_conversations,
-load) and deletes. A conversation's row is written with its first finished turn, so nothing is
-left behind by a conversation that never got an answer. Dates are local time, "YYYY-MM-DD HH:MM".
+Conversation writes through a Saver, one per conversation, which also knows where a reopened
+conversation resumes (its last summary); the app's history panel reads (list_conversations, load)
+and deletes. A conversation's row is written with its first finished turn, so nothing is left
+behind by a conversation that never got an answer. Dates are local time, "YYYY-MM-DD HH:MM".
 """
 
+import datetime as dt
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -15,6 +17,9 @@ from core.config import config
 
 # Longest title in the history panel; the first question, cut short
 TITLE_LENGTH = 60
+
+# Starts the system message that replaces a compacted history; a reopened conversation is sent from its last one
+SUMMARY_PREFIX = "Summary of the conversation so far:\n"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
@@ -60,8 +65,58 @@ class Saved:
     system_prompt: str
     messages: list[Message]
 
-def now() -> str:
-    return clock.now().strftime("%Y-%m-%d %H:%M")
+@dataclass
+class Resumed:
+    """A reopened conversation: what the model is sent (the last summary, if any, and the turns
+    after it) and what is shown (every question and reply)."""
+    for_model: list[dict]
+    shown: list[Message]
+
+def summary_message(summary: str) -> dict:
+    """The system message that stands for a compacted history."""
+    return {"role": "system", "content": SUMMARY_PREFIX + summary}
+
+def _stamp(moment: dt.datetime) -> str:
+    return moment.strftime("%Y-%m-%d %H:%M")
+
+class Saver:
+    """Saves one conversation's finished turns and summaries. With no source (validation) it saves nothing.
+    Errors from the database are raised."""
+
+    def __init__(self, source: str | None) -> None:
+        # Where the turns come from ("app", "telegram")
+        self.source = source
+        # The saved conversation; None until its first turn is saved
+        self.id: int | None = None
+
+    def end(self) -> None:
+        """The next turn starts a new conversation."""
+        self.id = None
+
+    def turn(self, time_line: str, question: str, reply: str, asked_at: dt.datetime, system_prompt: str) -> None:
+        """Save a finished turn: its time line, question and reply, with the model and preset in use."""
+        if self.source is None:
+            return
+        asked = _stamp(asked_at)
+        messages = [Message("system", time_line, asked), Message("user", question, asked),
+                    Message("assistant", reply, _stamp(clock.now()), config.model)]
+        self.id = _add(self.id, messages, source=self.source, preset=config.system_prompt,
+                       system_prompt=system_prompt)
+
+    def summary(self, summary: str) -> None:
+        """Save a compaction summary; the messages it replaced stay."""
+        if self.source is not None and self.id is not None:
+            _add_summary(self.id, Message("system", SUMMARY_PREFIX + summary, _stamp(clock.now())))
+
+    def resume(self, conversation_id: int) -> Resumed:
+        """Continue a saved conversation; KeyError when there's no such conversation."""
+        saved = load(conversation_id)
+        summaries = [i for i, m in enumerate(saved.messages)
+                     if m.role == "system" and m.content.startswith(SUMMARY_PREFIX)]
+        start = summaries[-1] if summaries else 0
+        self.id = conversation_id
+        return Resumed([{"role": m.role, "content": m.content} for m in saved.messages[start:]],
+                       [m for m in saved.messages if m.role in ("user", "assistant")])
 
 @contextmanager
 def _database() -> Iterator[sqlite3.Connection]:
@@ -81,7 +136,7 @@ def _insert(db: sqlite3.Connection, conversation_id: int, messages: list[Message
                    [(conversation_id, m.role, m.content, m.created_at, m.model) for m in messages])
     db.execute("UPDATE conversations SET updated_at = ? WHERE id = ?", (messages[-1].created_at, conversation_id))
 
-def add(conversation_id: int | None, messages: list[Message], *, source: str, preset: str,
+def _add(conversation_id: int | None, messages: list[Message], *, source: str, preset: str,
         system_prompt: str) -> int:
     """Save a finished turn's messages and return the conversation's id. A conversation that
     isn't saved yet, or was deleted meanwhile, is started anew with these messages."""
@@ -96,7 +151,7 @@ def add(conversation_id: int | None, messages: list[Message], *, source: str, pr
         _insert(db, conversation_id, messages)
         return conversation_id
 
-def add_summary(conversation_id: int, summary: Message) -> None:
+def _add_summary(conversation_id: int, summary: Message) -> None:
     """Save a compaction summary; the messages it replaced stay. Does nothing for a deleted conversation."""
     with _database() as db:
         if db.execute("SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)).fetchone():

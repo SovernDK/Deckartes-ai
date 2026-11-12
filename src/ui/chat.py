@@ -350,18 +350,18 @@ class Chat(VerticalGroup):
             self.notify("Wait for the reply to finish before opening a conversation", severity="warning")
             return False
         try:
-            saved = await asyncio.to_thread(self.conversation.open, saved_id)
+            shown = await asyncio.to_thread(self.conversation.open, saved_id)
         except Exception as e:
             self.notify(str(e), title="Could not open the conversation", severity="error", markup=False)
             return False
         response = self.query_one("#response", VerticalScroll)
         await response.remove_children()
         widgets = []
-        for message in saved.messages:
+        for message in shown:
             if message.role == "user":
                 widgets.append(HorizontalGroup(Static(message.content, markup=False, classes="user-msg"),
                                                classes="user-row"))
-            elif message.role == "assistant":
+            else:
                 widgets.append(Markdown(message.content, classes="ai-msg"))
         await response.mount_all(widgets)
         response.scroll_end(animate=False)

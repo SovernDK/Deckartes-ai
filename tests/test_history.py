@@ -6,7 +6,7 @@ from agent import history
 from agent.conversation import Conversation, NotSaved, Text
 from core.config import config
 from frozen_clock import freeze
-from temp_history import temp_history
+from temp_history import save, save_summary, temp_history
 from test_conversation import DATE_LINE, TIME_LINE, TurnTest, chunk
 
 
@@ -63,8 +63,7 @@ class SavingTest(HistoryTest):
         self.assertEqual(history.list_conversations(), [])
 
     def test_a_long_first_question_is_cut_short_in_the_title(self):
-        history.add(None, [history.Message("user", "word " * 30, "2026-11-11 12:00")],
-                    source="app", preset="p", system_prompt="")
+        save("word " * 30, "answer", "2026-11-11 12:00")
         self.assertEqual(history.list_conversations()[0].title, ("word " * 12).strip() + "…")
 
 class CompactionTest(HistoryTest):
@@ -98,16 +97,14 @@ class ReopenTest(HistoryTest):
 
     async def test_a_reopened_compacted_conversation_is_sent_from_its_last_summary(self):
         at = "2026-11-11 11:00"
-        saved_id = history.add(None, [history.Message("user", "old", at), history.Message("assistant", "answer", at)],
-                               source="telegram", preset="p", system_prompt="")
-        history.add_summary(saved_id, history.Message("system", "Summary of the conversation so far:\ngist", at))
-        history.add(saved_id, [history.Message("user", "newer", at), history.Message("assistant", "reply", at)],
-                    source="telegram", preset="p", system_prompt="")
+        saver = save("old", "answer", at, source="telegram")
+        save_summary(saver, "gist", at)
+        save("newer", "reply", at, saver=saver)
         client = self.use([chunk("ok", done=True)])
-        self.conversation.open(saved_id)
+        self.conversation.open(saver.id)
         await self.reply("now")
         self.assertEqual(self.sent_contents(client), [DATE_LINE, "Summary of the conversation so far:\ngist",
-                                                      "newer", "reply", TIME_LINE, "now"])
+                                                      "Current local time: 12:00.", "newer", "reply", TIME_LINE, "now"])
 
     async def test_a_turn_after_its_conversation_was_deleted_starts_a_new_one(self):
         self.use([chunk("one", done=True)], [chunk("two", done=True)])

@@ -12,7 +12,6 @@ Deckartes is a terminal chat UI (Textual) for local MLX models served by Rapid-M
 [ ] Scanning user1 folder on homeserver
 [ ] Prepare fine tuning data
 [ ] Telegram: send files from the iPhone to the library (bots download up to 20 MB; files need a permanent inbox folder, since the library identifies them by path)
-[ ] Telegram: live reply preview with `sendMessageDraft`
 
 ## Commands
 

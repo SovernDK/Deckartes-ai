@@ -27,7 +27,6 @@ MAX_FOUND = 10
 ACCESS_TIMEOUT_SECONDS = 120
 MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august",
           "september", "october", "november", "december"]
-WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 
 _store = None
 _store_lock = threading.Lock()
@@ -76,26 +75,6 @@ def _local(nsdate) -> dt.datetime:
 
 def _midnight(day: dt.date) -> dt.datetime:
     return dt.datetime.combine(day, dt.time.min, tzinfo=clock.zone())
-
-def _parse_day(text: str) -> dt.date:
-    """"today", "tomorrow", "yesterday", a weekday ("friday" is the next one, today included;
-    "next friday" is after today) or YYYY-MM-DD."""
-    key = text.strip().lower()
-    now = clock.today()
-    relative = {"today": 0, "tomorrow": 1, "yesterday": -1}
-    if key in relative:
-        return now + dt.timedelta(days=relative[key])
-    after_today = key.startswith("next ")
-    weekday = key.removeprefix("next ").strip()
-    if weekday in WEEKDAYS:
-        days = (WEEKDAYS.index(weekday) - now.weekday()) % 7
-        if days == 0 and after_today:
-            days = 7
-        return now + dt.timedelta(days=days)
-    try:
-        return dt.date.fromisoformat(key)
-    except ValueError:
-        raise ValueError(f"Date {text!r} must be today, tomorrow, yesterday, a weekday or YYYY-MM-DD")
 
 def _slim(event) -> dict:
     item = {
@@ -197,8 +176,8 @@ def _new_event(title: str, date: str, start_time: str, end_date: str | None, end
     title = title.strip()
     if not title:
         raise ValueError("The event needs a title")
-    day = _parse_day(date)
-    last = _parse_day(end_date) if end_date and end_date.strip() else day
+    day = clock.parse_day(date)
+    last = clock.parse_day(end_date) if end_date and end_date.strip() else day
     if start_time.strip().lower() in ("all-day", "all day", "allday"):
         if last < day:
             raise ValueError(f"The event's last day {_day(last)} is before its first day {_day(day)}")
@@ -317,7 +296,7 @@ def _found_text(result: dict) -> str:
 # For the tools
 
 async def events_on(date: str) -> str:
-    return _events_text(await asyncio.to_thread(_events_on, _parse_day(date)))
+    return _events_text(await asyncio.to_thread(_events_on, clock.parse_day(date)))
 
 async def period_events(period: str) -> str:
     return _events_text(await asyncio.to_thread(_period_events, period))

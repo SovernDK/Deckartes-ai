@@ -200,7 +200,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
   <li><strong>Shared mutable config.</strong> Modules read <code>config</code> at call time; widgets change settings by assigning to it.</li>
   <li><strong>No UI in <code>Conversation</code>.</strong> Model-calling logic lives there; widgets only render events.</li>
   <li><strong>Events, not exceptions.</strong> A turn yields events; any failure is a final <code>Failed</code>.</li>
-  <li><strong>One owner per concern.</strong> Time: <code>clock.py</code>. Names: <code>names.py</code>. Web HTTP: <code>http_client.py</code>. Model servers: <code>mlx_client.py</code> talks to them, <code>mlx_server.py</code> runs them.</li>
+  <li><strong>One owner per concern.</strong> Time, and the days users name (<code>parse_day</code>): <code>clock.py</code>. Names: <code>names.py</code>. Web HTTP: <code>http_client.py</code>. Model servers: <code>mlx_client.py</code> talks to them, <code>mlx_server.py</code> runs them.</li>
   <li><strong>Prompts are data.</strong> <code>prompts.json</code> is re-read on every use.</li>
 </ol>
 </section>
@@ -655,7 +655,7 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td><code>mlx_client.py</code></td><td>Chat, embeddings and the model list from the Rapid-MLX servers</td></tr>
   <tr><td><code>mlx_server.py</code></td><td>Starting and stopping the Rapid-MLX servers</td></tr>
   <tr><td><code>tool_schema.py</code></td><td>The definition the model sees for each tool</td></tr>
-  <tr><td><code>clock.py</code> · <code>names.py</code> · <code>similarity.py</code></td><td>Time · name matching · cosine</td></tr>
+  <tr><td><code>clock.py</code> · <code>names.py</code> · <code>similarity.py</code></td><td>Time and named days · name matching · cosine</td></tr>
   <tr><td><code>config.py</code></td><td>Shared <code>Config</code>, <code>read_env</code></td></tr>
 </table>
 </section>

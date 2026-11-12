@@ -196,7 +196,7 @@ async def get_anime_airing_on(date: str) -> str:
     air that day; to find when a particular show airs, use get_next_episode instead.
 
     Args:
-        date: "today", "tomorrow", "yesterday" or a date as YYYY-MM-DD
+        date: "today", "tomorrow", a weekday like "friday", or a date as YYYY-MM-DD
     """
     return await anime.airing_on(date)
 

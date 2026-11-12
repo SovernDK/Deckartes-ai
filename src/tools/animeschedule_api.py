@@ -433,16 +433,6 @@ async def airing_digest() -> str | None:
 
 # For the tools
 
-def _airing_day(date: str) -> dt.date:
-    relative = {"today": 0, "tomorrow": 1, "yesterday": -1}
-    key = date.strip().lower()
-    if key in relative:
-        return clock.today() + dt.timedelta(days=relative[key])
-    try:
-        return dt.date.fromisoformat(key)
-    except ValueError:
-        raise ValueError(f"Date {date!r} must be today, tomorrow, yesterday or YYYY-MM-DD")
-
 def current_season() -> str:
     today = clock.today()
     season, year = _season_of(today)
@@ -457,7 +447,7 @@ async def top_season_anime(season: str, count: int) -> str:
     return _top_season_text(await _top_season(season, count))
 
 async def airing_on(date: str) -> str:
-    day = _airing_day(date)
+    day = clock.parse_day(date)
     return _airing_text(day, await _airing_shows(day))
 
 async def next_episode(name: str) -> str:

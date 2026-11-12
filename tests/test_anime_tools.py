@@ -136,6 +136,12 @@ class AiringTest(AnimeToolTest):
                          "No anime with a new subtitled episode on Thursday 2026-11-12 "
                          "(shows rated 6 or lower are left out).")
 
+    async def test_a_weekday_means_the_next_one(self):
+        self.serve({TIMETABLE: [], ANIME: ongoing()})
+        self.assertEqual(await tools.get_anime_airing_on("friday"),
+                         "No anime with a new subtitled episode on Friday 2026-11-13 "
+                         "(shows rated 6 or lower are left out).")
+
 class DigestTest(AnimeToolTest):
     async def digest(self, timetable: list[dict], **statuses: list[str]) -> str | None:
         self.serve({USER_LIST: on_list(**statuses), TIMETABLE: weekly(*timetable)})

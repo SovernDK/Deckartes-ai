@@ -1,4 +1,4 @@
-"""Picks which tool groups (tools.TOOL_GROUPS) to send with a question.
+"""Picks which tool groups (tool_groups.GROUPS) to send with a question.
 
 Tool definitions are most of the prompt (about 2,700 tokens for every tool, against 90 for
 "hi" without them), so before each question a small embedding model (config.embed_model)
@@ -18,7 +18,8 @@ from agent.prompts import allowed_tool_names
 from core.config import config
 from core.similarity import cosine
 from model import mlx_client
-from tools.tools import TOOL_GROUPS, tools_for
+from tools.tool_groups import GROUPS
+from tools.tools import tools_for
 
 CONFIDENT = 0.45
 # "What anime airs tomorrow?" scores 0.95 for anime but also 0.46 for cs, and "Add Vitality's
@@ -51,7 +52,7 @@ async def _embed(texts: list[str]) -> list[list[float]]:
 async def _example_vectors() -> dict[str, list[list[float]]]:
     key = (config.host, config.embed_model)
     if key not in _examples:
-        groups = {name: group["examples"] for name, group in TOOL_GROUPS.items()}
+        groups = {name: GROUPS.examples(name) for name in GROUPS.names}
         groups[None] = NO_TOOL_EXAMPLES
         texts = [text for examples in groups.values() for text in examples]
         vectors = iter(await _embed(texts))
@@ -117,15 +118,12 @@ async def select_tools(question: str, previous: str | None) -> Selection:
     if not tools:
         return Selection(None, None)
 
-    names = {tool.__name__ for tool in tools}
-    groups = [name for name, group in TOOL_GROUPS.items() if names & set(group["tools"])]
+    groups = GROUPS.groups_of(tool.__name__ for tool in tools)
     if not config.tool_routing or len(groups) < 2:
         return Selection(tools, None)
     try:
         chosen, scores = await _route(question, previous, groups)
     except Exception:
         return Selection(tools, None)
-    keep = {name for group in chosen for name in TOOL_GROUPS[group]["tools"]}
-    grouped = {name for group in TOOL_GROUPS.values() for name in group["tools"]}
-    routed = [tool for tool in tools if tool.__name__ in keep or tool.__name__ not in grouped]
+    routed = GROUPS.sent_with(chosen, tools)
     return Selection(routed or None, chosen, scores)

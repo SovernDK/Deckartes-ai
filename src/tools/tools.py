@@ -1,7 +1,7 @@
 """Tools the AI model can call.
 
 To add a tool: write an async function with type hints and a docstring, decorated with
-@tool("<group>") (a TOOL_GROUPS key; add a group with example questions if none fits). tool_schema.py builds the tool definition the model sees from the function name,
+@tool("<group>") (a group in tool_groups.py; add one with example questions if none fits). tool_schema.py builds the tool definition the model sees from the function name,
 parameters and docstring, so describe clearly what it returns and when to use it. Its body is one
 call to the backend, which takes the tool's arguments and returns the tool text.
 """
@@ -17,92 +17,26 @@ from tools import cs_api as cs
 from tools import disk_scan, library
 from tools import glances_api as glances
 from tools import web_search as web
+from tools.tool_groups import GROUPS
 
 # How a turn asks the user yes or no before a tool changes something outside the app, like adding
 # a calendar event. The front end running the turn passes it (Conversation.stream_reply); a tool
 # that needs it declares a keyword-only `confirm` parameter, and without one it is refused.
 Confirm = Callable[[str], Awaitable[bool]]
 
-# Groups for tool routing (tool_router.py): before each question, only the groups it resembles
-# are sent, since tool definitions are most of the prompt. The examples are what gets embedded:
-# a small embedding model matches questions to example questions far better than to
-# descriptions. Each group's "tools" list is filled in by @tool.
-TOOL_GROUPS: dict[str, dict] = {
-    "server": {
-        "examples": [
-            "Is my home server up?", "How is the thinkpad doing?", "What's the CPU usage on the server?",
-            "How much RAM is the server using?", "Is the GPU busy?", "What's the server load?",
-            "How much disk space is left on the server?", "Which docker containers are running?",
-            "Is any container stopped?", "Check the server's swap usage",
-            "Give me a server health report", "How hot is the server?", "What's the server's battery level?",
-        ],
-    },
-    "disk": {
-        "examples": [
-            "What files are in my Downloads folder?", "Find a file named report.pdf",
-            "How big is my Documents folder?", "Where is the photo I saved yesterday?",
-            "List the contents of this directory", "What's taking up space on my computer?",
-            "Search my home folder for python files",
-        ],
-    },
-    "web": {
-        "examples": [
-            "Search the web for the latest news", "What's happening in the world today?",
-            "Look up the price of a Steam Deck", "What does this website say?",
-            "Summarize this article for me", "Who won the election?", "What's the weather tomorrow?",
-            "Find reviews of this laptop", "Google how to fix this error",
-            "Read this page: https://example.org/article", "Open this link and tell me what it says",
-        ],
-    },
-    "anime": {
-        "examples": [
-            "What anime is airing this season?", "Best anime of next season", "Top 5 anime of fall 2026",
-            "What anime airs today?", "When is the next episode of Frieren?", "When does the next episode air?",
-            "Will this show continue next season?", "What's on my anime list?",
-            "Which of my shows air this week?", "Recommend a good anime to watch",
-            "What am I watching right now?", "Is the new season of my show out?",
-            "Add the next episode of Frieren to my calendar",
-        ],
-    },
-    "cs": {
-        "examples": [
-            "Who is the best Counter-Strike team?", "Top 10 CS2 teams ranking",
-            "When does NAVI play next?", "Is Vitality playing right now?", "Who won the CS match?",
-            "What CS matches are live?", "Tell me about the player ZywOo", "What's the Spirit roster?",
-            "Which CS tournaments are running?", "Results of the last major", "Esports match schedule",
-            "Put NAVI's next match in my calendar",
-        ],
-    },
-    "calendar": {
-        "examples": [
-            "What's on my calendar today?", "Do I have any meetings tomorrow?", "Am I free on Friday?",
-            "What does my week look like?", "What's planned for next week?",
-            "Are there any events next month?", "What's in my calendar in December?",
-            "When is my next dentist appointment?", "Add a meeting with Anna on Monday at 10",
-            "Put NAVI's next match in my calendar", "Add the next episode of Frieren to my calendar",
-            "Schedule gym tomorrow at 18:00",
-            "Remind me about the doctor's appointment on Thursday",
-        ],
-    },
-}
-
-for _group in TOOL_GROUPS.values():
-    _group["tools"] = []
-
 # Every tool, in the order they're defined
 TOOLS: list = []
 TOOLS_BY_NAME: dict = {}
 
 def tool(group: str | None):
-    """Register an async function as a tool the model can call, in a TOOL_GROUPS group
-    (None = in no group, sent with every question)."""
-    if group is not None and group not in TOOL_GROUPS:
-        raise ValueError(f"unknown tool group {group!r}")
+    """Register an async function as a tool the model can call, in a tool group (tool_groups.py;
+    None = in no group, sent with every question)."""
     def register(function):
+        # First, so a tool in an unknown group raises before it's registered
+        if group is not None:
+            GROUPS.add(group, function.__name__)
         TOOLS.append(function)
         TOOLS_BY_NAME[function.__name__] = function
-        if group is not None:
-            TOOL_GROUPS[group]["tools"].append(function.__name__)
         return function
     return register
 

@@ -14,17 +14,16 @@ from unittest import mock
 from agent import prompts, tool_router
 from core.config import config
 from model import mlx_client
-from tools.tools import TOOL_GROUPS, TOOLS
+from tools.tool_groups import GROUPS
+from tools.tools import TOOLS
 
 
 def names(tools) -> list[str] | None:
     return None if tools is None else [tool.__name__ for tool in tools]
 
 def group_tools(*groups: str) -> list[str]:
-    """The tools sent when the router picks these groups: theirs and any tool in no group."""
-    grouped = {name for group in TOOL_GROUPS.values() for name in group["tools"]}
-    return [tool.__name__ for tool in TOOLS
-            if tool.__name__ not in grouped or any(tool.__name__ in TOOL_GROUPS[g]["tools"] for g in groups)]
+    """The tools sent when the router picks these groups (the rule is tested in test_tool_groups.py)."""
+    return names(GROUPS.sent_with(groups, TOOLS))
 
 def ask(*questions: str) -> tuple[str, str | None]:
     """The arguments of select_tools for the last of these questions."""
@@ -48,14 +47,14 @@ class FakeEmbeddings:
         self.scores = scores
         self.example_axis = {text: None for text in tool_router.NO_TOOL_EXAMPLES}
         shared = []
-        for name, group in TOOL_GROUPS.items():
-            for text in group["examples"]:
+        for name in GROUPS.names:
+            for text in GROUPS.examples(name):
                 if text in self.example_axis:
                     self.example_axis[text] = text
                     shared.append(text)
                 else:
                     self.example_axis[text] = name
-        self.axes = [None, *TOOL_GROUPS, *shared, "rest"]
+        self.axes = [None, *GROUPS.names, *shared, "rest"]
 
     def vector(self, text: str) -> list[float]:
         if text in self.scores:
@@ -168,15 +167,6 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         selection = await tool_router.select_tools(*ask("q"))
         self.assertEqual(selection.groups, [])
         self.assertEqual(names(selection.tools) or [], group_tools())
-
-    async def test_ungrouped_tools_are_always_sent(self):
-        self.embed({"q": {"cs": 0.8}})
-        groups = {name: group for name, group in TOOL_GROUPS.items() if name != "web"}
-        with mock.patch.dict(TOOL_GROUPS, groups, clear=True):
-            selection = await tool_router.select_tools(*ask("q"))
-        self.assertEqual(selection.groups, ["cs"])
-        self.assertEqual(names(selection.tools), [
-            name for name in names(TOOLS) if name in group_tools("cs") or name in ["search_web", "fetch_web_page", "search_library"]])
 
     async def test_preset_in_one_group_skips_routing(self):
         embed = mock.AsyncMock()

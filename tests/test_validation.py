@@ -401,6 +401,14 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run.router_records[0]["status"], "correct")
         self.assertFalse(run.results[0].router_missed)
 
+    async def test_a_tool_in_no_group_is_never_a_router_miss_since_it_is_always_sent(self):
+        self.route({"q": {"anime": 0.9}})
+        client = self.use([chunk("ok", done=True)])
+        run = await self.run_cases(case_data(expect=["search_library"]))
+        self.assertIn("search_library", self.tool_names(client))
+        self.assertNotEqual(run.router_records[0]["status"], "missed")
+        self.assertFalse(run.results[0].router_missed)
+
     async def test_more_than_the_expected_groups_is_extra(self):
         self.route({"q": {"server": 0.7, "anime": 0.6}})
         self.use([chunk("ok", done=True)])

@@ -25,7 +25,8 @@ from agent.prompts import current_time_line
 from core import clock
 from core.config import PROJECT_ROOT, config
 from model.tool_schema import model_signature
-from tools.tools import TOOL_GROUPS, TOOLS, TOOLS_BY_NAME, run_tool
+from tools.tool_groups import GROUPS
+from tools.tools import TOOLS, TOOLS_BY_NAME, run_tool
 
 CASES_FILE = PROJECT_ROOT / "validation_cases.json"
 RESULTS_FOLDER = PROJECT_ROOT / "validation_results"
@@ -70,8 +71,7 @@ class Case:
     @property
     def expected_groups(self) -> list[str]:
         """The groups of the expected tools, without the tempting ones."""
-        tools = {tool for step in self.expect for tool in step}
-        return [name for name, group in TOOL_GROUPS.items() if tools & set(group["tools"])]
+        return GROUPS.groups_of(tool for step in self.expect for tool in step)
 
 @dataclass
 class Suite:
@@ -165,7 +165,7 @@ def _parse_case(data: dict, defaults: dict[str, str]) -> Case:
     _check_value_checks(case.arguments, case)
     _check_value_checks(case.carry, case)
     for group in case.tempt:
-        _require(group in TOOL_GROUPS, case.id, f"unknown tempting group {group!r}")
+        _require(group in GROUPS.names, case.id, f"unknown tempting group {group!r}")
     for pattern in case.claim_patterns:
         try:
             re.compile(pattern)
@@ -314,7 +314,8 @@ def _router_record(case: Case, selection: tool_router.Selection, question: str, 
     extra = [group for group in chosen or [] if group not in expected]
     if chosen is None:
         status = "error"
-    elif any(not any(tool in TOOL_GROUPS[group]["tools"] for group in chosen for tool in step) for step in case.expect):
+    # A step is missed when none of its tools goes with the chosen groups (tools in no group always do)
+    elif any(not any(GROUPS.is_sent_with(tool, chosen) for tool in step) for step in case.expect):
         status = "missed"
     else:
         status = "extra" if extra else "correct"
@@ -326,10 +327,8 @@ def _with_case_groups(case: Case, selection: tool_router.Selection) -> tool_rout
     """The router's selection plus the groups the case is testing, so every case tests the model."""
     if selection.groups is None:
         return selection
-    keep = {tool.__name__ for tool in selection.tools or []}
-    for group in [*case.expected_groups, *case.tempt]:
-        keep.update(TOOL_GROUPS[group]["tools"])
-    return tool_router.Selection([tool for tool in TOOLS if tool.__name__ in keep], selection.groups, selection.scores)
+    groups = [*selection.groups, *case.expected_groups, *case.tempt]
+    return tool_router.Selection(GROUPS.sent_with(groups, TOOLS), selection.groups, selection.scores)
 
 @contextmanager
 def _run_settings(suite: Suite) -> Iterator[None]:

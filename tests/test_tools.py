@@ -7,15 +7,14 @@ from agent import prompts
 from core.config import config
 from frozen_clock import freeze
 from tools import tools
+from tools.tool_groups import GROUPS
 
 
 class RegistryTest(unittest.TestCase):
-    def test_groups_hold_real_tools_once_each(self):
-        grouped = [name for group in tools.TOOL_GROUPS.values() for name in group["tools"]]
-        self.assertEqual(len(grouped), len(set(grouped)))
-        self.assertLessEqual(set(grouped), {tool.__name__ for tool in tools.TOOLS})
-        for name, group in tools.TOOL_GROUPS.items():
-            self.assertTrue(group["tools"], f"group {name} has no tools")
+    def test_every_group_has_tools_and_each_tool_is_in_one_group_at_most(self):
+        self.assertEqual(GROUPS.groups_of(tools.TOOLS_BY_NAME), GROUPS.names)
+        for name in tools.TOOLS_BY_NAME:
+            self.assertLessEqual(len(GROUPS.groups_of([name])), 1, name)
 
     def test_lookup_by_name(self):
         self.assertIs(tools.TOOLS_BY_NAME["get_cs_team"], tools.get_cs_team)

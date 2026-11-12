@@ -28,6 +28,10 @@ _Avoid_: tool output, formatted result
 The module that gets a tool's data from one outside source and turns it into tool text.
 _Avoid_: API client, service
 
+**Tool group**:
+A named set of tools with example questions. Before each question the router sends only the groups it resembles; tools in no group are always sent.
+_Avoid_: category, toolset
+
 **Confirmation**:
 The user's yes or no, asked by the front end running the turn, before a tool changes something outside the app. Without a way to ask, the change is refused.
 _Avoid_: approval, permission, confirm handler

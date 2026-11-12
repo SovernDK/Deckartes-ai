@@ -9,13 +9,13 @@ The cases are a held-out test set. Don't train on them word for word.
 """
 
 import datetime as dt
-import inspect
 import json
 import re
 from collections import Counter
 from collections.abc import Callable, Iterator
 from contextlib import aclosing, contextmanager
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -24,7 +24,8 @@ from agent.conversation import MAX_TOOL_ROUNDS, Conversation, Failed, Text, Tool
 from agent.prompts import current_time_line
 from core import clock
 from core.config import PROJECT_ROOT, config
-from tools.tools import TOOL_GROUPS, TOOLS, TOOLS_BY_NAME
+from model.tool_schema import model_signature
+from tools.tools import TOOL_GROUPS, TOOLS, TOOLS_BY_NAME, run_tool
 
 CASES_FILE = PROJECT_ROOT / "validation_cases.json"
 RESULTS_FOLDER = PROJECT_ROOT / "validation_results"
@@ -132,7 +133,7 @@ def _check_value_checks(checks: dict, case: Case) -> None:
     _check_tools(checks, case.id)
     for tool, parameters in checks.items():
         _require(tool in expected, case.id, f"checks arguments of {tool}, which it doesn't expect")
-        known = inspect.signature(TOOLS_BY_NAME[tool]).parameters
+        known = model_signature(TOOLS_BY_NAME[tool]).parameters
         for parameter in parameters:
             _require(parameter in known, case.id, f"{tool} has no parameter {parameter!r}")
 
@@ -225,7 +226,7 @@ def _arguments_usable(call: Call) -> bool:
     if call.arguments is None:
         return False
     try:
-        inspect.signature(TOOLS_BY_NAME[call.name]).bind(**call.arguments)
+        model_signature(TOOLS_BY_NAME[call.name]).bind(**call.arguments)
     except (TypeError, KeyError):
         return False
     return True
@@ -373,19 +374,11 @@ class Run:
             record.update(_router_record(case, selection, question, previous))
             return _with_case_groups(case, selection)
 
-        async def run_fake_tool(name: str, arguments: dict) -> str:
-            # The ToolStarted event for this call has just added it
-            calls[-1].arguments = arguments
-            tool = TOOLS_BY_NAME.get(name)
-            if tool is None:
-                return f"Unknown tool: {name}"
-            try:
-                inspect.signature(tool).bind(**arguments)
-            except TypeError as e:
-                return f"Tool {name} failed: {e}"
+        def fake_result(name: str, arguments: dict) -> str:
             return _result_for(case, name, self.suite.default_results)
 
-        conversation = Conversation(tool_runner=run_fake_tool, tool_selector=select)
+        # The real run_tool, so the model gets the same text for a wrong call as in use
+        conversation = Conversation(tool_runner=partial(run_tool, results=fake_result), tool_selector=select)
         for turn in case.history:
             conversation.history += [{"role": "system", "content": current_time_line()},
                                      {"role": "user", "content": turn["question"]},
@@ -400,7 +393,7 @@ class Run:
                     reply += event.text
                     before_call += event.text
                 elif isinstance(event, ToolStarted):
-                    calls.append(Call(event.name, None))
+                    calls.append(Call(event.name, event.arguments))
                     narration = narration or bool(before_call.strip())
                     before_call = ""
                 elif isinstance(event, ToolsDone):

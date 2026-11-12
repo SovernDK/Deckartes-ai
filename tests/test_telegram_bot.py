@@ -25,7 +25,6 @@ from telegram.telegram_bot import Bot
 from test_calendar_tools import FakeCalendar
 from test_conversation import FakeClient, call, chunk, think
 from tools import calendar_api as cal
-from tools import tools
 
 TOKEN = "123:SECRET"
 OWNER = 42
@@ -44,8 +43,8 @@ def press(data, sender=OWNER, update_id=2):
 async def select_nothing(query, previous):
     return SimpleNamespace(tools=[], groups=[])
 
-async def run_confirmed_tool(name, arguments):
-    return "saved" if await tools.confirm("Add this event?") else "declined"
+async def run_confirmed_tool(name, arguments, confirm):
+    return "saved" if await confirm("Add this event?") else "declined"
 
 class BotTest(HttpTest):
     def setUp(self):
@@ -62,7 +61,6 @@ class BotTest(HttpTest):
         self.routes[PATH + "getUpdates"] = ok([])
         self.server = self.serve(self.routes)
         self.bot = Bot(Conversation(tool_runner=run_confirmed_tool, tool_selector=select_nothing))
-        self.addCleanup(setattr, tools, "confirm_handler", None)
 
     def use_model(self, *rounds) -> FakeClient:
         client = FakeClient(*rounds)
@@ -101,7 +99,6 @@ class BotTest(HttpTest):
 
     async def start_confirmation(self) -> str:
         """Run a turn up to the Yes/No question and return its Yes button's data."""
-        tools.confirm_handler = self.bot.confirm
         self.use_model([chunk(tool_calls=[call("add_event")], done=True)],
                        [chunk("Done", done=True)])
         await self.bot.handle(message("Add it"))
@@ -317,7 +314,6 @@ class ConfirmationTest(BotTest):
         self.assertNotIn("reply_markup", edit)
 
     async def test_no_declines_the_change(self):
-        tools.confirm_handler = self.bot.confirm
         client = self.use_model([chunk(tool_calls=[call("add_event")], done=True)], [chunk("Ok", done=True)])
         await self.bot.handle(message("Add it"))
         await self.until(lambda: self.bot.pending is not None and self.calls("sendMessage"))
@@ -327,7 +323,6 @@ class ConfirmationTest(BotTest):
         self.assertEqual(self.tool_result(client), "declined")
 
     async def test_no_answer_in_time_counts_as_no(self):
-        tools.confirm_handler = self.bot.confirm
         client = self.use_model([chunk(tool_calls=[call("add_event")], done=True)], [chunk("Ok", done=True)])
         with mock.patch.object(telegram_bot, "CONFIRM_SECONDS", 0.01):
             await self.ask_and_finish("Add it")
@@ -360,7 +355,6 @@ class ConfirmationTest(BotTest):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.routes[PATH + "sendMessage"] = httpx.Response(500, text="down")
-        tools.confirm_handler = self.bot.confirm
         self.bot.conversation = Conversation(tool_selector=select_nothing)
         add = call("add_calendar_event", title="Dentist", date="tomorrow", start_time="14:30")
         client = self.use_model([chunk(tool_calls=[add], done=True)], [chunk("Sorry", done=True)])
@@ -376,18 +370,6 @@ class PollingTest(BotTest):
         patcher.start()
         self.addCleanup(patcher.stop)
         return asyncio.create_task(self.bot.run())
-
-    async def test_the_confirm_handler_is_set_before_the_first_poll(self):
-        seen = []
-        def poll(request):
-            seen.append(tools.confirm_handler)
-            raise asyncio.CancelledError  # A fake poll never yields, so task.cancel() wouldn't land
-        self.routes[PATH + "getUpdates"] = poll
-        task = await self.run_bot()
-        with self.assertRaises(asyncio.CancelledError):
-            await task
-        self.assertEqual(seen, [self.bot.confirm])
-        self.assertIsNone(tools.confirm_handler)
 
     async def test_the_offset_moves_on_before_the_turn_finishes(self):
         started, release = self.block_model()
@@ -426,7 +408,7 @@ class PollingTest(BotTest):
             await self.bot.poll_once()
         self.assertEqual(self.texts(), [telegram_bot.HELP])
 
-    async def test_a_running_turn_is_cancelled_before_confirmations_are_turned_off(self):
+    async def test_stopping_the_bot_cancels_a_running_turn(self):
         data = await self.start_confirmation()
         self.assertTrue(data)
         patcher = mock.patch.object(mlx_server, "ensure_chat")

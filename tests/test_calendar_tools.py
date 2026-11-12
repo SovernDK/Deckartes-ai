@@ -61,8 +61,7 @@ class CalendarToolTest(unittest.IsolatedAsyncioTestCase):
         self.save = mock.Mock()
         for target, name, value in ((cal, "_events_between", self.between),
                                     (cal, "_target_calendar", lambda: FakeCalendar("Home")),
-                                    (cal, "save_event", self.save),
-                                    (tools, "confirm_handler", self.confirm)):
+                                    (cal, "save_event", self.save)):
             patcher = mock.patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -73,6 +72,10 @@ class CalendarToolTest(unittest.IsolatedAsyncioTestCase):
     async def confirm(self, question: str) -> bool:
         self.questions.append(question)
         return self.answer
+
+    async def run_tool(self, name: str, arguments: dict) -> str:
+        """Run a tool as a turn would, asking the user through self.confirm."""
+        return await tools.run_tool(name, arguments, self.confirm)
 
 class ReadTest(CalendarToolTest):
     async def test_lists_only_the_asked_days_events_with_location_on_one_line(self):
@@ -99,7 +102,7 @@ class ReadTest(CalendarToolTest):
                          "No events in the calendar for Wednesday 2026-11-18.")
 
     async def test_unknown_date_lists_the_accepted_forms(self):
-        self.assertEqual(await tools.run_tool("get_calendar_events", {"date": "soon"}),
+        self.assertEqual(await self.run_tool("get_calendar_events", {"date": "soon"}),
                          "Tool get_calendar_events failed: Date 'soon' must be today, tomorrow, yesterday, "
                          "a weekday or YYYY-MM-DD")
 
@@ -171,7 +174,7 @@ class AddTest(CalendarToolTest):
 
     async def add(self, date: str = "2026-11-13", start: str = "14:30", end_date: str | None = None,
                   end: str = "15:30") -> str:
-        return await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": date, "start_time": start,
+        return await self.run_tool("add_calendar_event", {"title": "Dentist", "date": date, "start_time": start,
                                                            "end_date": end_date or date, "end_time": end})
 
     async def test_confirmed_event_is_saved_after_one_question(self):
@@ -182,26 +185,26 @@ class AddTest(CalendarToolTest):
                          ("Dentist", local("2026-11-13 14:30"), local("2026-11-13 15:30"), False))
 
     async def test_without_an_end_it_lasts_one_hour(self):
-        self.assertEqual(await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13",
+        self.assertEqual(await self.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13",
                                                                      "start_time": "14:30"}),
                          f"Added to the calendar: {self.SUMMARY}")
 
     async def test_empty_end_counts_as_no_end(self):
-        self.assertEqual(await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13",
+        self.assertEqual(await self.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13",
                                                                      "start_time": "14:30", "end_date": "", "end_time": ""}),
                          f"Added to the calendar: {self.SUMMARY}")
 
     async def test_default_end_can_pass_midnight(self):
-        await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13", "start_time": "23:30"})
+        await self.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13", "start_time": "23:30"})
         self.assertEqual(self.save.call_args.args[0]["end"], local("2026-11-14 00:30"))
 
     async def test_end_time_without_end_date_is_on_the_same_day(self):
-        await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13", "start_time": "18:00",
+        await self.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13", "start_time": "18:00",
                                                     "end_time": "20:00"})
         self.assertEqual(self.save.call_args.args[0]["end"], local("2026-11-13 20:00"))
 
     async def test_all_day_without_an_end_is_one_day(self):
-        await tools.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13", "start_time": "all-day"})
+        await self.run_tool("add_calendar_event", {"title": "Dentist", "date": "2026-11-13", "start_time": "all-day"})
         saved = self.save.call_args.args[0]
         self.assertEqual((saved["end"], saved["all_day"]), (local("2026-11-14 00:00"), True))
 

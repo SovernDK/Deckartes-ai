@@ -26,7 +26,7 @@ from agent.conversation import (
 )
 from core.config import config
 from model import mlx_client, mlx_server
-from tools import library, tools
+from tools import library
 from validation import validation
 from validation.validation_screen import ValidationScreen
 
@@ -194,7 +194,6 @@ class Chat(VerticalGroup):
     def on_mount(self) -> None:
         self.query_one("#chat_in").border_title = "Input"
         self.update_usage()
-        tools.confirm_handler = self.confirm
         # After the refresh, so the spinner has mounted
         self.call_after_refresh(self.start_server)
 
@@ -209,9 +208,6 @@ class Chat(VerticalGroup):
             self.notify(str(e), title="Could not start the model server", severity="error")
         finally:
             self.set_busy(False)
-
-    def on_unmount(self) -> None:
-        tools.confirm_handler = None
 
     async def confirm(self, question: str) -> bool:
         """Ask the user yes or no in a popup, for tools that change something (e.g. add a calendar
@@ -530,7 +526,7 @@ class Chat(VerticalGroup):
         # Whether this model round's answer has started, for the spinner's "Answering..."
         answering = False
         try:
-            async with aclosing(self.conversation.stream_reply(query)) as events:
+            async with aclosing(self.conversation.stream_reply(query, self.confirm)) as events:
                 async for event in events:
                     if isinstance(event, Text):
                         await reply.write_text(event.text)

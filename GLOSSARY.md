@@ -28,6 +28,10 @@ _Avoid_: tool output, formatted result
 The module that gets a tool's data from one outside source and turns it into tool text.
 _Avoid_: API client, service
 
+**Confirmation**:
+The user's yes or no, asked by the front end running the turn, before a tool changes something outside the app. Without a way to ask, the change is refused.
+_Avoid_: approval, permission, confirm handler
+
 **Local time**:
 A time expressed in the user's configured time zone, which is what every date and time in tool text uses.
 _Avoid_: system time, server time

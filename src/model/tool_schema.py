@@ -1,6 +1,7 @@
 """Builds the definition the model sees for a tool, from its name, type hints and docstring.
 
-A parameter is required unless its type allows None, even when it has a default.
+A parameter is required unless its type allows None, even when it has a default. A tool's
+`confirm` parameter is left out: tools.run_tool passes it, never the model.
 """
 
 import inspect
@@ -48,13 +49,21 @@ def _parse_docstring(docstring: str) -> tuple[str, dict[str, str]]:
             arguments[current] += f" {line}"
     return "\n".join(sections["description"]).strip(), arguments
 
+# The parameter through which tools.run_tool hands a tool the turn's way of asking the user
+CONFIRM = "confirm"
+
+def model_signature(function: Callable) -> inspect.Signature:
+    """A tool's parameters that the model fills in: all of them except CONFIRM."""
+    signature = inspect.signature(function)
+    return signature.replace(parameters=[p for p in signature.parameters.values() if p.name != CONFIRM])
+
 @cache
 def tool_definition(function: Callable) -> dict:
     """The OpenAI-format definition of a tool function."""
     description, arguments = _parse_docstring(inspect.getdoc(function) or "")
     hints = typing.get_type_hints(function)
     properties, required = {}, []
-    for name in inspect.signature(function).parameters:
+    for name in model_signature(function).parameters:
         json_types = _json_types(hints.get(name, inspect.Parameter.empty))
         if "null" not in json_types:
             required.append(name)

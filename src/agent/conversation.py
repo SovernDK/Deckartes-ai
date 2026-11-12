@@ -27,7 +27,7 @@ from agent.prompts import current_time_line, system_message
 from agent.tool_router import select_tools
 from core.config import config
 from model import mlx_client
-from tools.tools import run_tool
+from tools.tools import Confirm, run_tool
 
 
 # What a turn yields, in order
@@ -142,14 +142,10 @@ def _add_tool_results(messages, content, tool_calls, results) -> None:
     for call, result in zip(tool_calls, results):
         messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
 
-async def _run_call(call: mlx_client.ToolCall, runner) -> str:
-    if call.arguments is None:
-        return f"Tool {call.name} failed: its arguments were not valid JSON"
-    return await runner(call.name, call.arguments)
-
 class Conversation:
     def __init__(self, tool_runner=None, tool_selector=None, source: str | None = None) -> None:
-        # What runs tools and picks them; a validation run replaces both (validation.py)
+        # What runs tools, (name, arguments, confirm) -> tool text, and picks them; a validation
+        # run replaces both (validation.py)
         self._tool_runner = tool_runner
         self._tool_selector = tool_selector
         # Finished turns as chat messages: for each, its time line, the question and the reply
@@ -225,8 +221,9 @@ class Conversation:
         self.history = [{"role": "system", "content": SUMMARY_PREFIX + summary}]
         self.context_tokens = 0
 
-    async def stream_reply(self, query: str) -> AsyncIterator[Event]:
-        """Run one turn, yielding its events. A Failed comes last and the turn isn't saved."""
+    async def stream_reply(self, query: str, confirm: Confirm | None = None) -> AsyncIterator[Event]:
+        """Run one turn, yielding its events. A Failed comes last and the turn isn't saved.
+        confirm asks the user before a tool changes something; without it such tools are refused."""
         self.last_turn = turn = TurnInfo()
         if self.needs_compacting():
             yield Compacting()
@@ -295,7 +292,7 @@ class Conversation:
                 results = []
                 for call in tool_calls:
                     yield ToolStarted(call.name, call.arguments)
-                    results.append(await _run_call(call, self._tool_runner or run_tool))
+                    results.append(await (self._tool_runner or run_tool)(call.name, call.arguments, confirm))
                 yield ToolsDone()
                 _add_tool_results(messages, content, tool_calls, results)
 

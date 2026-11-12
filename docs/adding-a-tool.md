@@ -8,6 +8,10 @@ Write an async function in `tools.py` with type hints and a Google-style docstri
 
 The wording and order of tool text are load-bearing, so these tests call the tools themselves with fake backend data and assert the exact text, and a wording change fails a test on purpose. Use `HttpTest.serve` (`tests/http_fake.py`) for HTTP responses and `freeze` (`tests/frozen_clock.py`) for the time and time zone. For calendar tests see `docs/calendar-tests.md`. `tests/test_disk_tools.py` uses a real temporary folder.
 
-## Confirmation (`tools.confirm`)
+## Confirmation (`confirm`)
 
-A tool that changes something outside the app passes `tools.confirm` to its backend, which awaits `confirm(question)`. `Chat` sets `tools.confirm_handler` on mount. It pushes a `ConfirmScreen` (y / n / escape) and awaits a future its dismiss callback resolves. Interrupting while asking closes the popup. The Telegram bot sets its own handler, which asks with Yes and No buttons (`docs/telegram.md`). Without a handler, `confirm_handler` is `None` and changes go through, so a new front end must set one before it runs a turn.
+A tool that changes something outside the app declares a keyword-only `confirm: Confirm` parameter and passes it to its backend, which awaits `confirm(question)`. The model never sees it: `tool_schema.model_signature` leaves it out of the definition and of the argument check. The front end running the turn passes its own `confirm` to `Conversation.stream_reply`, which hands it to `tools.run_tool`. `Chat.confirm` pushes a `ConfirmScreen` (y / n / escape) and awaits a future its dismiss callback resolves; interrupting while asking closes the popup. The Telegram bot asks with Yes and No buttons (`docs/telegram.md`). A turn without one (`/validate`, tests, a new front end that doesn't pass it) gets such tools refused by `run_tool` before the backend runs, with tool text saying confirmation can't be asked for here.
+
+## Running a call (`tools.run_tool`)
+
+`run_tool(name, arguments, confirm=None, *, results=None)` is the one place a model's call becomes tool text: arguments that weren't valid JSON (`None`), an unknown name, arguments that don't fit the signature, the missing confirmation, and `Tool X failed: <error>` for a raised exception. Non-text results are JSON-encoded. `/validate` passes `results`, which gives the result once the call has passed those checks, so the model sees the same failure text in validation as in use.

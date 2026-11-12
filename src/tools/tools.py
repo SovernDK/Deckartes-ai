@@ -6,8 +6,11 @@ parameters and docstring, so describe clearly what it returns and when to use it
 call to the backend, which takes the tool's arguments and returns the tool text.
 """
 
+import inspect
 import json
+from collections.abc import Awaitable, Callable
 
+from model.tool_schema import CONFIRM, model_signature
 from tools import animeschedule_api as anime
 from tools import calendar_api as cal
 from tools import cs_api as cs
@@ -15,12 +18,10 @@ from tools import disk_scan, library
 from tools import glances_api as glances
 from tools import web_search as web
 
-# Set by the UI: an async function (question) -> bool that asks the user before a tool changes
-# something outside the app, like adding a calendar event. Without a UI (None) changes go through.
-confirm_handler = None
-
-async def confirm(question: str) -> bool:
-    return True if confirm_handler is None else await confirm_handler(question)
+# How a turn asks the user yes or no before a tool changes something outside the app, like adding
+# a calendar event. The front end running the turn passes it (Conversation.stream_reply); a tool
+# that needs it declares a keyword-only `confirm` parameter, and without one it is refused.
+Confirm = Callable[[str], Awaitable[bool]]
 
 # Groups for tool routing (tool_router.py): before each question, only the groups it resembles
 # are sent, since tool definitions are most of the prompt. The examples are what gets embedded:
@@ -404,7 +405,7 @@ async def find_calendar_events(query: str) -> str:
 
 @tool("calendar")
 async def add_calendar_event(title: str, date: str, start_time: str, end_date: str | None = None,
-                             end_time: str | None = None) -> str:
+                             end_time: str | None = None, *, confirm: Confirm) -> str:
     """Add an event to the user's own calendar (Apple Calendar). Use it only when the user asks
     to add, schedule or put something in their calendar. The user confirms it before it's saved,
     so call it right away with what you know. Take the title, date and time from the user, from
@@ -426,13 +427,30 @@ def tools_for(names: list[str] | None) -> list:
         return TOOLS
     return [TOOLS_BY_NAME[name] for name in names]
 
-async def run_tool(name: str, arguments: dict | None) -> str:
-    """Run a tool the model asked for and return its result as text for the model."""
+async def run_tool(name: str, arguments: dict | None, confirm: Confirm | None = None, *,
+                   results: Callable[[str, dict], str] | None = None) -> str:
+    """Run a tool the model asked for and return the tool text: its result, or what went wrong.
+
+    arguments is None when the model's arguments weren't valid JSON. confirm asks the user before a
+    tool changes something; a tool that needs it is refused without it. results (validation) gives
+    a call's result in place of the tool, once the name and arguments have been checked."""
+    if arguments is None:
+        return f"Tool {name} failed: its arguments were not valid JSON"
     tool = TOOLS_BY_NAME.get(name)
     if tool is None:
         return f"Unknown tool: {name}"
     try:
-        result = await tool(**(arguments or {}))
+        model_signature(tool).bind(**arguments)
+    except TypeError as e:
+        return f"Tool {name} failed: {e}"
+    if results is not None:
+        return results(name, arguments)
+    needs_confirm = CONFIRM in inspect.signature(tool).parameters
+    if needs_confirm and confirm is None:
+        return (f"Tool {name} needs the user's confirmation, which can't be asked for here, "
+                "so nothing was changed")
+    try:
+        result = await (tool(**arguments, confirm=confirm) if needs_confirm else tool(**arguments))
     except Exception as e:
         return f"Tool {name} failed: {e}"
     # Text results go as they are; JSON-encoding them would add quotes and escaped newlines

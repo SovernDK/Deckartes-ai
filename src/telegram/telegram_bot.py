@@ -21,7 +21,6 @@ from model import mlx_server
 from telegram import telegram_api
 from telegram.telegram_api import TelegramError, TelegramRejected
 from telegram.telegram_format import Part, reply_parts
-from tools import tools
 
 log = logging.getLogger("deckartes.telegram")
 
@@ -76,8 +75,6 @@ class Bot:
 
     async def run(self) -> None:
         """Poll Telegram until cancelled."""
-        # First: without a handler, tools.confirm approves every change
-        tools.confirm_handler = self.confirm
         model = asyncio.create_task(self._start_model())
         try:
             await self._register_commands()
@@ -92,11 +89,9 @@ class Bot:
                     delay = min(delay * 2, POLL_RETRY_LIMIT_SECONDS)
         finally:
             model.cancel()
-            # Before the handler goes, so a turn still running can't have a change approved
             if self.busy:
                 self.turn.cancel()
                 await asyncio.gather(self.turn, return_exceptions=True)
-            tools.confirm_handler = None
 
     async def _start_model(self) -> None:
         """Have the model ready for the first question; a turn starts it too if this fails."""
@@ -175,7 +170,7 @@ class Bot:
         """Run the turn and return the messages to send."""
         reply = ""
         failure = None
-        async with aclosing(self.conversation.stream_reply(question)) as events:
+        async with aclosing(self.conversation.stream_reply(question, self.confirm)) as events:
             async for event in events:
                 if isinstance(event, Text):
                     reply += event.text

@@ -63,7 +63,7 @@ Always commit on main unless user specifiec otherwise.
 Read the matching doc before working in that area:
 
 - [docs/model-server.md](docs/model-server.md): the Rapid-MLX servers, their flags, the prompt cache, or changing the chat or embedding model.
-- [docs/adding-a-tool.md](docs/adding-a-tool.md): adding or changing a tool or the text it returns (registration, schema limits, exact-text tool tests, `tools.confirm` for tools with side effects).
+- [docs/adding-a-tool.md](docs/adding-a-tool.md): adding or changing a tool or the text it returns (registration, schema limits, exact-text tool tests, the `confirm` parameter for tools with side effects, `run_tool`).
 - [docs/http-client.md](docs/http-client.md): adding or changing a web backend (`http_client.request`, error messages, caching, paging, `MockTransport` tests).
 - [docs/tool-routing.md](docs/tool-routing.md): changing `tool_router.py`, its examples or thresholds, or debugging a wrong tool choice.
 - [docs/tools-server.md](docs/tools-server.md): Glances tools.

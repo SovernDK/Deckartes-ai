@@ -30,6 +30,14 @@ async def no_arguments() -> str:
     """Nothing needed."""
     return ""
 
+async def changes_something(title: str, *, confirm) -> str:
+    """Change something after asking.
+
+    Args:
+        title: What to change
+    """
+    return title
+
 class ToolDefinitionTest(unittest.TestCase):
     def test_definition_has_the_docstring_types_and_required(self):
         self.assertEqual(tool_definition(everything), {"type": "function", "function": {
@@ -53,6 +61,11 @@ class ToolDefinitionTest(unittest.TestCase):
     def test_tool_without_arguments_gets_empty_parameters(self):
         self.assertEqual(tool_definition(no_arguments)["function"]["parameters"],
                          {"type": "object", "required": [], "properties": {}})
+
+    def test_the_confirm_parameter_is_not_shown_to_the_model(self):
+        self.assertEqual(tool_definition(changes_something)["function"]["parameters"],
+                         {"type": "object", "required": ["title"],
+                          "properties": {"title": {"description": "What to change", "type": "string"}}})
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,8 +17,10 @@ from agent import tool_router
 from core import clock
 from core.config import config
 from model import mlx_client
+from model.tool_schema import model_signature
 from test_conversation import FakeClient, call, chunk
 from test_tool_router import FakeEmbeddings
+from tools import tools
 from tools.tools import TOOLS_BY_NAME
 from validation import validation
 
@@ -285,7 +287,7 @@ class CaseFileTest(unittest.TestCase):
 
     def perfect_call(self, c: validation.Case, tool: str) -> validation.Call:
         """A call passing the case's checks, with "x" for parameters nothing checks."""
-        arguments = {name: "x" for name, parameter in inspect.signature(TOOLS_BY_NAME[tool]).parameters.items()
+        arguments = {name: "x" for name, parameter in model_signature(TOOLS_BY_NAME[tool]).parameters.items()
                      if parameter.default is inspect.Parameter.empty}
         for checks in (c.arguments.get(tool, {}), c.carry.get(tool, {})):
             arguments.update({name: value[0] if isinstance(value, list) else value for name, value in checks.items()})
@@ -352,6 +354,13 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         client = self.use([chunk(tool_calls=[call("get_weather")], done=True)], [chunk("ok", done=True)])
         await self.run_cases(case_data())
         self.assertEqual(client.sent[1]["messages"][-1]["content"], "Unknown tool: get_weather")
+
+    async def test_wrong_arguments_get_the_same_answer_as_in_the_app(self):
+        self.route({"q": {"server": 0.9}})
+        client = self.use([chunk(tool_calls=[call("get_cpu_usage", core=2)], done=True)], [chunk("ok", done=True)])
+        await self.run_cases(case_data())
+        self.assertEqual(client.sent[1]["messages"][-1]["content"],
+                         await tools.run_tool("get_cpu_usage", {"core": 2}))
 
     async def test_scripted_turns_come_before_the_question(self):
         self.route({"q": {"server": 0.9}, "earlier": {"server": 0.9}})

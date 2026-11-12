@@ -101,16 +101,26 @@ class TurnTest(unittest.IsolatedAsyncioTestCase):
         return [message["content"] for message in client.sent[index]["messages"]]
 
 class ReplacedToolFunctionsTest(TurnTest):
-    async def test_a_replaced_tool_runner_answers_instead_of_the_real_tool(self):
+    async def test_a_replaced_tool_runner_answers_instead_of_the_real_tool_with_the_turns_confirm(self):
         calls = []
-        async def runner(name, arguments):
-            calls.append((name, arguments))
+        async def runner(name, arguments, confirm):
+            calls.append((name, arguments, confirm))
             return "fake result"
+        async def confirm(question):
+            return True
         client = self.use([chunk(tool_calls=[call("get_cs_team", name="NAVI")], done=True)], [chunk("done", done=True)])
         self.conversation = Conversation(tool_runner=runner)
-        await self.reply()
-        self.assertEqual(calls, [("get_cs_team", {"name": "NAVI"})])
+        [event async for event in self.conversation.stream_reply("q", confirm)]
+        self.assertEqual(calls, [("get_cs_team", {"name": "NAVI"}, confirm)])
         self.assertEqual(client.sent[1]["messages"][-1]["content"], "fake result")
+
+    async def test_a_turn_that_cannot_ask_the_user_refuses_a_tool_that_changes_something(self):
+        add = call("add_calendar_event", title="Dentist", date="tomorrow", start_time="14:30")
+        client = self.use([chunk(tool_calls=[add], done=True)], [chunk("sorry", done=True)])
+        await self.reply()
+        self.assertEqual(client.sent[1]["messages"][-1]["content"],
+                         "Tool add_calendar_event needs the user's confirmation, which can't be asked for here, "
+                         "so nothing was changed")
 
     async def test_a_replaced_tool_selector_decides_what_is_sent(self):
         async def selector(question, previous):

@@ -1,7 +1,9 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from zoneinfo import ZoneInfoNotFoundError
 
+import tzlocal
 from dotenv import dotenv_values
 
 # The repo folder, which holds .env and the data files; this file is src/core/config.py
@@ -13,13 +15,14 @@ ENV_FILE = dotenv_values(PROJECT_ROOT / ".env")
 def read_env(name: str) -> str:
     return os.environ.get(name) or ENV_FILE.get(name) or ""
 
+# When the system's time zone can't be found, or its settings conflict
+FALLBACK_TIMEZONE = "UTC"
+
 def local_timezone() -> str:
-    if os.environ.get("TZ"):
-        return os.environ["TZ"]
-    target = os.path.realpath("/etc/localtime")
-    if "zoneinfo/" in target:
-        return target.split("zoneinfo/", 1)[1]
-    return "Europe/London"
+    try:
+        return tzlocal.get_localzone_name() or FALLBACK_TIMEZONE
+    except ZoneInfoNotFoundError:
+        return FALLBACK_TIMEZONE
 
 CONTEXT_LENGTHS = [2048, 4096, 8192, 16384, 32768]
 

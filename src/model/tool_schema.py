@@ -5,11 +5,12 @@ A parameter is required unless its type allows None, even when it has a default.
 """
 
 import inspect
-import re
 import types
 import typing
 from collections.abc import Callable
 from functools import cache
+
+from docstring_parser import DocstringStyle, parse
 
 _JSON_TYPES = {str: "string", int: "integer", float: "number", bool: "boolean", list: "array", dict: "object"}
 
@@ -25,29 +26,10 @@ def _json_types(annotation) -> set[str]:
     return {_JSON_TYPES.get(origin or annotation, "string")}
 
 def _parse_docstring(docstring: str) -> tuple[str, dict[str, str]]:
-    """The description before Args:, and each argument's description."""
-    sections = {"description": [], "args": [], "other": []}
-    section = "description"
-    for line in docstring.splitlines():
-        lowered = line.lower().strip()
-        if lowered.startswith("args:"):
-            section = "args"
-        elif lowered.startswith(("returns:", "yields:", "raises:")):
-            section = "other"
-        else:
-            sections[section].append(line.strip())
-
-    arguments: dict[str, str] = {}
-    current = None
-    for line in sections["args"]:
-        if ":" in line:
-            # "name: text" or "name (type): text"
-            name, text = re.split(r"(?:\([^)]*\))?\s*:\s*", line, maxsplit=1)
-            current = name.strip()
-            arguments[current] = text.strip()
-        elif current and line:
-            arguments[current] += f" {line}"
-    return "\n".join(sections["description"]).strip(), arguments
+    """The description before Args:, and each argument's description on one line."""
+    parsed = parse(docstring, style=DocstringStyle.GOOGLE)
+    return parsed.description or "", {param.arg_name: " ".join((param.description or "").split())
+                                       for param in parsed.params}
 
 # The parameter through which tools.run_tool hands a tool the turn's way of asking the user
 CONFIRM = "confirm"

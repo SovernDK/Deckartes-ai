@@ -42,6 +42,15 @@ class RequestTest(HttpTest):
             await self.get(max_age=60)
         self.assertEqual(len(server.requests), 2)
 
+    async def test_cache_drops_the_least_recently_used_response_when_full(self):
+        server = self.serve({"/items": [1]})
+        for page in range(http_client.MAX_CACHED + 1):
+            await self.get(params={"page": page}, max_age=60)
+        await self.get(params={"page": http_client.MAX_CACHED}, max_age=60)
+        self.assertEqual(len(server.requests), http_client.MAX_CACHED + 1)
+        await self.get(params={"page": 0}, max_age=60)
+        self.assertEqual(len(server.requests), http_client.MAX_CACHED + 2)
+
     async def test_params_are_part_of_the_cache_key(self):
         server = self.serve({"/items": [1]})
         await self.get(params={"page": 1}, max_age=60)

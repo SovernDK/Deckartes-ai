@@ -15,7 +15,7 @@ Deckartes is a terminal chat UI (Textual) for local MLX models served by Rapid-M
 
 ## Commands
 
-There is no build step or requirements file. Tests use stdlib `unittest` in `tests/`. Linting uses Ruff, configured in `pyproject.toml`. Dependencies live in `venv/` (textual 8.2.8, textual-dev, httpx, pyobjc-framework-EventKit 12.2.2, pypdf 6.20.1, cryptography 50.0.2 for AES-encrypted PDFs, numpy 2.4.6, telegramify-markdown 1.4.2 for Telegram formatting, python-dotenv 1.2.4 for `.env`, ruff 0.17.4).
+There is no build step or requirements file. Tests use stdlib `unittest` in `tests/`. Linting uses Ruff, configured in `pyproject.toml`. Dependencies live in `venv/` (textual 8.2.8, textual-dev, httpx, pyobjc-framework-EventKit 12.2.2, pypdf 6.20.1, cryptography 50.0.2 for AES-encrypted PDFs, numpy 2.4.6, telegramify-markdown 1.4.2 for Telegram formatting, python-dotenv 1.2.4 for `.env`, cachetools 8.0.0 for the web backends' response cache, ruff 0.17.4).
 
 ```bash
 venv/bin/python src/main.py             # run the app

@@ -3,7 +3,8 @@ a model can pass on.
 
 Every failure raises the backend's own exception class with a readable message (unreachable,
 missing token, rate limit, other status), which tools.run_tool hands to the model.
-Responses are cached in memory for max_age seconds; failures never are.
+Responses are cached in memory for the max_age they were fetched with, at most MAX_CACHED of them
+(the least recently used goes first); failures never are.
 """
 
 import datetime as dt
@@ -11,19 +12,25 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 import httpx
+from cachetools import TLRUCache
 
 from core import clock
 
 # Tests set an httpx.MockTransport here in place of the network
 _transport: httpx.AsyncBaseTransport | None = None
 
-_cache: dict = {}
+MAX_CACHED = 256
+
+# Entries are (max_age, response); the timer is looked up on each call, so tests can patch time.monotonic
+_cache: TLRUCache = TLRUCache(maxsize=MAX_CACHED, ttu=lambda key, value, now: now + value[0],
+                              timer=lambda: time.monotonic())
 
 async def request(method: str, url: str, *, name: str, error: type[Exception],
                   params: dict | None = None, json: dict | None = None,
                   token: str | None = None, token_env: str = "", max_age: float = 0,
                   timeout: float = 30, status_messages: dict[int, str] | None = None) -> httpx.Response:
     """Send a request and return the 200 response, cached for max_age seconds (0 = not cached).
+    A cached response keeps the max_age it was fetched with.
 
     name is how messages call the service ("Could not reach {name}"). A token is sent as a
     Bearer header; token="" (not set) raises at once, naming token_env. status_messages
@@ -34,8 +41,8 @@ async def request(method: str, url: str, *, name: str, error: type[Exception],
 
     params = params or {}
     key = (method, url, tuple(sorted(params.items())), repr(json))
-    cached = _cache.get(key)
-    if max_age and cached and time.monotonic() - cached[0] < max_age:
+    cached = _cache.get(key) if max_age else None
+    if cached:
         return cached[1]
 
     headers = {"Authorization": f"Bearer {token}"} if token else {}
@@ -55,7 +62,7 @@ async def request(method: str, url: str, *, name: str, error: type[Exception],
         raise error(f"{name} responded with status {res.status_code}: {res.text[:200]}")
 
     if max_age:
-        _cache[key] = (time.monotonic(), res)
+        _cache[key] = (max_age, res)
     return res
 
 async def pages(fetch: Callable[[int], Awaitable[tuple[list, int | None]]], page_size: int,

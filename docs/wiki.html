@@ -172,7 +172,7 @@
   <li>An Apple Silicon Mac, Python 3.11+ and a virtual environment: <code>python3 -m venv venv</code>.</li>
   <li><code>venv/bin/pip install textual textual-dev httpx pyobjc-framework-EventKit pypdf cryptography numpy</code> (cryptography is for AES-encrypted PDFs).</li>
   <li>Install Rapid-MLX: <code>uv tool install 'rapid-mlx[embeddings]'</code>. The app starts its servers and stops them on exit, and the models download the first time they're needed.</li>
-  <li>Put API keys in the environment or a <code>.env</code> next to <code>config.py</code>.</li>
+  <li>Put API keys in the environment or a <code>.env</code> at the repo root (loaded with python-dotenv).</li>
   <li>Optional: Glances in web-server mode on the home server; macOS calendar access for your terminal app.</li>
 </ol>
 <table>

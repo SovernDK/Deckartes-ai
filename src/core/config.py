@@ -2,19 +2,16 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # The repo folder, which holds .env and the data files; this file is src/core/config.py
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+# Variables already set in the environment win over .env
+load_dotenv(PROJECT_ROOT / ".env")
+
 def read_env(name: str) -> str:
-    if os.environ.get(name):
-        return os.environ[name]
-    env_file = PROJECT_ROOT / ".env"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            key, _, value = line.partition("=")
-            if key.strip() == name:
-                return value.strip().strip('"\'')
-    return ""
+    return os.environ.get(name, "")
 
 def local_timezone() -> str:
     if os.environ.get("TZ"):

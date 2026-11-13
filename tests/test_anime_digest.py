@@ -12,6 +12,7 @@ from core.config import config
 from frozen_clock import freeze
 from http_fake import HttpTest
 from jobs import anime_digest
+from telegram import telegram_api
 from test_anime_tools import TIMETABLE, USER_LIST, episode, on_list, weekly
 
 TOKEN = "123:SECRET"
@@ -43,6 +44,20 @@ class DigestScriptTest(HttpTest):
         self.assertEqual(await anime_digest.run(), 0)
         self.assertEqual(self.sent(server), [{"chat_id": OWNER, "text": "Airing today, Wednesday 11 November:\n"
                                                                         "- Frieren: episode 5 at 17:30"}])
+
+    async def test_a_long_digest_arrives_in_parts_under_the_limit(self):
+        server = self.serve({USER_LIST: on_list(watching=["f", "b", "o"]), SEND: SENT,
+                             TIMETABLE: weekly(AIRING, episode("b", "Bocchi the Rock", "2026-11-11T17:00:00Z", 2),
+                                               episode("o", "Oshi no Ko", "2026-11-11T18:00:00Z", 3))})
+        with mock.patch.object(telegram_api, "MAX_MESSAGE", 60):
+            self.assertEqual(await anime_digest.run(), 0)
+        parts = [message["text"] for message in self.sent(server)]
+        self.assertGreater(len(parts), 1)
+        self.assertTrue(all(len(part) <= 60 for part in parts), parts)
+        self.assertEqual("\n".join(parts), "Airing today, Wednesday 11 November:\n"
+                                             "- Frieren: episode 5 at 17:30\n"
+                                             "- Bocchi the Rock: episode 2 at 18:00\n"
+                                             "- Oshi no Ko: episode 3 at 19:00")
 
     async def test_sends_nothing_when_nothing_airs(self):
         server = self.serve_digest()

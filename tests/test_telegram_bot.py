@@ -20,7 +20,7 @@ from frozen_clock import freeze
 from http_fake import HttpTest
 from model import mlx_client, mlx_server
 from telegram import telegram_api, telegram_bot, telegram_format
-from telegram.telegram_api import MAX_MESSAGE, split_text
+from telegram.telegram_api import MAX_MESSAGE
 from telegram.telegram_bot import Bot
 from test_calendar_tools import FakeCalendar
 from test_conversation import FakeClient, call, chunk, think
@@ -457,19 +457,3 @@ class ShutdownTest(BotTest):
             os.kill(os.getpid(), signal.SIGTERM)
             await task
         stop_all.assert_called_once()
-
-
-class TextTest(BotTest):
-    def test_short_text_is_one_part(self):
-        self.assertEqual(split_text("hello"), ["hello"])
-
-    def test_split_prefers_a_paragraph_then_a_line_then_a_word(self):
-        self.assertEqual(split_text("a" * 7 + "\n\n" + "b" * 7, limit=10), ["a" * 7, "b" * 7])
-        self.assertEqual(split_text("a" * 7 + "\n" + "b" * 7, limit=10), ["a" * 7, "b" * 7])
-        self.assertEqual(split_text("a" * 7 + " " + "b" * 7, limit=10), ["a" * 7, "b" * 7])
-
-    def test_split_cuts_a_long_word(self):
-        self.assertEqual(split_text("a" * 25, limit=10), ["a" * 10, "a" * 10, "a" * 5])
-
-    def test_no_part_is_empty(self):
-        self.assertEqual(split_text("a" * 10 + "   \n\n   " + "b", limit=10), ["a" * 10, "b"])

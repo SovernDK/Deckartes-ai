@@ -17,18 +17,6 @@ class TelegramError(Exception):
 class TelegramRejected(TelegramError):
     """Telegram refused the request itself (400), so sending it again unchanged won't help."""
 
-def split_text(text: str, limit: int = MAX_MESSAGE) -> list[str]:
-    """Cut text into parts of at most limit characters, at a paragraph, line or word if one is
-    in the second half of the part."""
-    parts = []
-    while len(text) > limit:
-        window = text[:limit + 1]
-        cut = next((at for at in map(window.rfind, ("\n\n", "\n", " ")) if at >= limit // 2), limit)
-        parts.append(text[:cut].rstrip())
-        text = text[cut:].lstrip()
-    parts.append(text)
-    return [part for part in parts if part.strip()]
-
 _STATUS_MESSAGES = {
     401: "Telegram refused the bot token: check TELEGRAM_BOT_TOKEN",
     # Every method called here exists, so a 404 is a token Telegram can't parse

@@ -8,6 +8,8 @@ import asyncio
 import logging
 import sys
 
+from telegramify_markdown import split_entities
+
 from core.config import config
 from telegram import telegram_api
 from telegram.telegram_api import TelegramError
@@ -26,8 +28,9 @@ async def _send_digest(chat_id: int) -> bool:
     text = await animeschedule_api.airing_digest()
     if text is None:
         return False
-    for part in telegram_api.split_text(text):
-        await telegram_api.send_message(chat_id, part)
+    # Plain text, not Markdown: titles can hold * or _
+    for part, _ in split_entities(text, [], telegram_api.MAX_MESSAGE):
+        await telegram_api.send_message(chat_id, part.rstrip())
     return True
 
 async def run() -> int:

@@ -62,7 +62,6 @@ class ConfigScreen(ModalScreen[bool]):
                 yield OutlineButton("Cancel", "error", id="cancel")
 
     def context_options(self) -> list[tuple[str, int]]:
-        """CONTEXT_LENGTHS as "8K (8,192 tokens)", plus the current value if it was set to another one."""
         lengths = sorted(set(CONTEXT_LENGTHS) | {config.context_length})
         options = []
         for length in lengths:
@@ -88,7 +87,6 @@ class ConfigScreen(ModalScreen[bool]):
         self.dismiss(False)
 
     def save(self) -> None:
-        """Check every field first and only then apply, so a bad value changes nothing."""
         error = self.query_one("#config_error", Static)
 
         temperature_text = self.query_one("#temperature", Input).value.strip()

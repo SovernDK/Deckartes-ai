@@ -356,7 +356,6 @@ async def add_calendar_event(title: str, date: str, start_time: str, end_date: s
     return await cal.add_event(title, date, start_time, end_date, end_time, confirm)
 
 def tools_for(names: list[str] | None) -> list:
-    """Tools with the given names (prompts.allowed_tool_names has checked them); None means all tools."""
     if names is None:
         return TOOLS
     return [TOOLS_BY_NAME[name] for name in names]

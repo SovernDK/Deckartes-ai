@@ -469,8 +469,6 @@ def _tournaments_text(status: str, events: list[dict]) -> str:
         lines.append(f"- {e['name']} (tier {e['tier']}): {dates}{prize}, stages: {', '.join(e['stages'])}")
     return "\n".join(lines)
 
-# For the tools
-
 async def ranking(region: str, count: int) -> str:
     return _ranking_text(await _ranking(region, count))
 

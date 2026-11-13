@@ -89,7 +89,6 @@ class DecartesApp(App):
         self.query_one(Chat).interrupt()
 
     def action_help(self) -> None:
-        # Built from BINDINGS and Chat.COMMANDS, so new ones show up here automatically
         shortcuts = []
         for binding in self.BINDINGS:
             if isinstance(binding, tuple):
@@ -141,5 +140,4 @@ class DecartesApp(App):
             return
         config.model = model
         self.update_subtitle()
-        # The server is launched with its model, so changing it means restarting the server
         chat.start_server(restart=True)

@@ -23,7 +23,6 @@ EXIT_FAILED = 1
 EXIT_SETUP_ERROR = 2
 
 async def _send_digest(chat_id: int) -> bool:
-    """Send today's digest and say whether there was one."""
     text = await animeschedule_api.airing_digest()
     if text is None:
         return False
@@ -32,7 +31,6 @@ async def _send_digest(chat_id: int) -> bool:
     return True
 
 async def run() -> int:
-    """Send the digest, retrying failures, and return the exit status."""
     if not config.telegram_token or not config.telegram_user_id.isdigit() or not config.animeschedule_token:
         log.error("Set TELEGRAM_BOT_TOKEN, TELEGRAM_USER_ID and ANIMESCHEDULE_TOKEN in the environment or .env")
         return EXIT_SETUP_ERROR

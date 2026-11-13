@@ -18,7 +18,6 @@ class WebSearchError(Exception):
     pass
 
 async def _post(endpoint: str, payload: dict) -> dict:
-    """POST to Ollama's web API; raise WebSearchError on any failure."""
     res = await http_client.request("POST", f"{API_URL}/{endpoint}", name="Ollama web API", error=WebSearchError,
                                     json=payload, token=config.ollama_api_key, token_env="OLLAMA_API_KEY")
     return res.json()

@@ -33,7 +33,6 @@ class ToolCall:
     arguments: dict | None
 
     def as_message(self) -> dict:
-        """This call as it's sent back in the assistant message of the next request."""
         return {"id": self.id, "type": "function",
                 "function": {"name": self.name, "arguments": json.dumps(self.arguments or {})}}
 
@@ -67,7 +66,6 @@ def _token_count(usage: dict | None, metrics: dict | None) -> TokenCount | None:
     return TokenCount(usage.get("prompt_tokens", 0), completion, round(completion * token_ms * 1e6))
 
 def _chat_body(messages: list[dict], tools: list | None = None, thinking: bool | None = None) -> dict:
-    """thinking None = config.enable_thinking."""
     body = {
         "model": config.model,
         "messages": messages,

@@ -21,7 +21,6 @@ class GlancesError(Exception):
     pass
 
 async def _get(endpoint: str) -> Any:
-    """GET {config.glances_host}/api/4/{endpoint} as JSON; raises GlancesError on failure."""
     res = await http_client.request("GET", f"{config.glances_host}/api/4/{endpoint}",
                                     name="Glances", error=GlancesError, timeout=10)
     return res.json()

@@ -54,7 +54,6 @@ class Spinner(Static):
         self.render_frame()
 
     def set_label(self, label: str | None) -> None:
-        """Change the text next to the spinner; None goes back to the default."""
         self.label = label or self.DEFAULT_LABEL
         self.render_frame()
 
@@ -65,7 +64,6 @@ class Spinner(Static):
             self.show_next()
 
     def show_tool(self, tool_name: str | None) -> None:
-        """Queue a tool label, held for MIN_TOOL_SECONDS; None goes back to the default."""
         if tool_name:
             self.queue(f"Using tool: {tool_name}", self.MIN_TOOL_SECONDS)
         else:
@@ -159,7 +157,6 @@ class Reply(VerticalGroup):
         self.thinking = self.tool_calls = None
 
     async def stop(self) -> None:
-        """Finish the answer part being streamed, if any."""
         if self.markdown_stream is not None:
             await self.markdown_stream.stop()
             self.markdown_stream = None
@@ -210,8 +207,6 @@ class Chat(VerticalGroup):
             self.set_busy(False)
 
     async def confirm(self, question: str) -> bool:
-        """Ask the user yes or no in a popup, for tools that change something (e.g. add a calendar
-        event)."""
         answer = asyncio.get_running_loop().create_future()
         screen = ConfirmScreen(question)
         self.app.push_screen(screen, answer.set_result)
@@ -227,7 +222,6 @@ class Chat(VerticalGroup):
             self.app.pop_screen()
 
     def update_usage(self) -> None:
-        """Output title, with the conversation's total tokens in Detailed mode."""
         title = "Output"
         if config.detailed:
             title += f" · {self.conversation.total_usage.total:,} tokens"
@@ -300,7 +294,6 @@ class Chat(VerticalGroup):
         "forget": ("command_forget", "Remove saved files from the library: /forget <path or file name>"),
         "validate": ("command_validate", "Score the loaded model's tool use on the validation cases"),
     }
-    # These get the rest of the line as an argument
     COMMANDS_WITH_ARGUMENT = {"forget"}
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -339,7 +332,6 @@ class Chat(VerticalGroup):
         self.notify("Conversation cleared")
 
     def clear_conversation(self) -> None:
-        """End the conversation and empty the screen; the next question starts a new one."""
         self.conversation.clear()
         self.query_one("#response", VerticalScroll).remove_children()
         self.update_usage()
@@ -467,7 +459,6 @@ class Chat(VerticalGroup):
             self.notify("No model server started by this app is running")
 
     def set_busy(self, busy: bool) -> None:
-        """Swap the input for the spinner while the model is answering."""
         self.busy = busy
         # Enables or disables the ctrl+c "Stop" binding in the app
         self.app.refresh_bindings()

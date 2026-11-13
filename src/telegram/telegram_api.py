@@ -7,7 +7,6 @@ text reaches the log and, through a failed tool, the model.
 from core import http_client
 from core.config import config
 
-# How long one getUpdates call waits for something to happen
 POLL_SECONDS = 50
 # Under Telegram's limit of 4096
 MAX_MESSAGE = 4000
@@ -60,7 +59,6 @@ async def get_updates(offset: int | None) -> list[dict]:
 
 async def send_message(chat_id: int, text: str, buttons: list[tuple[str, str]] | None = None,
                        entities: list[dict] | None = None) -> dict:
-    """Send text, with optional formatting entities and an optional row of (label, callback data) buttons."""
     payload: dict = {"chat_id": chat_id, "text": text}
     if entities:
         payload["entities"] = entities
@@ -84,6 +82,5 @@ async def edit_message_text(chat_id: int, message_id: int, text: str) -> None:
     await _call("editMessageText", {"chat_id": chat_id, "message_id": message_id, "text": text})
 
 async def set_commands(commands: dict[str, str]) -> None:
-    """Set the command menu shown in the Telegram app."""
     await _call("setMyCommands", {"commands": [{"command": name, "description": description}
                                                for name, description in commands.items()]})

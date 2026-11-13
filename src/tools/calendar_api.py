@@ -32,7 +32,6 @@ _store = None
 _store_lock = threading.Lock()
 
 def _request_access(store) -> bool:
-    """Show macOS's calendar permission prompt and wait for the answer."""
     done = threading.Event()
     answer = {}
     def handler(granted, error):
@@ -44,7 +43,6 @@ def _request_access(store) -> bool:
     return answer["granted"]
 
 def _event_store():
-    """The shared EKEventStore, asking for calendar access the first time."""
     global _store
     with _store_lock:
         if _store is None:
@@ -154,7 +152,6 @@ def _find_events(query: str) -> dict:
             "to": (now + dt.timedelta(days=SEARCH_FUTURE_DAYS)).date()}
 
 def _target_calendar():
-    """The calendar new events go to: config.calendar_name, or Calendar's default."""
     store = _event_store()
     if not config.calendar_name:
         calendar = store.defaultCalendarForNewEvents()
@@ -207,7 +204,6 @@ def _new_event(title: str, date: str, start_time: str, end_date: str | None, end
             "calendar": _target_calendar().title()}
 
 def _is_duplicate(event: dict) -> bool:
-    """Whether an event with the same title already starts at the same time."""
     existing = _events_between(event["start"], event["end"])
     return any(_slim(e)["title"].casefold() == event["title"].casefold() and _slim(e)["start"] == event["start"]
                for e in existing)
@@ -223,8 +219,6 @@ def save_event(event: dict) -> None:
     saved, error = store.saveEvent_span_error_(ek_event, EventKit.EKSpanThisEvent, None)
     if not saved:
         raise RuntimeError(error.localizedDescription() if error else "Calendar refused to save the event")
-
-# Text for the tools: the event name first, then when, then where
 
 def _day(day: dt.date) -> str:
     return f"{day:%A %Y-%m-%d}"
@@ -292,8 +286,6 @@ def _found_text(result: dict) -> str:
     if result["last_past"]:
         lines.append(f"Most recent past one: {_event_line(result['last_past'], with_date=True)}")
     return "\n".join(lines)
-
-# For the tools
 
 async def events_on(date: str) -> str:
     return _events_text(await asyncio.to_thread(_events_on, clock.parse_day(date)))

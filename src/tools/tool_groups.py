@@ -22,13 +22,11 @@ class ToolGroups:
         return self._examples[group]
 
     def add(self, group: str, tool_name: str) -> None:
-        """Put a tool in a group; ValueError for a group that doesn't exist."""
         if group not in self._tools:
             raise ValueError(f"unknown tool group {group!r}")
         self._tools[group].append(tool_name)
 
     def groups_of(self, tool_names: Iterable[str]) -> list[str]:
-        """The groups these tools are in, in group order."""
         names = set(tool_names)
         return [group for group, tools in self._tools.items() if names & set(tools)]
 
@@ -40,7 +38,6 @@ class ToolGroups:
         return not homes or bool(chosen.intersection(homes))
 
     def sent_with(self, groups: Iterable[str], tools: list) -> list:
-        """Those of tools (functions) that go with these groups, in their order."""
         chosen = list(groups)
         return [tool for tool in tools if self.is_sent_with(tool.__name__, chosen)]
 

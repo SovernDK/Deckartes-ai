@@ -32,7 +32,6 @@ class AnimeScheduleError(Exception):
     pass
 
 async def _get(path: str, params: dict, max_age: float = CACHE_SECONDS) -> dict | list:
-    """GET from the API with the app token; cached for max_age seconds, raises AnimeScheduleError on failure."""
     res = await http_client.request("GET", f"{API_URL}{path}", name="AnimeSchedule", error=AnimeScheduleError,
                                     params=params, token=config.animeschedule_token,
                                     token_env="ANIMESCHEDULE_TOKEN", max_age=max_age)
@@ -50,11 +49,9 @@ def _rating(anime: dict) -> float | None:
     return round(stats["averageScore"] / 10, 1)
 
 def _keep(show_rating: float | None) -> bool:
-    """Leave out low-rated shows (at or below config.anime_min_rating); unrated ones stay."""
     return show_rating is None or show_rating > config.anime_min_rating
 
 def _best_first(shows: list[dict]) -> list[dict]:
-    """Sort by rating, highest first, with unrated shows at the end."""
     return sorted(shows, key=lambda show: (show["rating"] is None, -(show["rating"] or 0)))
 
 def _premiere_date(anime: dict) -> str | None:
@@ -90,7 +87,6 @@ def _season_name(season: str) -> str:
     return season
 
 async def _season_shows(season: str, year: int) -> list[dict]:
-    """Anime that premiered in a season, best rated first; low-rated ones are left out."""
     shows = [_show(a) for a in await _all_anime({"seasons": season, "years": year})]
     return _best_first([show for show in shows if _keep(show["rating"])])
 
@@ -161,7 +157,6 @@ async def _upcoming_episodes() -> dict[str, tuple[dt.datetime, dict]]:
     return upcoming
 
 async def _next_episodes() -> dict[str, tuple[dt.datetime, int]]:
-    """Next upcoming episode per anime route, as (local airing time, episode number)."""
     return {route: (airs, entry.get("episodeNumber"))
             for route, (airs, entry) in (await _upcoming_episodes()).items()}
 
@@ -237,7 +232,6 @@ async def _continuing_shows(name: str) -> tuple[str, list[dict]]:
     return next_season, shows
 
 async def _list_entries(status: str) -> list[dict]:
-    """Raw entries on config.animeschedule_user's anime list with a status ("all" for every status)."""
     async def fetch(index: int) -> tuple[list, None]:
         params = {"offset": index * LIST_PAGE_SIZE, "limit": LIST_PAGE_SIZE}
         if status != "all":
@@ -417,7 +411,6 @@ def _user_list_text(status: str, shows: list[dict]) -> str:
     return "\n".join(lines)
 
 def _digest_text(day: dt.date, shows: list[dict]) -> str | None:
-    """The morning message for the user, or None when nothing airs."""
     if not shows:
         return None
     lines = [f"Airing today, {day:%A} {day.day} {day:%B}:"]
@@ -427,11 +420,8 @@ def _digest_text(day: dt.date, shows: list[dict]) -> str | None:
     return "\n".join(lines)
 
 async def airing_digest() -> str | None:
-    """Today's message for anime_digest.py."""
     day = clock.today()
     return _digest_text(day, await _list_airing(day))
-
-# For the tools
 
 def current_season() -> str:
     today = clock.today()

@@ -50,7 +50,6 @@ class _Server:
         return LOG_DIR / f"rapid-mlx-{self.name.replace(' ', '-')}.log"
 
     def status(self) -> int | None:
-        """HTTP status of the readiness check; None when nothing answers."""
         try:
             return httpx.get(self.url() + READY_PATH, timeout=2).status_code
         except httpx.HTTPError:
@@ -84,7 +83,6 @@ class _Server:
                                f"minutes. See {self.log_path}")
 
     def ensure_running(self) -> None:
-        """Return once this server is ready, starting it if nothing is on its port."""
         with self.lock:
             status = self.status()
             if status == 200:
@@ -127,23 +125,19 @@ _chat = _Server("chat", lambda: config.host, _chat_arguments)
 _files = _Server("file search", lambda: config.file_embed_host, _file_arguments)
 
 def ensure_chat() -> None:
-    """Block until the chat server is ready. Raises ModelServerError if it can't be."""
     _chat.ensure_running()
 
 def ensure_files() -> None:
-    """Block until the file embedding server is ready. Raises ModelServerError if it can't be."""
     _files.ensure_running()
 
 def chat_is_ready() -> bool:
     return _chat.status() == 200
 
 def restart_chat() -> None:
-    """Start the chat server again, after config.model changed."""
     _chat.stop()
     _chat.ensure_running()
 
 def stop_all() -> list[str]:
-    """Stop the servers this app started, freeing their memory. Returns the names of those stopped."""
     return [server.name for server in (_chat, _files) if server.stop()]
 
 atexit.register(stop_all)

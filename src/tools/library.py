@@ -104,7 +104,6 @@ class AddResult:
 
     @property
     def summary(self) -> str:
-        """The load's outcome, for telling the user."""
         files = len(self.saved)
         text = (f"Saved {files} file{'' if files == 1 else 's'} ({self.chunks:,} chunk{'' if self.chunks == 1 else 's'}) "
                 "to the library") if files else "Nothing new to save"
@@ -119,7 +118,6 @@ class AddResult:
 
 @dataclass
 class Entry:
-    """A file in the library."""
     path: Path
     chunks: int
     saved_at: str
@@ -240,7 +238,6 @@ def _chunk(sections: list[_Section]) -> list[_Chunk]:
     return chunks
 
 def _readable_chunks(path: Path) -> list[_Chunk]:
-    """The file's chunks; anything that stops them being made is _Unreadable."""
     try:
         chunks = _chunk(_read_sections(path))
     except Exception as e:
@@ -384,11 +381,9 @@ def _search(query: str) -> str:
     return _passages_text([rows[chunk_id] for chunk_id in best if chunk_id in rows])
 
 async def search(query: str) -> str:
-    """The tool text: the TOP_K saved chunks most like the query, best first."""
     return await asyncio.to_thread(_search, query)
 
 def entries() -> list[Entry]:
-    """Everything in the library, in path order."""
     with _database() as db:
         rows = db.execute("SELECT path, COUNT(chunks.id), saved_at, model FROM files LEFT JOIN chunks "
                           "ON chunks.file_id = files.id GROUP BY files.id ORDER BY path").fetchall()
@@ -404,7 +399,6 @@ def matching(text: str) -> list[Entry]:
     return [entry for entry in entries() if entry.path.name.lower() == text.lower()]
 
 def forget(chosen: list[Entry]) -> None:
-    """Remove these files from the library."""
     with _database() as db:
         db.executemany("DELETE FROM files WHERE path = ?", ((str(entry.path),) for entry in chosen))
         _mark_changed(db)
@@ -415,7 +409,6 @@ def _shown_path(entry: Entry) -> str:
     return path.replace("|", "\\|") + ("" if entry.current else " (other embedding model: load it again)")
 
 def report(all_entries: list[Entry]) -> str:
-    """The library as a Markdown table, for the /library command."""
     if not all_entries:
         return "The library is empty. Press **e** to load a file or folder."
     files, chunks = len(all_entries), sum(entry.chunks for entry in all_entries)

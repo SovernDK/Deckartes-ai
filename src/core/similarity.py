@@ -1,5 +1,3 @@
-"""Comparing embedding vectors."""
-
 import math
 
 

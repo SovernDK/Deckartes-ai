@@ -13,16 +13,13 @@ WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", 
 def zone() -> ZoneInfo:
     return ZoneInfo(config.timezone)
 
-# Set by frozen_at
 _frozen: dt.datetime | None = None
 
 def now() -> dt.datetime:
-    """The current time in config.timezone, or the frozen moment inside frozen_at."""
     return _frozen if _frozen is not None else dt.datetime.now(zone())
 
 @contextmanager
 def frozen_at(moment: dt.datetime) -> Iterator[None]:
-    """Make it always `moment` inside the block, e.g. so a validation run gets the same dates each time."""
     global _frozen
     _frozen = moment
     try:
@@ -54,5 +51,4 @@ def parse_day(text: str) -> dt.date:
         raise ValueError(f"Date {text!r} must be today, tomorrow, yesterday, a weekday or YYYY-MM-DD")
 
 def to_local(timestamp: str) -> dt.datetime:
-    """An ISO 8601 timestamp with a UTC offset or Z, in config.timezone."""
     return dt.datetime.fromisoformat(timestamp).astimezone(zone())

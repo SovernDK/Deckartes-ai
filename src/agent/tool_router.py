@@ -34,7 +34,6 @@ FOLLOW_UP_STARTS = ("and ", "what about ", "how about ")
 # Replies to something the model asked: they say nothing of the topic and read like small talk
 FOLLOW_UP_ANSWERS = {"yes", "yes please", "ok", "okay", "sure", "do it", "go ahead"}
 
-# Questions the model answers from its own knowledge
 NO_TOOL_EXAMPLES = [
     "hello", "thanks, that helps", "tell me a joke", "explain how recursion works", "write a poem",
     "what is 12 times 7", "translate this sentence to Spanish", "fix this python code",

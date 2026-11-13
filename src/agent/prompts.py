@@ -24,7 +24,6 @@ def load_prompts() -> list[dict]:
     return json.loads(PROMPTS_FILE.read_text())["prompts"]
 
 def current_prompt() -> dict | None:
-    """The preset named config.system_prompt, or None if there is no such preset."""
     for prompt in load_prompts():
         if prompt["name"] == config.system_prompt:
             return prompt
@@ -37,7 +36,6 @@ def current_time_line() -> str:
     return f"Current local time: {clock.now():%H:%M}."
 
 def system_message() -> str:
-    """The current date, then the preset's prompt; just the date if no preset matches."""
     prompt = current_prompt()
     if prompt is None:
         return current_date_line()

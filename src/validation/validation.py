@@ -81,7 +81,6 @@ class Suite:
     cases: list[Case]
 
     def moment(self) -> dt.datetime:
-        """The time a run is frozen at."""
         return dt.datetime.fromisoformat(self.now).replace(tzinfo=ZoneInfo(self.timezone))
 
     def category_counts(self) -> dict[str, int]:
@@ -210,7 +209,6 @@ def parse_suite(data: dict) -> Suite:
     return suite
 
 def load_suite(path: Path = CASES_FILE) -> Suite:
-    """Read and check the case file. Raises ValueError if it can't be used."""
     try:
         return parse_suite(json.loads(path.read_text()))
     except OSError as e:
@@ -427,7 +425,6 @@ class Run:
         return "not comparable" if self.errors else "complete"
 
     def category_rates(self, attribute: str) -> dict[str, float]:
-        """Percent of the scored cases passing, per category."""
         rates = {}
         for category in CATEGORIES:
             scores = [r.score for r in self.scored if r.case.category == category]
@@ -479,7 +476,6 @@ class Run:
                 "average_extra_groups": sum(len(record["extra_groups"]) for record in records) / len(records)}
 
     def save(self, folder: Path = RESULTS_FOLDER) -> tuple[Path, Path]:
-        """Write the model's results and the router's records; returns their paths."""
         folder.mkdir(parents=True, exist_ok=True)
         stamp = clock.now().strftime("%Y%m%d-%H%M%S")
         model_path = folder / f"{stamp}-{self.model.replace('/', '_')}.json"

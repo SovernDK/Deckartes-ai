@@ -53,7 +53,6 @@ def _parse_docstring(docstring: str) -> tuple[str, dict[str, str]]:
 CONFIRM = "confirm"
 
 def model_signature(function: Callable) -> inspect.Signature:
-    """A tool's parameters that the model fills in: all of them except CONFIRM."""
     signature = inspect.signature(function)
     return signature.replace(parameters=[p for p in signature.parameters.values() if p.name != CONFIRM])
 

@@ -11,11 +11,9 @@ import os
 import stat
 from pathlib import Path
 
-# Stop walking after this many files/folders; keeps big scans from hanging
 MAX_SCANNED = 200_000
 
 def resolve(path: str) -> Path:
-    """Expand ~ and make the path absolute."""
     return Path(os.path.expanduser(path or "~")).resolve()
 
 def human_size(size: int) -> str:
@@ -63,7 +61,6 @@ def entry_size(entry: os.DirEntry) -> int:
         return 0
 
 def folder_size(path: str, budget: Budget | None = None) -> dict:
-    """Total size of a folder and everything in it."""
     root = resolve(path)
     if not root.is_dir():
         raise NotADirectoryError(f"Not a folder: {root}")
@@ -81,8 +78,6 @@ def folder_size(path: str, budget: Budget | None = None) -> dict:
             "files": files, "complete": complete}
 
 def _list_directory(path: str, max_entries: int = 100) -> dict:
-    """Files and folders directly inside path with their sizes (folder sizes include
-    their contents), biggest first."""
     root = resolve(path)
     if not root.is_dir():
         raise NotADirectoryError(f"Not a folder: {root}")
@@ -117,8 +112,6 @@ def _list_directory(path: str, max_entries: int = 100) -> dict:
             "truncated": len(entries) > max_entries, "complete": complete}
 
 def _find_files(name_pattern: str, path: str = "~", max_results: int = 50) -> dict:
-    """Files and folders under path whose name matches name_pattern (case-insensitive).
-    A pattern without * or ? matches any name containing it."""
     root = resolve(path)
     if not root.is_dir():
         raise NotADirectoryError(f"Not a folder: {root}")
@@ -143,8 +136,6 @@ def _find_files(name_pattern: str, path: str = "~", max_results: int = 50) -> di
 
     return {"path": str(root), "pattern": name_pattern, "count": len(matches),
             "matches": matches, "complete": complete}
-
-# For the tools: a scan blocks, so these run it in a thread
 
 async def list_directory(path: str) -> dict:
     return await asyncio.to_thread(_list_directory, path)

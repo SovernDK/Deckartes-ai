@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from core import clock
 from core.config import config
 
-# Longest title in the history panel; the first question, cut short
 TITLE_LENGTH = 60
 
 # Starts the system message that replaces a compacted history; a reopened conversation is sent from its last one
@@ -51,7 +50,6 @@ class Message:
 
 @dataclass
 class Listed:
-    """One conversation in the history panel."""
     id: int
     title: str
     source: str
@@ -73,7 +71,6 @@ class Resumed:
     shown: list[Message]
 
 def summary_message(summary: str) -> dict:
-    """The system message that stands for a compacted history."""
     return {"role": "system", "content": SUMMARY_PREFIX + summary}
 
 def _stamp(moment: dt.datetime) -> str:
@@ -90,11 +87,9 @@ class Saver:
         self.id: int | None = None
 
     def end(self) -> None:
-        """The next turn starts a new conversation."""
         self.id = None
 
     def turn(self, time_line: str, question: str, reply: str, asked_at: dt.datetime, system_prompt: str) -> None:
-        """Save a finished turn: its time line, question and reply, with the model and preset in use."""
         if self.source is None:
             return
         asked = _stamp(asked_at)
@@ -152,13 +147,11 @@ def _add(conversation_id: int | None, messages: list[Message], *, source: str, p
         return conversation_id
 
 def _add_summary(conversation_id: int, summary: Message) -> None:
-    """Save a compaction summary; the messages it replaced stay. Does nothing for a deleted conversation."""
     with _database() as db:
         if db.execute("SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)).fetchone():
             _insert(db, conversation_id, [summary])
 
 def list_conversations() -> list[Listed]:
-    """Every saved conversation, the latest activity first."""
     with _database() as db:
         rows = db.execute("""
             SELECT c.id, c.source, c.updated_at,
@@ -171,7 +164,6 @@ def _title(question: str) -> str:
     return line if len(line) <= TITLE_LENGTH else line[:TITLE_LENGTH - 1].rstrip() + "…"
 
 def load(conversation_id: int) -> Saved:
-    """A saved conversation with all its messages; KeyError when there's no such conversation."""
     with _database() as db:
         row = db.execute("SELECT source, preset, system_prompt FROM conversations WHERE id = ?",
                          (conversation_id,)).fetchone()

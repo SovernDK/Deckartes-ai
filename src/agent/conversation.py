@@ -35,7 +35,6 @@ from tools.tools import Confirm, run_tool
 # What a turn yields, in order
 @dataclass
 class Text:
-    """Part of the reply."""
     text: str
 
 @dataclass
@@ -88,7 +87,6 @@ class Usage:
     output_ns: int = 0
 
     def count(self, tokens: mlx_client.TokenCount | None) -> None:
-        """Add a finished chat call's token counts."""
         if tokens is not None:
             self.input += tokens.prompt
             self.output += tokens.completion
@@ -101,7 +99,6 @@ class Usage:
 
     @property
     def tokens_per_second(self) -> float | None:
-        """Generation speed; None when the server reported no generation time."""
         return self.output / self.output_ns * 1e9 if self.output_ns else None
 
     @property
@@ -135,7 +132,6 @@ SUMMARY_PROMPT = (
 )
 
 def _add_tool_results(messages, content, tool_calls, results) -> None:
-    """Append the model's tool calls and their results so the next request sees them."""
     messages.append({"role": "assistant", "content": content,
                      "tool_calls": [call.as_message() for call in tool_calls]})
     for call, result in zip(tool_calls, results):
@@ -150,7 +146,6 @@ class Conversation:
         # Finished turns as chat messages: for each, its time line, the question and the reply
         self.history: list[dict] = []
         self.last_turn = TurnInfo()
-        # Tokens of the whole conversation
         self.total_usage = Usage()
         # Size of the context of the last finished turn: its final prompt plus reply, in tokens
         self.context_tokens = 0
@@ -164,7 +159,6 @@ class Conversation:
         self.total_usage = Usage()
 
     def clear(self) -> None:
-        """End the conversation; the next turn starts a new one."""
         self.saver.end()
         self._reset()
 
@@ -198,12 +192,10 @@ class Conversation:
         return None
 
     def needs_compacting(self) -> bool:
-        """Whether the last turn's context reached config.compact_at of the window."""
         return bool(self.history and config.compact_at
                     and self.context_tokens >= config.compact_at * config.context_length)
 
     async def _compact(self, usage: Usage) -> str:
-        """Replace the history with the model's summary of it, and return the summary."""
         transcript = "\n\n".join(f"{m['role']}: {m['content']}" for m in self.history)
         response = await mlx_client.complete([{"role": "system", "content": SUMMARY_PROMPT},
                                               {"role": "user", "content": transcript}])

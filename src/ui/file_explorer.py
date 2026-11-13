@@ -23,7 +23,6 @@ SCAN_BUDGET = 50_000
 SCAN_DELAY = 0.3
 
 class UserDirectoryTree(DirectoryTree):
-    """DirectoryTree without dot-files and Finder-hidden entries."""
 
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
         return [path for path in paths if disk_scan.is_user_facing(path)]
@@ -64,7 +63,6 @@ class FileExplorerScreen(ModalScreen[Path | None]):
 
     @work(thread=True, exclusive=True, group="scan")
     def scan(self, path: Path) -> None:
-        """Size of the highlighted file, or a folder's total size and file count."""
         try:
             if path.is_dir():
                 info = disk_scan.folder_size(str(path), disk_scan.Budget(SCAN_BUDGET))

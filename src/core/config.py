@@ -6,7 +6,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def read_env(name: str) -> str:
-    """Value from the environment, else from the .env file in the repo folder, else ""."""
     if os.environ.get(name):
         return os.environ[name]
     env_file = PROJECT_ROOT / ".env"
@@ -18,7 +17,6 @@ def read_env(name: str) -> str:
     return ""
 
 def local_timezone() -> str:
-    """IANA name of this machine's timezone (e.g. Europe/Warsaw), from TZ or /etc/localtime."""
     if os.environ.get("TZ"):
         return os.environ["TZ"]
     target = os.path.realpath("/etc/localtime")
@@ -26,7 +24,6 @@ def local_timezone() -> str:
         return target.split("zoneinfo/", 1)[1]
     return "Europe/London"
 
-# Context windows to choose from in the settings popup (key c)
 CONTEXT_LENGTHS = [2048, 4096, 8192, 16384, 32768]
 
 @dataclass
@@ -37,7 +34,6 @@ class Config:
     file_embed_host: str = "http://127.0.0.1:8001"
     # The files the user saved and their embeddings (library.py); not in ~/.cache, because it can't be rebuilt without them
     library_path: Path = Path.home() / ".local" / "share" / "deckartes" / "library.db"
-    # Saved conversations of the app and the Telegram bot (history.py)
     history_path: Path = Path.home() / ".local" / "share" / "deckartes" / "history.db"
     mlx_server_command: str = "~/.local/bin/rapid-mlx"
     model: str = "LiquidAI/LFM3-1.7B-MLX-4bit"
@@ -80,12 +76,10 @@ class Config:
     anime_digest_statuses: tuple[str, ...] = ("watching", "to-watch")
     # Calendar that add_calendar_event adds to; "" = the default calendar in Calendar's settings
     calendar_name: str = ""
-    # Used for "today" and airing times
     timezone: str = field(default_factory=local_timezone)
     # Timetable to follow: "sub" (subtitled release), "raw" (Japanese broadcast) or "dub"
     anime_air_type: str = "sub"
     # Anime rated at or below this (0-10 scale, i.e. 6.0 = 60%) are left out; unrated ones are kept
     anime_min_rating: float = 6.0
 
-# Shared instance: import it anywhere and read or change its fields
 config = Config()

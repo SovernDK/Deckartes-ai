@@ -74,7 +74,6 @@ class Bot:
         return self.turn is not None and not self.turn.done()
 
     async def run(self) -> None:
-        """Poll Telegram until cancelled."""
         model = asyncio.create_task(self._start_model())
         try:
             await self._register_commands()
@@ -167,7 +166,6 @@ class Bot:
         await self._send(parts)
 
     async def _reply_to(self, question: str) -> list[Part]:
-        """Run the turn and return the messages to send."""
         reply = ""
         failure = None
         async with aclosing(self.conversation.stream_reply(question, self.confirm)) as events:
@@ -191,7 +189,6 @@ class Bot:
             await asyncio.sleep(TYPING_SECONDS)
 
     async def _send(self, parts: list[Part]) -> None:
-        """Send a reply's parts, trying each a few times."""
         for index, (text, entities) in enumerate(parts):
             if index:
                 await asyncio.sleep(PART_PAUSE_SECONDS)
@@ -260,7 +257,6 @@ def setup_logging() -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 async def serve() -> None:
-    """Run the bot until a signal asks it to stop, then stop the model servers it started."""
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
     stop_signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)

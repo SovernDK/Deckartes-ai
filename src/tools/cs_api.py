@@ -17,6 +17,8 @@ The public functions at the bottom take a tool's arguments and return tool text.
 
 import datetime as dt
 import re
+from collections.abc import Sequence
+from typing import Any
 
 from core import clock, http_client
 from core.config import config
@@ -108,7 +110,7 @@ async def _ranking(region: str, count: int) -> dict:
 def _team_key(name: str) -> str:
     return " ".join(word for word in normalize(name).split() if word not in TEAM_NAME_FILLER)
 
-async def _valve_rank(team_name: str, players: list[str] = ()) -> dict | None:
+async def _valve_rank(team_name: str, players: Sequence[str] = ()) -> dict | None:
     """The team's place in Valve's global standings, or None when it isn't ranked. Matched by
     name, else by sharing at least 3 players, since the two sources name some teams differently."""
     try:
@@ -247,6 +249,7 @@ async def _player_info(name: str) -> list[dict]:
                           name, ("name",))
     players = [p for p in players if (p.get("current_videogame") or {}).get("slug") in (None, "cs-go")]
     results = []
+    p: dict[str, Any]
     for p in players[:3]:
         team = p.get("current_team") or {}
         if team.get("id") and not _age(p):
@@ -336,8 +339,8 @@ async def _tournaments(status: str) -> list[dict]:
 
     found = sorted(events.values(), key=lambda e: (TIERS.index(e["tier"].lower()), e["begins"] or ""))
     for event in found:
-        event["begins"] = (_local(event["begins"]).date().isoformat() if event["begins"] else None)
-        event["ends"] = (_local(event["ends"]).date().isoformat() if event["ends"] else None)
+        event["begins"] = (clock.to_local(event["begins"]).date().isoformat() if event["begins"] else None)
+        event["ends"] = (clock.to_local(event["ends"]).date().isoformat() if event["ends"] else None)
     return found
 
 # Text for the model: one line per match or team, shared context in headers, no null fields.

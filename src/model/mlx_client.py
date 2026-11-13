@@ -7,7 +7,7 @@ back on the next turn. Failures raise ModelServerError with a readable message.
 import asyncio
 import json
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -105,7 +105,7 @@ def _add_tool_call_delta(calls: dict[int, dict], delta: dict) -> None:
     arguments = function.get("arguments") or ""
     call["arguments"] += arguments if isinstance(arguments, str) else json.dumps(arguments)
 
-async def stream_chat(messages: list[dict], tools: list | None = None) -> AsyncIterator[Delta]:
+async def stream_chat(messages: list[dict], tools: list | None = None) -> AsyncGenerator[Delta, None]:
     """Stream a reply. Closing this generator closes the connection, which stops the generation."""
     await asyncio.to_thread(mlx_server.ensure_chat)
     body = {**_chat_body(messages, tools), "stream": True, "stream_options": {"include_usage": True}}

@@ -8,7 +8,7 @@ behind by a conversation that never got an answer. Dates are local time, "YYYY-M
 
 import datetime as dt
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 
@@ -114,7 +114,7 @@ class Saver:
                        [m for m in saved.messages if m.role in ("user", "assistant")])
 
 @contextmanager
-def _database() -> Iterator[sqlite3.Connection]:
+def _database() -> Generator[sqlite3.Connection, None, None]:
     """A connection whose changes are committed together at the end, or not at all."""
     config.history_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(config.history_path, timeout=30)
@@ -136,15 +136,17 @@ def _add(conversation_id: int | None, messages: list[Message], *, source: str, p
     """Save a finished turn's messages and return the conversation's id. A conversation that
     isn't saved yet, or was deleted meanwhile, is started anew with these messages."""
     with _database() as db:
-        exists = conversation_id is not None and db.execute(
-            "SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)).fetchone()
-        if not exists:
+        if conversation_id is not None and db.execute(
+                "SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)).fetchone():
+            saved_id: int = conversation_id
+        else:
             started = messages[0].created_at
-            conversation_id = db.execute(
-                "INSERT INTO conversations (source, preset, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (source, preset, system_prompt, started, started)).lastrowid
-        _insert(db, conversation_id, messages)
-        return conversation_id
+            saved_id = db.execute(
+                "INSERT INTO conversations (source, preset, system_prompt, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) RETURNING id",
+                (source, preset, system_prompt, started, started)).fetchone()[0]
+        _insert(db, saved_id, messages)
+        return saved_id
 
 def _add_summary(conversation_id: int, summary: Message) -> None:
     with _database() as db:
@@ -169,10 +171,11 @@ def load(conversation_id: int) -> Saved:
                          (conversation_id,)).fetchone()
         if row is None:
             raise KeyError(conversation_id)
+        source, preset, system_prompt = row
         messages = [Message(*m) for m in db.execute(
             "SELECT role, content, created_at, model FROM messages WHERE conversation_id = ? ORDER BY id",
             (conversation_id,))]
-    return Saved(conversation_id, *row, messages)
+    return Saved(conversation_id, source, preset, system_prompt, messages)
 
 def delete(conversation_id: int) -> None:
     with _database() as db:

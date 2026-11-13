@@ -12,7 +12,7 @@ import datetime as dt
 import json
 import re
 from collections import Counter
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import aclosing, contextmanager
 from dataclasses import dataclass, field
 from functools import partial
@@ -230,8 +230,9 @@ def _arguments_usable(call: Call) -> bool:
     return True
 
 def _call_passes(call: Call, checks: dict) -> bool:
-    return _arguments_usable(call) and all(
-        name in call.arguments and _value_matches(call.arguments[name], expected) for name, expected in checks.items())
+    arguments = call.arguments
+    return arguments is not None and _arguments_usable(call) and all(
+        name in arguments and _value_matches(arguments[name], expected) for name, expected in checks.items())
 
 def _arguments_ok(case: Case, calls: list[Call]) -> bool:
     """Each step has a call with usable arguments that pass its checks."""
@@ -329,7 +330,7 @@ def _with_case_groups(case: Case, selection: tool_router.Selection) -> tool_rout
     return tool_router.Selection(GROUPS.sent_with(groups, TOOLS), selection.groups, selection.scores)
 
 @contextmanager
-def _run_settings(suite: Suite) -> Iterator[None]:
+def _run_settings(suite: Suite) -> Generator[None, None, None]:
     """The fixed preset, routing and time of a run; the user's come back afterwards."""
     saved = config.system_prompt, config.tool_routing, config.timezone
     config.system_prompt, config.tool_routing, config.timezone = PRESET, True, suite.timezone
@@ -414,6 +415,10 @@ class Run:
     def scored(self) -> list[CaseResult]:
         return [result for result in self.results if result.score is not None]
 
+    def _scores(self) -> list[tuple[CaseResult, Score]]:
+        """The scored results paired with their scores, typed as not None."""
+        return [(result, result.score) for result in self.results if result.score is not None]
+
     @property
     def errors(self) -> int:
         return sum(result.score is None for result in self.results)
@@ -447,15 +452,15 @@ class Run:
         return self._headline("full_pass")
 
     def failures(self) -> Counter:
-        return Counter(r.score.label for r in self.scored if r.score.label)
+        return Counter(score.label for _, score in self._scores() if score.label)
 
     def weakest_tools(self) -> list[tuple[str, int, int]]:
         """(tool, passed, cases) of the tools with failures, worst first; a step counts for its first tool."""
         tally: dict[str, list[int]] = {}
-        for result in self.scored:
+        for result, score in self._scores():
             for step in result.case.expect:
                 counts = tally.setdefault(step[0], [0, 0])
-                counts[0] += result.score.full_pass
+                counts[0] += score.full_pass
                 counts[1] += 1
         failing = [(tool, passed, total) for tool, (passed, total) in tally.items() if passed < total]
         return sorted(failing, key=lambda item: (item[1] / item[2], item[0]))[:WEAKEST_TOOLS]

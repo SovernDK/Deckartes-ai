@@ -8,6 +8,9 @@ Times are in config.timezone. EventKit is blocking, so the public functions at t
 the private ones in a thread and return tool text.
 """
 
+# PyObjC builds EventKit and Foundation at runtime, so Pylance can't see their names
+# pyright: reportAttributeAccessIssue=false
+
 import asyncio
 import datetime as dt
 import threading

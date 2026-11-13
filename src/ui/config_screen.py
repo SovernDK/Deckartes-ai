@@ -99,6 +99,7 @@ class ConfigScreen(ModalScreen[bool]):
             return
 
         context = self.query_one("#context", Select).value
+        assert isinstance(context, int), "the context select has no blank option"
 
         config.temperature = temperature
         config.context_length = context

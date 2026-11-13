@@ -12,6 +12,7 @@ The public functions at the bottom take a tool's arguments and return tool text.
 
 import datetime as dt
 import re
+from typing import Any
 
 from core import clock, http_client
 from core.config import config
@@ -31,7 +32,8 @@ LIST_PAGE_SIZE = 200
 class AnimeScheduleError(Exception):
     pass
 
-async def _get(path: str, params: dict, max_age: float = CACHE_SECONDS) -> dict | list:
+async def _get(path: str, params: dict, max_age: float = CACHE_SECONDS) -> Any:
+    """The decoded JSON: a list for timetables, an object for the other paths."""
     res = await http_client.request("GET", f"{API_URL}{path}", name="AnimeSchedule", error=AnimeScheduleError,
                                     params=params, token=config.animeschedule_token,
                                     token_env="ANIMESCHEDULE_TOKEN", max_age=max_age)
@@ -156,7 +158,7 @@ async def _upcoming_episodes() -> dict[str, tuple[dt.datetime, dict]]:
                 upcoming[entry["route"]] = (airs, entry)
     return upcoming
 
-async def _next_episodes() -> dict[str, tuple[dt.datetime, int]]:
+async def _next_episodes() -> dict[str, tuple[dt.datetime, int | None]]:
     return {route: (airs, entry.get("episodeNumber"))
             for route, (airs, entry) in (await _upcoming_episodes()).items()}
 
@@ -242,7 +244,7 @@ async def _continuing_shows(name: str) -> tuple[str, list[dict], bool]:
 
 async def _list_entries(status: str) -> list[dict]:
     async def fetch(index: int) -> tuple[list, None]:
-        params = {"offset": index * LIST_PAGE_SIZE, "limit": LIST_PAGE_SIZE}
+        params: dict[str, int | str] = {"offset": index * LIST_PAGE_SIZE, "limit": LIST_PAGE_SIZE}
         if status != "all":
             params["list"] = status
         data = await _get(f"/animelists/{config.animeschedule_user}", params, max_age=LIST_CACHE_SECONDS)

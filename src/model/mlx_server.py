@@ -110,6 +110,8 @@ class _Server:
 
 def _address(url: str) -> list[str]:
     parts = urlsplit(url)
+    if not parts.hostname or not parts.port:
+        raise ValueError(f"Model server URL {url!r} needs a host and a port")
     return ["--host", parts.hostname, "--port", str(parts.port)]
 
 def _chat_arguments() -> list[str]:

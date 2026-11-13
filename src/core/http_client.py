@@ -9,7 +9,7 @@ Responses are cached in memory for the max_age they were fetched with, at most M
 
 import datetime as dt
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 
 import httpx
 from cachetools import TLRUCache
@@ -21,9 +21,11 @@ _transport: httpx.AsyncBaseTransport | None = None
 
 MAX_CACHED = 256
 
+def _expires(_key: tuple, value: tuple[float, httpx.Response], now: float) -> float:
+    return now + value[0]
+
 # Entries are (max_age, response); the timer is looked up on each call, so tests can patch time.monotonic
-_cache: TLRUCache = TLRUCache(maxsize=MAX_CACHED, ttu=lambda key, value, now: now + value[0],
-                              timer=lambda: time.monotonic())
+_cache: TLRUCache = TLRUCache(maxsize=MAX_CACHED, ttu=_expires, timer=lambda: time.monotonic())
 
 async def request(method: str, url: str, *, name: str, error: type[Exception],
                   params: dict | None = None, json: dict | None = None,
@@ -52,7 +54,7 @@ async def request(method: str, url: str, *, name: str, error: type[Exception],
     except httpx.HTTPError as e:
         raise error(f"Could not reach {name}: {e}") from e
 
-    if res.status_code in (status_messages or {}):
+    if status_messages and res.status_code in status_messages:
         raise error(status_messages[res.status_code])
     if res.status_code == 429:
         reset = res.headers.get("x-ratelimit-reset")
@@ -66,7 +68,7 @@ async def request(method: str, url: str, *, name: str, error: type[Exception],
     return res
 
 async def pages(fetch: Callable[[int], Awaitable[tuple[list, int | None]]], page_size: int,
-                max_pages: int) -> AsyncIterator[list]:
+                max_pages: int) -> AsyncGenerator[list, None]:
     """Yield a list's pages, stopping after the last one or max_pages. Break out to stop early.
 
     await fetch(index), with index counting from 0, returns (items, total). A total (the API's

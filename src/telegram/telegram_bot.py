@@ -88,9 +88,16 @@ class Bot:
                     delay = min(delay * 2, POLL_RETRY_LIMIT_SECONDS)
         finally:
             model.cancel()
-            if self.busy:
-                self.turn.cancel()
-                await asyncio.gather(self.turn, return_exceptions=True)
+            await self._stop_turn()
+
+    async def _stop_turn(self) -> bool:
+        """Cancel the running turn and wait for it to end. Returns whether one was running."""
+        turn = self.turn
+        if turn is None or turn.done():
+            return False
+        turn.cancel()
+        await asyncio.gather(turn, return_exceptions=True)
+        return True
 
     async def _start_model(self) -> None:
         """Have the model ready for the first question; a turn starts it too if this fails."""
@@ -147,12 +154,7 @@ class Bot:
                 self.conversation.clear()
                 reply = "Conversation cleared."
         elif name == "stop":
-            if self.busy:
-                self.turn.cancel()
-                await asyncio.gather(self.turn, return_exceptions=True)
-                reply = "Stopped."
-            else:
-                reply = "Nothing to stop."
+            reply = "Stopped." if await self._stop_turn() else "Nothing to stop."
         else:
             reply = HELP
         await telegram_api.send_message(self.owner, reply)
@@ -259,6 +261,7 @@ def setup_logging() -> None:
 async def serve() -> None:
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
+    assert task is not None, "serve() runs as a task"
     stop_signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
     for stop_signal in stop_signals:
         loop.add_signal_handler(stop_signal, task.cancel)

@@ -2,7 +2,7 @@
 "what time is it for the user" has one owner and tests have one thing to freeze."""
 
 import datetime as dt
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from zoneinfo import ZoneInfo
 
@@ -18,7 +18,7 @@ def now() -> dt.datetime:
     return _frozen if _frozen is not None else dt.datetime.now(zone())
 
 @contextmanager
-def frozen_at(moment: dt.datetime) -> Iterator[None]:
+def frozen_at(moment: dt.datetime) -> Generator[None, None, None]:
     global _frozen
     _frozen = moment
     try:

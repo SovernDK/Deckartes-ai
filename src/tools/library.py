@@ -17,7 +17,7 @@ import os
 import re
 import sqlite3
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -140,7 +140,7 @@ class _Unreadable(ValueError):
     """This file can't be loaded; a folder load carries on with the next one."""
 
 @contextmanager
-def _database() -> Iterator[sqlite3.Connection]:
+def _database() -> Generator[sqlite3.Connection, None, None]:
     """A connection whose changes are committed together at the end, or not at all."""
     config.library_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(config.library_path, timeout=30)
@@ -224,17 +224,19 @@ def _span(first: tuple[str, int], last: tuple[str, int]) -> str:
 def _chunk(sections: list[_Section]) -> list[_Chunk]:
     """Paragraphs packed into chunks of up to about CHUNK_CHARS, each starting with the last
     OVERLAP_CHARS of the one before, so text cut at a boundary is whole in one of them."""
-    chunks, parts, first, last, fresh = [], [], None, None, False
+    chunks: list[_Chunk] = []
+    parts: list[str] = []
+    # Where each part after the overlap carried over from the previous chunk comes from
+    places: list[tuple[str, int]] = []
     for piece_where, text in _pieces(sections):
-        # fresh: parts holds more than the overlap carried over from the previous chunk
-        if fresh and sum(len(p) for p in parts) + len(text) > CHUNK_CHARS:
+        if places and sum(len(p) for p in parts) + len(text) > CHUNK_CHARS:
             body = "\n\n".join(parts)
-            chunks.append(_Chunk(body, _span(first, last)))
-            parts, first = [body[-OVERLAP_CHARS:]], piece_where
+            chunks.append(_Chunk(body, _span(places[0], places[-1])))
+            parts, places = [body[-OVERLAP_CHARS:]], []
         parts.append(text)
-        first, last, fresh = first or piece_where, piece_where, True
-    if fresh:
-        chunks.append(_Chunk("\n\n".join(parts), _span(first, last)))
+        places.append(piece_where)
+    if places:
+        chunks.append(_Chunk("\n\n".join(parts), _span(places[0], places[-1])))
     return chunks
 
 def _readable_chunks(path: Path) -> list[_Chunk]:

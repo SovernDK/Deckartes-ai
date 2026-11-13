@@ -92,7 +92,7 @@ class DecartesApp(App):
         shortcuts = []
         for binding in self.BINDINGS:
             if isinstance(binding, tuple):
-                binding = Binding(*binding)
+                binding = Binding(binding[0], binding[1], binding[2] if len(binding) == 3 else "")
             shortcuts.append((binding.key_display or binding.key, binding.tooltip or binding.description))
         commands = [(f"/{name}", description) for name, (_, description) in Chat.COMMANDS.items()]
         self.push_screen(HelpScreen(shortcuts, commands))

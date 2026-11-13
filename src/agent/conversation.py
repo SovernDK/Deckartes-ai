@@ -19,7 +19,7 @@ the turn, so the earlier turns of the next prompt match the cached ones exactly.
 """
 
 import datetime as dt
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import aclosing
 from dataclasses import dataclass, field
 
@@ -207,7 +207,7 @@ class Conversation:
         self.context_tokens = 0
         return summary
 
-    async def stream_reply(self, query: str, confirm: Confirm | None = None) -> AsyncIterator[Event]:
+    async def stream_reply(self, query: str, confirm: Confirm | None = None) -> AsyncGenerator[Event, None]:
         """Run one turn, yielding its events. A Failed comes last and the turn isn't saved.
         confirm asks the user before a tool changes something; without it such tools are refused."""
         self.last_turn = turn = TurnInfo()

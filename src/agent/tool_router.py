@@ -60,7 +60,7 @@ def _unit(vectors: list[list[float]]) -> np.ndarray:
 async def _example_vectors() -> dict[str | None, np.ndarray]:
     key = (config.host, config.embed_model)
     if key not in _examples:
-        groups = {name: GROUPS.examples(name) for name in GROUPS.names}
+        groups: dict[str | None, list[str]] = {name: GROUPS.examples(name) for name in GROUPS.names}
         groups[None] = NO_TOOL_EXAMPLES
         texts = [text for examples in groups.values() for text in examples]
         vectors = _unit(await _embed(texts))
@@ -103,7 +103,7 @@ async def _route(query: str, previous: str | None, groups: list[str]) -> tuple[l
                 scores[name] = max(scores[name], PREVIOUS_WEIGHT * score)
         best = max(scores.values())
 
-    ranked = sorted(scores, key=scores.get, reverse=True)
+    ranked = sorted(scores, key=lambda name: scores[name], reverse=True)
     if best >= CONFIDENT:
         return chosen([name for name in ranked if scores[name] >= max(CONFIDENT, best - MARGIN)])
     if best < MIN_SCORE:

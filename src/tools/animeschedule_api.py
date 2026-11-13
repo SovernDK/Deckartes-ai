@@ -15,7 +15,7 @@ import re
 
 from core import clock, http_client
 from core.config import config
-from core.names import normalize
+from core.names import closest_by_words, normalize
 
 API_URL = "https://animeschedule.net/api/v3"
 PAGE_SIZE = 18
@@ -163,35 +163,40 @@ async def _next_episodes() -> dict[str, tuple[dt.datetime, int]]:
 def _format_airs(airs: dt.datetime) -> str:
     return airs.strftime("%A %Y-%m-%d %H:%M")
 
-async def _find_episodes(name: str) -> list[dict]:
+async def _find_episodes(name: str) -> tuple[list[dict], bool]:
     """Next subtitled episode of every show whose English, romaji or main title contains all
-    words of name (case and punctuation ignored), soonest first."""
+    words of name (case and punctuation ignored), soonest first. When none does, the one show
+    closest to name instead; the flag says the result is that closest match."""
     words = normalize(name).split()
     if not words:
         raise AnimeScheduleError("Give the name of an anime")
 
-    matches = []
-    for airs, entry in (await _upcoming_episodes()).values():
-        titles = [normalize(entry.get(key) or "") for key in ("english", "romaji", "title")]
-        if any(all(word in title for word in words) for title in titles):
-            matches.append((airs, entry))
+    upcoming = list((await _upcoming_episodes()).values())
+    def titles(entry: dict) -> list[str]:
+        return [normalize(entry.get(key) or "") for key in ("english", "romaji", "title")]
+    matches = [(airs, entry) for airs, entry in upcoming
+               if any(all(word in title for word in words) for title in titles(entry))]
+    closest = None if matches else closest_by_words(name, ((match, titles(match[1])) for match in upcoming))
+    if closest:
+        matches = [closest]
     matches.sort(key=lambda match: match[0])
 
     return [{
         "name": entry.get("english") or entry["title"],
         "episode": entry.get("episodeNumber"),
         "airs": airs,
-    } for airs, entry in matches]
+    } for airs, entry in matches], closest is not None
 
 def _titles(anime: dict) -> list[str]:
     names = anime.get("names") or {}
     titles = [anime.get("title"), names.get("english"), names.get("romaji"), *(names.get("synonyms") or [])]
     return [normalize(title) for title in titles if title]
 
-async def _continuing_shows(name: str) -> tuple[str, list[dict]]:
+async def _continuing_shows(name: str) -> tuple[str, list[dict], bool]:
     """Next season's name, and whether currently airing shows matching name will still air then, estimated from
     the next subtitled episode and the announced episode count (one episode a week). Says
-    "unknown" with the reason when the count isn't announced or the show isn't in the timetable."""
+    "unknown" with the reason when the count isn't announced or the show isn't in the timetable.
+    When no show matches, the one closest to name instead; the flag says it is that closest match."""
     words = normalize(name).split()
     if not words:
         raise AnimeScheduleError("Give the name of an anime")
@@ -201,10 +206,14 @@ async def _continuing_shows(name: str) -> tuple[str, list[dict]]:
     next_season = f"{season.title()} {year} (starts {season_start})"
     upcoming = await _next_episodes()
 
+    ongoing = await _all_anime({"airing-statuses": "ongoing"})
+    found = [anime for anime in ongoing if any(all(word in title for word in words) for title in _titles(anime))]
+    closest = None if found else closest_by_words(name, ((anime, _titles(anime)) for anime in ongoing))
+    if closest:
+        found = [closest]
+
     shows = []
-    for anime in await _all_anime({"airing-statuses": "ongoing"}):
-        if not any(all(word in title for word in words) for title in _titles(anime)):
-            continue
+    for anime in found:
         total = anime.get("episodes") or None
         next_airs, next_number = upcoming.get(anime["route"], (None, None))
         show = {"name": (anime.get("names") or {}).get("english") or anime["title"]}
@@ -229,7 +238,7 @@ async def _continuing_shows(name: str) -> tuple[str, list[dict]]:
                               "Breaks or delays can push it later.")
         shows.append(show)
 
-    return next_season, shows
+    return next_season, shows, closest is not None
 
 async def _list_entries(status: str) -> list[dict]:
     async def fetch(index: int) -> tuple[list, None]:
@@ -440,12 +449,16 @@ async def airing_on(date: str) -> str:
     day = clock.parse_date(date)
     return _airing_text(day, await _airing_shows(day))
 
+def _closest_line(name: str) -> str:
+    return f'No show is named "{name}"; the closest match is:\n'
+
 async def next_episode(name: str) -> str:
-    return _next_episode_text(name, await _find_episodes(name))
+    episodes, guessed = await _find_episodes(name)
+    return (_closest_line(name) if guessed else "") + _next_episode_text(name, episodes)
 
 async def continues_next_season(name: str) -> str:
-    next_season, shows = await _continuing_shows(name)
-    return _continues_text(name, next_season, shows)
+    next_season, shows, guessed = await _continuing_shows(name)
+    return (_closest_line(name) if guessed else "") + _continues_text(name, next_season, shows)
 
 async def user_list(status: str) -> str:
     status = status.strip().lower()

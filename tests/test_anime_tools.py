@@ -208,6 +208,18 @@ class NextEpisodeTest(AnimeToolTest):
         self.assertEqual(await tools.get_next_episode("pokemon horizons"),
                          "Pokémon Horizons: episode 5 airs Friday 2026-11-13 17:30 (local time)")
 
+    async def test_a_misspelt_name_gets_the_closest_match(self):
+        self.serve({TIMETABLE: weekly(episode("f", "Sousou no Frieren", "2026-11-13T16:30:00Z", 5, "Frieren"))})
+        self.assertEqual(await tools.get_next_episode("freiren"),
+                         'No show is named "freiren"; the closest match is:\n'
+                         "Frieren: episode 5 airs Friday 2026-11-13 17:30 (local time)")
+
+    async def test_a_name_too_far_from_any_show_finds_nothing(self):
+        self.serve({TIMETABLE: weekly(episode("g", "My Girlfriend's Friend", "2026-11-13T16:30:00Z", 5))})
+        self.assertEqual(await tools.get_next_episode("freiren"),
+                         "freiren: No upcoming subtitled episode found in this week's or next week's timetable. "
+                         "It may have finished, be on a break, or the name may differ.")
+
     async def test_says_when_nothing_is_found(self):
         self.serve({TIMETABLE: []})
         self.assertEqual(await tools.get_next_episode("Nope"),
@@ -222,6 +234,16 @@ class NextSeasonTest(AnimeToolTest):
 
     async def test_show_whose_finale_falls_after_the_season_starts_will_still_air(self):
         self.assertEqual(await self.answer(28),
+                         "Next season: Winter 2027 (starts 2027-01-01)\n"
+                         "Frieren WILL still be airing next season. The next episode is 20 of 28, on 2026-11-13. "
+                         "At one episode a week, the final episode (28) airs around 2027-01-08, after next season "
+                         "starts on 2027-01-01. Breaks or delays can push it later.")
+
+    async def test_a_misspelt_name_gets_the_closest_match(self):
+        self.serve({TIMETABLE: weekly(episode("f", "Frieren", "2026-11-13T16:30:00Z", 20)),
+                    ANIME: ongoing(show("f", "Frieren", episodes=28))})
+        self.assertEqual(await tools.will_air_next_season("freiren"),
+                         'No show is named "freiren"; the closest match is:\n'
                          "Next season: Winter 2027 (starts 2027-01-01)\n"
                          "Frieren WILL still be airing next season. The next episode is 20 of 28, on 2026-11-13. "
                          "At one episode a week, the final episode (28) airs around 2027-01-08, after next season "

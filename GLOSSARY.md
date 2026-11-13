@@ -36,6 +36,10 @@ _Avoid_: category, toolset
 The user's yes or no, asked by the front end running the turn, before a tool changes something outside the app. Without a way to ask, the change is refused.
 _Avoid_: approval, permission, confirm handler
 
+**Closest match**:
+A show, team or player found for a name that matched nothing exactly, usually because of a typo. Tool text always says it is a guess, so the model can tell the user.
+_Avoid_: fuzzy match, suggestion, correction
+
 **Local time**:
 A time expressed in the user's configured time zone, which is what every date and time in tool text uses.
 _Avoid_: system time, server time

@@ -20,7 +20,7 @@ import re
 
 from core import clock, http_client
 from core.config import config
-from core.names import normalize
+from core.names import closest_name, normalize
 
 API_URL = "https://api.pandascore.co/csgo"
 STANDINGS_REPO = "ValveSoftware/counter-strike_regional_standings"
@@ -122,6 +122,20 @@ async def _valve_rank(team_name: str, players: list[str] = ()) -> dict | None:
         if _team_key(row["team"]) == wanted or len(roster & valve_roster) >= 3:
             return {"rank": row["rank"], "points": row["points"], "as_of": date}
     return None
+
+async def _closest(kind: str, name: str) -> str | None:
+    """The team ("team") or player ("player") in Valve's global standings closest to a name PandaScore
+    found nothing for; None when nothing is close or the standings are unavailable."""
+    try:
+        _, rows = await _standings("global")
+    except CsError:
+        return None
+    if kind == "team":
+        choices = [row["team"] for row in rows]
+    else:
+        choices = [player.strip() for row in rows for player in row["roster"].split(",")]
+    closest = closest_name(name, choices)
+    return closest if closest and normalize(closest) != normalize(name) else None
 
 async def _ranked_teams() -> set[str]:
     """Name keys of the teams in Valve's global top MAJOR_TEAM_RANK (empty if unavailable)."""
@@ -472,20 +486,35 @@ def _tournaments_text(status: str, events: list[dict]) -> str:
 async def ranking(region: str, count: int) -> str:
     return _ranking_text(await _ranking(region, count))
 
+def _closest_line(kind: str, name: str) -> str:
+    return f'No {kind} is named "{name}"; the closest match is:\n'
+
 async def team_info(name: str) -> str:
-    return _team_text(name, await _team_info(name))
+    info = await _team_info(name)
+    if info is None and (closest := await _closest("team", name)) and (info := await _team_info(closest)):
+        return _closest_line("team", name) + _team_text(closest, info)
+    return _team_text(name, info)
 
 async def player_info(name: str) -> str:
-    return _player_text(name, await _player_info(name))
+    players = await _player_info(name)
+    if not players and (closest := await _closest("player", name)) and (players := await _player_info(closest)):
+        return _closest_line("player", name) + _player_text(closest, players)
+    return _player_text(name, players)
 
 async def live_matches() -> str:
     return _live_text(*await _live_matches())
 
+async def _team_matches_text(kind: str, team: str) -> str:
+    result = await _team_matches(kind, team)
+    if result is None and (closest := await _closest("team", team)) and (result := await _team_matches(kind, closest)):
+        return _closest_line("team", team) + _matches_text(kind, closest, result)
+    return _matches_text(kind, team, result)
+
 async def upcoming_matches(team: str) -> str:
-    return _matches_text("upcoming", team, await _team_matches("upcoming", team))
+    return await _team_matches_text("upcoming", team)
 
 async def match_results(team: str) -> str:
-    return _matches_text("past", team, await _team_matches("past", team))
+    return await _team_matches_text("past", team)
 
 async def tournaments(status: str) -> str:
     status = _tournament_status(status)

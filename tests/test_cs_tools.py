@@ -27,6 +27,10 @@ def standings(year: int = 2026) -> dict:
     return {f"{STANDINGS_FILES}/{year}": [{"name": f"standings_global_{year}_10_06.md"}],
             f"{STANDINGS_RAW}/{year}/standings_global_{year}_10_06.md": STANDINGS}
 
+def found_as(name: str, item: dict):
+    """A PandaScore search that finds item only by its exact name."""
+    return lambda request: [item] if request.url.params.get("search[name]") == name else []
+
 def match(status: str, first: dict, second: dict, *, scores: tuple[int, int] | None = None, winner: dict | None = None,
           tier: str = "s", **fields) -> dict:
     """A match as PandaScore returns it."""
@@ -96,8 +100,15 @@ class TeamResultsTest(CsToolTest):
                          "Recent results of Natus Vincere: No finished matches found")
 
     async def test_unknown_team_has_no_results(self):
-        self.serve({"/csgo/teams": []})
+        self.serve({**standings(), "/csgo/teams": []})
         self.assertEqual(await tools.get_cs_match_results("Nope"), "Nope: No team found with that name.")
+
+    async def test_a_misspelt_team_gets_the_closest_match_from_valves_standings(self):
+        self.serve({**standings(), "/csgo/teams": found_as("MOUZ", MOUZ), "/csgo/matches/past": [],
+                    "/csgo/matches/running": []})
+        self.assertEqual(await tools.get_cs_match_results("Mouzz"),
+                         'No team is named "Mouzz"; the closest match is:\n'
+                         "Recent results of MOUZ: No finished matches found")
 
 class TeamUpcomingTest(CsToolTest):
     async def test_a_started_match_is_listed_first(self):
@@ -208,14 +219,25 @@ class TeamTest(CsToolTest):
         self.serve_team(past=[finished(NAVI, MOUZ, (1, 0), NAVI, end_at=None)])
         self.assertIn(f"\n- date unknown: won 1-0 vs MOUZ ({DETAILS})", await tools.get_cs_team("Natus Vincere"))
 
+    async def test_a_misspelt_team_gets_the_closest_match_from_valves_standings(self):
+        self.serve({**standings(), "/csgo/teams": found_as("Vitality", TEAM | {"name": "Vitality", "players": []}),
+                    "/csgo/matches/past": [], "/csgo/matches/upcoming": [], "/csgo/matches/running": []})
+        self.assertEqual(await tools.get_cs_team("Vitallity"),
+                         'No team is named "Vitallity"; the closest match is:\n'
+                         "Vitality (NAVI, UA), Valve rank 1 (2010 points, as of 2026-10-06)\n"
+                         "Players: No roster listed\n"
+                         "Playing now: Not playing right now\n"
+                         "Next match: No upcoming match scheduled\n"
+                         "Recent results: No finished matches found")
+
     async def test_unknown_team_gets_a_spelling_hint(self):
-        self.serve({"/csgo/teams": []})
+        self.serve({**standings(), "/csgo/teams": []})
         self.assertEqual(await tools.get_cs_team("Nope"),
                          "Nope: No team found with that name. Check the spelling or try the full name "
                          "(e.g. Natus Vincere).")
 
     async def test_a_name_in_another_script_is_searched(self):
-        self.serve({"/csgo/teams": []})
+        self.serve({**standings(), "/csgo/teams": []})
         self.assertEqual(await tools.get_cs_team("Вега"),
                          "Вега: No team found with that name. Check the spelling or try the full name "
                          "(e.g. Natus Vincere).")
@@ -231,6 +253,15 @@ class PlayerTest(CsToolTest):
         self.assertEqual(await tools.get_cs_player("ZywOo"),
                          "ZywOo (Mathieu Herbaut, FR, 25): plays for Vitality, "
                          "Valve rank 1 (2010 points, as of 2026-10-06)\n"
+                         "Performance stats (rating, K/D, ADR) aren't available from this data source.")
+
+    async def test_a_misspelt_player_gets_the_closest_match_from_valves_rosters(self):
+        player = {"id": 5, "name": "ZywOo", "age": 25, "current_team": {"id": 7, "name": "Vitality"},
+                  "current_videogame": {"slug": "cs-go"}}
+        self.serve({**standings(), "/csgo/players": found_as("ZywOo", player)})
+        self.assertEqual(await tools.get_cs_player("zywo"),
+                         'No player is named "zywo"; the closest match is:\n'
+                         "ZywOo (25): plays for Vitality, Valve rank 1 (2010 points, as of 2026-10-06)\n"
                          "Performance stats (rating, K/D, ADR) aren't available from this data source.")
 
     async def test_data_outside_the_pandascore_plan_says_so(self):

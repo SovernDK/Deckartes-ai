@@ -115,7 +115,7 @@ class ReplacedToolFunctionsTest(TurnTest):
         self.assertEqual(client.sent[1]["messages"][-1]["content"], "fake result")
 
     async def test_a_turn_that_cannot_ask_the_user_refuses_a_tool_that_changes_something(self):
-        add = call("add_calendar_event", title="Dentist", date="tomorrow", start_time="14:30")
+        add = call("add_calendar_event", title="Dentist", date="2026-11-12", start_time="14:30")
         client = self.use([chunk(tool_calls=[add], done=True)], [chunk("sorry", done=True)])
         await self.reply()
         self.assertEqual(client.sent[1]["messages"][-1]["content"],

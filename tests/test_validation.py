@@ -41,7 +41,7 @@ def Tool(tool_name: str, /, **arguments) -> validation.Call:
 def outcome(*calls, reply="ok", looped=False) -> validation.Outcome:
     return validation.Outcome(calls=list(calls), reply=reply, looped=looped)
 
-ADD = {"title": "x", "date": "tomorrow", "start_time": "10:00"}
+ADD = {"title": "x", "date": "2026-11-12", "start_time": "10:00"}
 
 class ScoreTest(unittest.TestCase):
     def check(self, score, tool: bool, full: bool, label: str | None):
@@ -98,7 +98,7 @@ class ScoreTest(unittest.TestCase):
         self.check(validation.score(self.team_case(), outcome(Tool("get_cs_team", name="NAVI"))), True, False, "bad_arguments")
 
     def test_an_argument_may_list_acceptable_values(self):
-        fields = {"expect": ["get_calendar_events"], "arguments": {"get_calendar_events": {"date": ["tomorrow", "2026-11-12"]}}}
+        fields = {"expect": ["get_calendar_events"], "arguments": {"get_calendar_events": {"date": ["2026-11-12", "2026-11-13"]}}}
         self.check(validation.score(case(**fields), outcome(Tool("get_calendar_events", date="2026-11-12"))), True, True, None)
 
     def test_arguments_only_need_to_be_right_on_one_call(self):

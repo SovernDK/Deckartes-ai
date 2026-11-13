@@ -12,7 +12,7 @@ Calendar tests need a fake in place of EventKit. macOS gives calendar access to 
 
 `FakeEvent` has the EventKit shape: `title()`, `location()`, `notes()`, `startDate()`, `endDate()`, `isAllDay()` and `calendar()`. Its dates are real `NSDate`s, so `_slim` and the time zone conversion run as they do in the app.
 
-`add_calendar_event` asks the user through the `confirm` its turn passes. The tests' `run_tool` helper calls `tools.run_tool` with a `confirm` that records the question and returns the answer, covering both yes and no. `frozen_clock.freeze` fixes the time, which the past-date refusal and the relative days ("tomorrow", "next friday") depend on.
+`add_calendar_event` asks the user through the `confirm` its turn passes. The tests' `run_tool` helper calls `tools.run_tool` with a `confirm` that records the question and returns the answer, covering both yes and no. `frozen_clock.freeze` fixes the time, which the past-date refusal and the "today is …" in a refused date depend on.
 
 ## Not covered
 

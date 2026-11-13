@@ -437,7 +437,7 @@ async def top_season_anime(season: str, count: int) -> str:
     return _top_season_text(await _top_season(season, count))
 
 async def airing_on(date: str) -> str:
-    day = clock.parse_day(date)
+    day = clock.parse_date(date)
     return _airing_text(day, await _airing_shows(day))
 
 async def next_episode(name: str) -> str:

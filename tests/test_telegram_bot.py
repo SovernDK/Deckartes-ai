@@ -356,7 +356,7 @@ class ConfirmationTest(BotTest):
             self.addCleanup(patcher.stop)
         self.routes[PATH + "sendMessage"] = httpx.Response(500, text="down")
         self.bot.conversation = Conversation(tool_selector=select_nothing)
-        add = call("add_calendar_event", title="Dentist", date="tomorrow", start_time="14:30")
+        add = call("add_calendar_event", title="Dentist", date="2026-11-12", start_time="14:30")
         client = self.use_model([chunk(tool_calls=[add], done=True)], [chunk("Sorry", done=True)])
         await self.ask_and_finish("Add it")
         self.assertIn("Tool add_calendar_event failed", self.tool_result(client))

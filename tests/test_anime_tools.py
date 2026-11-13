@@ -132,15 +132,14 @@ class AiringTest(AnimeToolTest):
 
     async def test_day_with_nothing_airing_says_low_rated_shows_are_left_out(self):
         self.serve({TIMETABLE: [], ANIME: ongoing()})
-        self.assertEqual(await tools.get_anime_airing_on("tomorrow"),
+        self.assertEqual(await tools.get_anime_airing_on("2026-11-12"),
                          "No anime with a new subtitled episode on Thursday 2026-11-12 "
                          "(shows rated 6 or lower are left out).")
 
-    async def test_a_weekday_means_the_next_one(self):
-        self.serve({TIMETABLE: [], ANIME: ongoing()})
-        self.assertEqual(await tools.get_anime_airing_on("friday"),
-                         "No anime with a new subtitled episode on Friday 2026-11-13 "
-                         "(shows rated 6 or lower are left out).")
+    async def test_a_day_name_is_refused_with_today_so_the_model_can_retry(self):
+        self.assertEqual(await tools.run_tool("get_anime_airing_on", {"date": "friday"}),
+                         "Tool get_anime_airing_on failed: Date 'friday' must be YYYY-MM-DD; today is "
+                         "Wednesday 2026-11-11, so work out the date the user means from that")
 
 class DigestTest(AnimeToolTest):
     async def digest(self, timetable: list[dict], **statuses: list[str]) -> str | None:

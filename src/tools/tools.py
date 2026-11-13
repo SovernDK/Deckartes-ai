@@ -196,7 +196,7 @@ async def get_anime_airing_on(date: str) -> str:
     air that day; to find when a particular show airs, use get_next_episode instead.
 
     Args:
-        date: "today", "tomorrow", a weekday like "friday", or a date as YYYY-MM-DD
+        date: Date as YYYY-MM-DD. Work it out from the current date: "tomorrow" or "friday" must be given as its YYYY-MM-DD
     """
     return await anime.airing_on(date)
 
@@ -311,7 +311,7 @@ async def get_calendar_events(date: str) -> str:
     (local), calendar and location. Use it for "what do I have today" or "am I free on Friday".
 
     Args:
-        date: "today", "tomorrow", "yesterday", a weekday like "friday", or a date as YYYY-MM-DD
+        date: Date as YYYY-MM-DD. Work it out from the current date: "tomorrow" or "friday" must be given as its YYYY-MM-DD
     """
     return await cal.events_on(date)
 
@@ -348,9 +348,9 @@ async def add_calendar_event(title: str, date: str, start_time: str, end_date: s
 
     Args:
         title: Event title, e.g. "Dentist" or "NAVI vs Vitality"
-        date: "today", "tomorrow", a weekday like "friday", or a date as YYYY-MM-DD
+        date: Date as YYYY-MM-DD. Work it out from the current date: "tomorrow" or "friday" must be given as its YYYY-MM-DD
         start_time: Local start time as HH:MM (24-hour), e.g. "14:30", or "all-day"
-        end_date: Optional. The event's last day, in the same formats as date, only if it runs over several days
+        end_date: Optional. The event's last day as YYYY-MM-DD, only if it runs over several days
         end_time: Optional. Local end time as HH:MM (24-hour), e.g. "15:30"; leave it out for a one-hour event
     """
     return await cal.add_event(title, date, start_time, end_date, end_time, confirm)

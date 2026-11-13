@@ -81,30 +81,24 @@ class ReadTest(CalendarToolTest):
     async def test_lists_only_the_asked_days_events_with_location_on_one_line(self):
         self.events = [FakeEvent("Dentist", "2026-11-12 14:30", "2026-11-12 15:00", location="Clinic\nMain St"),
                        FakeEvent("Elsewhere", "2026-11-13 09:00", "2026-11-13 10:00")]
-        self.assertEqual(await tools.get_calendar_events("tomorrow"),
+        self.assertEqual(await tools.get_calendar_events("2026-11-12"),
                          "Calendar events for Thursday 2026-11-12 (local time):\n"
                          "- Dentist: 14:30-15:00 (calendar Home; at Clinic, Main St)")
 
     async def test_day_without_events_says_so(self):
-        self.assertEqual(await tools.get_calendar_events("tomorrow"),
+        self.assertEqual(await tools.get_calendar_events("2026-11-12"),
                          "No events in the calendar for Thursday 2026-11-12.")
 
     async def test_all_day_event_has_no_times(self):
         self.events = [FakeEvent("Holiday", "2026-11-12 00:00", "2026-11-12 23:59:59", all_day=True)]
-        self.assertEqual(await tools.get_calendar_events("thursday"),
+        self.assertEqual(await tools.get_calendar_events("2026-11-12"),
                          "Calendar events for Thursday 2026-11-12 (local time):\n"
                          "- Holiday: all day (calendar Home)")
 
-    async def test_same_weekday_is_today_unless_next(self):
-        self.assertEqual(await tools.get_calendar_events("wednesday"),
-                         "No events in the calendar for Wednesday 2026-11-11.")
-        self.assertEqual(await tools.get_calendar_events("next wednesday"),
-                         "No events in the calendar for Wednesday 2026-11-18.")
-
-    async def test_unknown_date_lists_the_accepted_forms(self):
-        self.assertEqual(await self.run_tool("get_calendar_events", {"date": "soon"}),
-                         "Tool get_calendar_events failed: Date 'soon' must be today, tomorrow, yesterday, "
-                         "a weekday or YYYY-MM-DD")
+    async def test_a_day_name_is_refused_with_today_so_the_model_can_retry(self):
+        self.assertEqual(await self.run_tool("get_calendar_events", {"date": "tomorrow"}),
+                         "Tool get_calendar_events failed: Date 'tomorrow' must be YYYY-MM-DD; today is "
+                         "Wednesday 2026-11-11, so work out the date the user means from that")
 
     async def test_rest_of_the_week_grouped_by_day(self):
         self.events = [FakeEvent("Trip", "2026-11-09 08:00", "2026-11-12 18:00"),
@@ -122,7 +116,7 @@ class ReadTest(CalendarToolTest):
 
     async def test_one_day_inside_a_longer_event_gives_its_dates(self):
         self.events = [FakeEvent("Trip", "2026-11-09 08:00", "2026-11-12 18:00")]
-        self.assertEqual(await tools.get_calendar_events("today"),
+        self.assertEqual(await tools.get_calendar_events("2026-11-11"),
                          "Calendar events for Wednesday 2026-11-11 (local time):\n"
                          "- Trip: Monday 2026-11-09 08:00 to Thursday 2026-11-12 18:00 (calendar Home)")
 
@@ -236,13 +230,13 @@ class AddTest(CalendarToolTest):
         self.save.assert_not_called()
 
     async def test_past_time_is_refused(self):
-        self.assertEqual(await self.add("today", "09:00"),
+        self.assertEqual(await self.add("2026-11-11", "09:00"),
                          "Tool add_calendar_event failed: Wednesday 2026-11-11 09:00 is in the past; "
                          "today is Wednesday 2026-11-11")
         self.assertEqual(self.questions, [])
 
     async def test_all_day_today_is_allowed(self):
-        self.assertEqual(await self.add("today", "all-day", end=""),
+        self.assertEqual(await self.add("2026-11-11", "all-day", end=""),
                          "Added to the calendar: Dentist: Wednesday 2026-11-11, all day (calendar Home)")
 
     async def test_bad_start_time_names_the_accepted_forms(self):

@@ -173,8 +173,8 @@ def _new_event(title: str, date: str, start_time: str, end_date: str | None, end
     title = title.strip()
     if not title:
         raise ValueError("The event needs a title")
-    day = clock.parse_day(date)
-    last = clock.parse_day(end_date) if end_date and end_date.strip() else day
+    day = clock.parse_date(date)
+    last = clock.parse_date(end_date) if end_date and end_date.strip() else day
     if start_time.strip().lower() in ("all-day", "all day", "allday"):
         if last < day:
             raise ValueError(f"The event's last day {_day(last)} is before its first day {_day(day)}")
@@ -288,7 +288,7 @@ def _found_text(result: dict) -> str:
     return "\n".join(lines)
 
 async def events_on(date: str) -> str:
-    return _events_text(await asyncio.to_thread(_events_on, clock.parse_day(date)))
+    return _events_text(await asyncio.to_thread(_events_on, clock.parse_date(date)))
 
 async def period_events(period: str) -> str:
     return _events_text(await asyncio.to_thread(_period_events, period))

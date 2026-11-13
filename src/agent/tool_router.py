@@ -14,9 +14,10 @@ still match calendar on its own), the previous question counts at PREVIOUS_WEIGH
 
 from dataclasses import dataclass
 
+import numpy as np
+
 from agent.prompts import allowed_tool_names
 from core.config import config
-from core.similarity import cosine
 from model import mlx_client
 from tools.tool_groups import GROUPS
 from tools.tools import tools_for
@@ -42,25 +43,34 @@ NO_TOOL_EXAMPLES = [
     "what is 20 percent of 150", "calculate 7% of 300", "how many minutes are in a day",
 ]
 
-# Example embeddings per (host, model); computed once, on first use
-_examples: dict[tuple[str, str], dict[str, list[list[float]]]] = {}
+# Example embeddings per (host, model), one matrix of unit rows per group; computed once, on first use
+_examples: dict[tuple[str, str], dict[str | None, np.ndarray]] = {}
 
 async def _embed(texts: list[str]) -> list[list[float]]:
     return await mlx_client.embed(texts)
 
-async def _example_vectors() -> dict[str, list[list[float]]]:
+def _unit(vectors: list[list[float]]) -> np.ndarray:
+    """The vectors as rows scaled to length 1, so a matrix product gives their cosines."""
+    matrix = np.asarray(vectors, dtype=np.float64)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    if not norms.all():
+        raise ValueError("The embedding model returned an all-zero vector")
+    return matrix / norms
+
+async def _example_vectors() -> dict[str | None, np.ndarray]:
     key = (config.host, config.embed_model)
     if key not in _examples:
         groups = {name: GROUPS.examples(name) for name in GROUPS.names}
         groups[None] = NO_TOOL_EXAMPLES
         texts = [text for examples in groups.values() for text in examples]
-        vectors = iter(await _embed(texts))
-        _examples[key] = {name: [next(vectors) for _ in examples] for name, examples in groups.items()}
+        vectors = _unit(await _embed(texts))
+        starts = np.cumsum([0, *(len(examples) for examples in groups.values())])
+        _examples[key] = {name: vectors[start:end] for name, start, end in zip(groups, starts, starts[1:])}
     return _examples[key]
 
-def _scores(vector: list[float], examples: dict) -> dict:
-    """Best similarity to each group's examples (None = the no-tools examples)."""
-    return {name: max(cosine(vector, e) for e in vectors) for name, vectors in examples.items()}
+def _scores(vector: np.ndarray, examples: dict) -> dict:
+    """Best cosine similarity of a unit vector to each group's examples (None = the no-tools examples)."""
+    return {name: float((matrix @ vector).max()) for name, matrix in examples.items()}
 
 def _is_follow_up(query: str) -> bool:
     text = query.strip().lower()
@@ -75,7 +85,7 @@ async def _route(query: str, previous: str | None, groups: list[str]) -> tuple[l
     they were chosen on: each group's, and "no_tools". Raises if the embedding model can't be reached."""
     examples = {name: vectors for name, vectors in (await _example_vectors()).items()
                 if name is None or name in groups}
-    vectors = await _embed([query, previous] if previous else [query])
+    vectors = _unit(await _embed([query, previous] if previous else [query]))
     scores = _scores(vectors[0], examples)
     no_tools = scores.pop(None)
     def chosen(names: list[str]) -> tuple[list[str], dict[str, float]]:

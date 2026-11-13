@@ -214,6 +214,12 @@ class TeamTest(CsToolTest):
                          "Nope: No team found with that name. Check the spelling or try the full name "
                          "(e.g. Natus Vincere).")
 
+    async def test_a_name_in_another_script_is_searched(self):
+        self.serve({"/csgo/teams": []})
+        self.assertEqual(await tools.get_cs_team("Вега"),
+                         "Вега: No team found with that name. Check the spelling or try the full name "
+                         "(e.g. Natus Vincere).")
+
 class PlayerTest(CsToolTest):
     async def test_age_comes_from_the_roster_and_the_clock(self):
         # Born 2000-11-12: still 25 on the frozen 2026-11-11

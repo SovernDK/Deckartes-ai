@@ -203,6 +203,11 @@ class NextEpisodeTest(AnimeToolTest):
         self.assertEqual(await tools.get_next_episode("SOUSOU-no: frieren!"),
                          "Frieren: episode 5 airs Friday 2026-11-13 17:30 (local time)")
 
+    async def test_name_matches_without_its_accents(self):
+        self.serve({TIMETABLE: weekly(episode("p", "Pokémon Horizons", "2026-11-13T16:30:00Z", 5))})
+        self.assertEqual(await tools.get_next_episode("pokemon horizons"),
+                         "Pokémon Horizons: episode 5 airs Friday 2026-11-13 17:30 (local time)")
+
     async def test_says_when_nothing_is_found(self):
         self.serve({TIMETABLE: []})
         self.assertEqual(await tools.get_next_episode("Nope"),

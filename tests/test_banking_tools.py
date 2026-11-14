@@ -161,7 +161,7 @@ class BankingTest(HttpTest):
             if prompt.startswith("Bank number"):
                 return next(numbers)
             sent_state = json.loads(server.requests[1].content)["state"]
-            return f"https://localhost:8080/callback?state={state or sent_state}&code=abc"
+            return f"{config.enable_banking_redirect_url}?state={state or sent_state}&code=abc"
         with mock.patch("builtins.input", typed), redirect_stdout(io.StringIO()) as printed:
             await banking._link()
         return printed.getvalue()

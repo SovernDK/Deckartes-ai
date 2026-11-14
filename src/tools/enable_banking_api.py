@@ -58,7 +58,7 @@ async def _request(method: str, path: str, *, params: dict | None = None, body: 
 # Linking a bank: banks -> start_auth -> (user approves in a browser) -> _session
 
 async def _banks(country: str) -> list[dict]:
-    """The banks Enable Banking offers in a country (two letters; the sandbox has mock banks),
+    """The banks Enable Banking offers in a country (two letters),
     each with its name and maximum_consent_validity (seconds) when the bank gives one."""
     data = await _request("GET", "/aspsps", params={"country": country})
     return data["aspsps"]
@@ -212,7 +212,7 @@ def _choose(banks: list[dict]) -> dict:
         print(f"Type a number from 1 to {len(banks)}")
 
 async def _link() -> None:
-    country = input("Country (two letters, e.g. FI): ").strip().upper()
+    country = input("Country (two letters, e.g. PL): ").strip().upper()
     banks = await _banks(country)
     if not banks:
         raise BankingError(f"Enable Banking offers no banks in {country!r}")
@@ -220,7 +220,7 @@ async def _link() -> None:
         print(f"{number}. {bank['name']}")
     url, state = await _start_auth(_choose(banks), country)
     print(f"\nOpen this link, log in and approve:\n{url}\n")
-    redirect = input("Paste the URL the browser ended up on (it may fail to load; that's fine):\n").strip()
+    redirect = input("Paste the address the page shows after you approve:\n").strip()
     link = await _session(_code_from(redirect, state))
     print(f"Linked {len(link['accounts'])} accounts, valid until {_expiry(link):%Y-%m-%d %H:%M}, "
           f"saved to {config.banking_session_path}")

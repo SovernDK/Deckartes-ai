@@ -68,8 +68,10 @@ class Config:
     # Enable Banking application id and the path of the private key (.pem) downloaded with it
     enable_banking_app_id: str = field(default_factory=lambda: read_env("ENABLE_BANKING_APP_ID"), repr=False)
     enable_banking_key_path: str = field(default_factory=lambda: read_env("ENABLE_BANKING_KEY_PATH"), repr=False)
-    # Must match a redirect URL registered for the Enable Banking application
-    enable_banking_redirect_url: str = "https://localhost:8080/callback"
+    # Must match a redirect URL registered for the Enable Banking application. Production apps need
+    # https and not localhost: this page (pages/callback, on GitHub Pages) only shows the address
+    # to paste back into the linking command
+    enable_banking_redirect_url: str = "https://soverndk.github.io/Deckartes-ai/callback/"
     # The bank link: Enable Banking's session and accounts (enable_banking_api.py); not in ~/.cache, since linking needs the user
     banking_session_path: Path = Path.home() / ".local" / "share" / "deckartes" / "banking_session.json"
     # Transactions listed per account by get_bank_transactions; keeps a long range inside the

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Deckartes bank link</title>
+<style>
+  :root { --bg: #f7f7f5; --fg: #1d1d1b; --muted: #66665f; --box: #ffffff; --line: #d9d9d3; --accent: #2f6f4f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --fg: #ecece8; --muted: #a3a39b; --box: #222220; --line: #3a3a36; --accent: #7cc49d; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 48px 16px; }
+  h1 { font-size: 1.4rem; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 0 0 16px; }
+  textarea { box-sizing: border-box; width: 100%; min-height: 6.5em; padding: 12px; border: 1px solid var(--line);
+             border-radius: 8px; background: var(--box); color: var(--fg); font: 13px/1.4 ui-monospace, monospace;
+             resize: vertical; word-break: break-all; }
+  button { margin-top: 12px; padding: 10px 18px; border: 0; border-radius: 8px; background: var(--accent);
+           color: var(--bg); font: inherit; font-weight: 600; cursor: pointer; }
+  .error { color: #c0392b; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Bank approved</h1>
+  <p id="hint">Copy this address and paste it into the terminal where Deckartes asked for it. Nothing is sent anywhere from this page.</p>
+  <textarea id="url" readonly aria-label="The address to paste into the terminal"></textarea>
+  <button id="copy" type="button">Copy</button>
+</main>
+<script>
+  // Only shows the address: the terminal checks it and exchanges the code with the app's private key
+  var address = window.location.href;
+  var query = new URLSearchParams(window.location.search);
+  var field = document.getElementById("url");
+  field.value = address;
+  if (query.get("error")) {
+    document.getElementById("title").textContent = "The bank refused access";
+    document.getElementById("title").className = "error";
+    document.getElementById("hint").textContent = "Paste this address into the terminal anyway; it will show the bank's reason ("
+      + query.get("error") + ").";
+  } else if (!query.get("code")) {
+    document.getElementById("title").textContent = "No code in this address";
+    document.getElementById("hint").textContent = "This page is where the bank sends you back after you approve access. Start linking from the terminal.";
+  }
+  document.getElementById("copy").addEventListener("click", function () {
+    field.select();
+    var done = function () { document.getElementById("copy").textContent = "Copied"; };
+    if (navigator.clipboard) { navigator.clipboard.writeText(address).then(done, function () { document.execCommand("copy"); done(); }); }
+    else { document.execCommand("copy"); done(); }
+  });
+</script>
+</body>
+</html>

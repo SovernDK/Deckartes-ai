@@ -1,18 +1,23 @@
 # Bank tools (`enable_banking_api.py`)
 
-`get_bank_transactions(date_from, date_to=None)` lists every linked account's transactions between two dates. The data comes from [Enable Banking](https://enablebanking.com/docs/api/reference/), an open-banking (PSD2) API that reads accounts at many European banks. The app is still on Enable Banking's sandbox, whose Mock ASPSP bank has made-up accounts.
+`get_bank_transactions(date_from, date_to=None)` lists every linked account's transactions between two dates. The data comes from [Enable Banking](https://enablebanking.com/docs/api/reference/), an open-banking (PSD2) API that reads accounts at many European banks. The app uses a production application in restricted mode, which can read only the accounts its owner linked; that is free for personal use, and a contract is needed only to offer it to others. A sandbox application works the same way, with made-up banks.
 
 ## Setup
 
-1. Register an application at Enable Banking. It gives an application id and a private key (`.pem`), and needs a redirect URL: register `config.enable_banking_redirect_url` (`https://localhost:8080/callback`).
-2. Put both in `.env` (see `.env.example`): `ENABLE_BANKING_APP_ID`, and `ENABLE_BANKING_KEY_PATH`, the path of the `.pem`, absolute or relative to the repo folder. `private/` is ignored by git, so `private/key.pem` is a good place.
-3. Link the bank, from `src/`:
+1. In the Enable Banking Control Panel, under API applications, register an application with environment **Production**. It gives an application id and a private key (`.pem`). As its redirect URL, register `config.enable_banking_redirect_url`, exactly: `https://soverndk.github.io/Deckartes-ai/callback/`.
+2. The new application is *Inactive*. Press **Activate by linking accounts** and approve at your bank: the application becomes active in restricted mode, for the accounts linked there. This doesn't give the app access to them; step 4 does.
+3. Put both in `.env` (see `.env.example`): `ENABLE_BANKING_APP_ID`, and `ENABLE_BANKING_KEY_PATH`, the path of the `.pem`, absolute or relative to the repo folder. `private/` is ignored by git, so `private/key.pem` is a good place.
+4. Link the bank through the API, from `src/`:
 
 ```bash
 ../venv/bin/python -m tools.enable_banking_api
 ```
 
-It asks for a country (two letters), lists that country's banks and prints a link. Approve access at the bank in a browser. It then redirects to the redirect URL, which doesn't load; paste that URL back into the terminal. The bank link (Enable Banking's session id, the accounts and when access ends) is saved to `config.banking_session_path` (`~/.local/share/deckartes/banking_session.json`), readable only by the user. It isn't kept in `~/.cache`, because making it again needs the user.
+It asks for a country (two letters), lists that country's banks and prints a link. Approve access at the bank in a browser, choosing the same accounts as in step 2. The bank then sends the browser to the callback page, which shows its own address with a Copy button; paste that into the terminal. The bank link (Enable Banking's session id, the accounts and when access ends) is saved to `config.banking_session_path` (`~/.local/share/deckartes/banking_session.json`), readable only by the user. It isn't kept in `~/.cache`, because making it again needs the user.
+
+## The redirect URL
+
+Production applications need an https redirect URL that isn't localhost, and Enable Banking refuses one that isn't registered (`REDIRECT_URI_NOT_ALLOWED`). Nothing has to run there: the code in the address is pasted back by hand, and is useless without the application's private key. `pages/callback/index.html` is a static page that only shows the address. `.github/workflows/pages.yml` publishes `pages/` (and nothing else) to GitHub Pages on each push that changes it; it needs Settings > Pages > Source set to *GitHub Actions* once. Changing the URL means changing it in the Control Panel and in `config.enable_banking_redirect_url` together.
 
 ## Signing requests
 

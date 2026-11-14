@@ -205,7 +205,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
   <li><strong>No UI in <code>Conversation</code>.</strong> Model-calling logic lives there; widgets only render events.</li>
   <li><strong>Events, not exceptions.</strong> A turn yields events; any failure is a final <code>Failed</code>.</li>
   <li><strong>One owner per concern.</strong> Time, and the ISO dates tools get (<code>parse_date</code>): <code>clock.py</code>. Names: <code>names.py</code>. Web HTTP: <code>http_client.py</code>. Model servers: <code>mlx_client.py</code> talks to them, <code>mlx_server.py</code> runs them.</li>
-  <li><strong>Prompts are data.</strong> <code>prompts.json</code> is re-read on every use.</li>
+  <li><strong>Prompts are data.</strong> Every prompt sent to a model is in <code>prompts.json</code>, read through <code>core/prompt_file.py</code> on every use.</li>
 </ol>
 </section>
 
@@ -359,15 +359,27 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
 </section>
 
 <section id="prompts">
-<h2>Prompt presets</h2>
-<p class="lead"><code>prompts.json</code>, selected by <code>config.system_prompt</code>, re-read on every use.</p>
+<h2>Prompts</h2>
+<p class="lead"><code>prompts.json</code> holds every prompt the app sends a model, in two sections, and is re-read on every use through <code>core/prompt_file.py</code>, which imports nothing from <code>tools</code> so tool backends can read their prompts too.</p>
+<table>
+  <tr><th>Section</th><th>Holds</th><th>Read with</th></tr>
+  <tr><td><code>presets</code></td><td>System prompts, selected by <code>config.system_prompt</code></td><td><code>prompt_file.presets()</code>, via <code>prompts.py</code></td></tr>
+  <tr><td><code>tasks</code></td><td>Fixed prompts of single jobs, with <code>{placeholders}</code> (literal braces doubled)</td><td><code>prompt_file.task(name, **values)</code></td></tr>
+</table>
+<table>
+  <tr><th>Task</th><th>Used by</th></tr>
+  <tr><td><code>tool_values_rule</code></td><td>Appended to presets with tools: take values from the conversation instead of asking</td></tr>
+  <tr><td><code>compact_summary</code></td><td>Compaction in <code>conversation.py</code></td></tr>
+  <tr><td><code>spending_labels</code></td><td>Labeling payees with categories in <code>spending.py</code></td></tr>
+  <tr><td><code>spending_comment</code></td><td>The model's comment under a spending digest in <code>spending.py</code></td></tr>
+</table>
 <table>
   <tr><th>Preset</th><th>Purpose</th><th>Tools</th></tr>
   <tr><td>Assistant</td><td>General helper, used by the app and the Telegram bot</td><td>all</td></tr>
 </table>
 <ol>
   <li><code>system_message()</code> always starts with the current local date, and <code>current_time_line()</code> puts the time just before each question, which keeps the prompt cache valid. Presets must not repeat either.</li>
-  <li>Presets that have tools also get <code>TOOL_VALUES_RULE</code>: take values from the conversation instead of asking the user for them.</li>
+  <li>Presets that have tools also get the <code>tool_values_rule</code> task: take values from the conversation instead of asking the user for them.</li>
   <li>The system message goes first on every turn and is never stored in the history.</li>
   <li>A new tool must be added to presets that list tools by name (not to <code>"all"</code>).</li>
   <li>An unknown tool name raises in <code>allowed_tool_names</code>, showing as an error and failing <code>tests/test_tools.py</code>.</li>

@@ -4,6 +4,7 @@ import unittest
 from unittest import mock
 
 from agent import prompts
+from core import prompt_file
 from core.config import config
 from frozen_clock import freeze
 from tools import tools
@@ -55,7 +56,7 @@ class PresetTest(unittest.TestCase):
         presets = [{"name": "A", "prompt": "Help.", "tools": "all"}, {"name": "B", "prompt": "Chat.", "tools": []}]
         with mock.patch.object(prompts, "load_prompts", return_value=presets):
             with mock.patch.object(config, "system_prompt", "A"):
-                self.assertTrue(prompts.system_message().endswith(f"Help. {prompts.TOOL_VALUES_RULE}"))
+                self.assertTrue(prompts.system_message().endswith(f"Help. {prompt_file.task('tool_values_rule')}"))
             with mock.patch.object(config, "system_prompt", "B"):
                 self.assertTrue(prompts.system_message().endswith("Chat."))
 

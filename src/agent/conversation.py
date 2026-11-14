@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from agent import history
 from agent.prompts import current_time_line, system_message
 from agent.tool_router import select_tools
-from core import clock
+from core import clock, prompt_file
 from core.config import config
 from model import mlx_client
 from tools.tools import Confirm, run_tool
@@ -124,13 +124,6 @@ class TurnInfo:
             text += f" · tools: {', '.join(self.tool_groups) or 'none'}"
         return text
 
-SUMMARY_PROMPT = (
-    "Summarise the conversation below so it can replace it as your only memory of it. "
-    "Keep what the user wants, facts and numbers they gave, decisions made, results found "
-    "(including tool results) and anything still open. Drop greetings and wording. "
-    "Write plain text, as short as the content allows."
-)
-
 def _add_tool_results(messages, content, tool_calls, results) -> None:
     messages.append({"role": "assistant", "content": content,
                      "tool_calls": [call.as_message() for call in tool_calls]})
@@ -197,7 +190,7 @@ class Conversation:
 
     async def _compact(self, usage: Usage) -> str:
         transcript = "\n\n".join(f"{m['role']}: {m['content']}" for m in self.history)
-        response = await mlx_client.complete([{"role": "system", "content": SUMMARY_PROMPT},
+        response = await mlx_client.complete([{"role": "system", "content": prompt_file.task("compact_summary")},
                                               {"role": "user", "content": transcript}])
         usage.count(response.usage)
         summary = response.content.strip()

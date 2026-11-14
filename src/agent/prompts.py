@@ -1,4 +1,4 @@
-"""System prompt presets from prompts.json.
+"""System prompt presets from prompts.json (read through core.prompt_file).
 
 Each preset has a name, a description, the system prompt text and the tools it may use:
 "all", a list of tool names from tools.TOOLS, or [] for none. Every system message starts
@@ -8,20 +8,13 @@ prompt has to stay the same from minute to minute for the server's prompt cache 
 The file is read on every use, so edits apply without a restart.
 """
 
-import json
-
-from core import clock
-from core.config import PROJECT_ROOT, config
+from core import clock, prompt_file
+from core.config import config
 from tools.tools import TOOLS_BY_NAME
 
-PROMPTS_FILE = PROJECT_ROOT / "prompts.json"
-
-# Added to every preset that has tools: small models otherwise ask for values they already have
-TOOL_VALUES_RULE = ("When a tool needs a value, take it from the conversation so far or leave out what is "
-                    "optional, and call the tool instead of asking the user for it.")
 
 def load_prompts() -> list[dict]:
-    return json.loads(PROMPTS_FILE.read_text())["prompts"]
+    return prompt_file.presets()
 
 def current_prompt() -> dict | None:
     for prompt in load_prompts():
@@ -39,7 +32,8 @@ def system_message() -> str:
     prompt = current_prompt()
     if prompt is None:
         return current_date_line()
-    rule = f" {TOOL_VALUES_RULE}" if prompt.get("tools", "all") else ""
+    # Small models otherwise ask for values they already have
+    rule = f" {prompt_file.task('tool_values_rule')}" if prompt.get("tools", "all") else ""
     return f"{current_date_line()}\n\n{prompt['prompt']}{rule}"
 
 def allowed_tool_names() -> list[str] | None:

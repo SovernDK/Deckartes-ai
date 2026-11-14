@@ -18,7 +18,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from core import clock, names
+from core import clock, names, prompt_file
 from model import mlx_client
 from model.mlx_server import ModelServerError
 from tools import bank_store
@@ -155,15 +155,8 @@ UNSURE = "Unsure"
 
 def _labeling_prompt(payees: list[tuple[str, bank.Payment]]) -> str:
     lines = [f"{number}. {_describe(payment)}" for number, (_, payment) in enumerate(payees, 1)]
-    return (f"Sort the user's payments into spending categories: {', '.join(CATEGORIES)}.\n"
-            "Each line is a payee: a shop, a company or a person. Card and BLIK payments are purchases, so "
-            "give them the category of what the payee sells. Use Transfers only for money sent to a person "
-            f"by name or to the user's own account. If the name doesn't tell you what the payee sells, answer "
-            f"{UNSURE}.\n"
-            'Examples: "BIEDRONKA" Groceries, "ORLEN" Fuel, "MCDONALDS" Restaurants & cafés, '
-            '"NETFLIX" Entertainment & subscriptions, "JAN KOWALSKI" Transfers.\n'
-            f"Answer with only a JSON object mapping each number to a category or {UNSURE}, like "
-            f'{{"1": "Groceries", "2": "{UNSURE}"}}.\n\n' + "\n".join(lines))
+    return prompt_file.task("spending_labels", categories=", ".join(CATEGORIES), unsure=UNSURE,
+                            payees="\n".join(lines))
 
 async def _ask_model(to_label: list[tuple[str, bank.Payment]]) -> dict[str, str]:
     """The model's category for each payee it labeled with a known category; the rest it was
@@ -376,10 +369,8 @@ class Digest:
 
 async def _comment(report: str) -> str:
     """The model's few sentences on what stands out; "" when the model can't be reached."""
-    prompt = ("Below is the user's spending digest. In 2 or 3 short sentences, tell them what stands out. "
-              "Use only the numbers given, and don't repeat the whole list.\n\n" + report)
     try:
-        reply = await mlx_client.complete([{"role": "user", "content": prompt}])
+        reply = await mlx_client.complete([{"role": "user", "content": prompt_file.task("spending_comment", report=report)}])
     except ModelServerError:
         return ""
     return reply.content.strip()

@@ -179,6 +179,34 @@ ModelChangeScreen {
     align: center middle;
 }
 
+SpendingScreen, CategoryScreen {
+    align: center middle;
+}
+
+#spending {
+    width: 80%;
+    height: 80%;
+    background: $panel;
+    border: round $accent;
+}
+
+#spending ListView {
+    height: 1fr;
+    background: $panel;
+}
+
+#spending_status {
+    padding: 0 1 1 1;
+    color: $text-muted;
+}
+
+#categories {
+    width: 40;
+    height: auto;
+    background: $panel;
+    border: round $accent;
+}
+
 ConfigScreen {
     align: center middle;
 }

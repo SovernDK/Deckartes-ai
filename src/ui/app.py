@@ -12,6 +12,7 @@ from ui.chat import Chat, HelpScreen, ModelChangeScreen
 from ui.config_screen import ConfigScreen
 from ui.file_explorer import FileExplorerScreen
 from ui.history_panel import HistoryPanel
+from ui.spending_screen import SpendingScreen
 
 BANNER = r"""
  ____            _              _
@@ -30,6 +31,8 @@ class DecartesApp(App):
         Binding("e", "explorer", "Files", tooltip="Browse the home folder and save a file or folder to the library"),
         Binding("r", "toggle_history", "History",
                 tooltip="Show or hide the saved conversations: enter opens one, d deletes it"),
+        Binding("s", "spending", "Spending",
+                tooltip="Label the payees of the last 30 days: the model labels them again, you pick the undecided"),
         ("h", "help", "Help"),
         # Terminals report shift+t as "T" or as "shift+t"; the footer's mode label shows the key instead
         Binding("T,shift+t", "toggle_detailed", "Mode", show=False, key_display="shift+t",
@@ -127,6 +130,9 @@ class DecartesApp(App):
     def file_chosen(self, path: Path | None) -> None:
         if path:
             self.query_one(Chat).load_file(path)
+
+    def action_spending(self) -> None:
+        self.push_screen(SpendingScreen())
 
     def action_change_model(self) -> None:
         self.push_screen(ModelChangeScreen(), self.set_model)

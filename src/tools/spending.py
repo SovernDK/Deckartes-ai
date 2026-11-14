@@ -29,7 +29,7 @@ CATEGORIES = ("Groceries", "Restaurants & cafés", "Transport", "Fuel", "Housing
               "Entertainment & subscriptions", "Travel", "Cash", "Transfers", "Other")
 # Money moved to people or between the user's own accounts: listed, but not spending
 TRANSFERS = "Transfers"
-# For a payee the model couldn't label; it's asked again next time
+# Where a payee without a label counts; the model is asked about it again next time
 OTHER = "Other"
 # The category under which a comparison keeps the total spent
 SPENT = ""
@@ -127,33 +127,58 @@ def _payee(payment: bank.Payment) -> str:
     words = names.normalize(payment.party or payment.description).split()
     return " ".join(word for word in words if not re.search(r"\d{3}", word)) or "unknown"
 
-def _remembered(payee: str, labels: dict[str, tuple[str, str]]) -> str | None:
-    """The category the user's rules or an earlier model label give the payee; the longest
+@dataclass(frozen=True)
+class Label:
+    category: str
+    # "model", or "user" for the user's own
+    source: str
+
+def _remembered(payee: str, labels: dict[str, Label]) -> Label | None:
+    """The label the user's rules or an earlier model answer give the payee; the user's longest
     matching rule wins."""
     padded = f" {payee} "
-    rules = [(len(words), category) for words, (category, source) in labels.items()
-             if source == "user" and f" {words} " in padded]
+    rules = [(len(words), label.category) for words, label in labels.items()
+             if label.source == "user" and f" {words} " in padded]
     if rules:
-        return max(rules)[1]
-    label = labels.get(payee)
-    return label[0] if label else None
+        return Label(max(rules)[1], "user")
+    return labels.get(payee)
+
+# What the bank's description says about the kind of payment, first match wins. A small model
+# reads Pekao's "PŁATNOŚĆ BLIK" and "TRANSAKCJA KARTĄ PŁATNICZĄ" as transfers unless told
+_PAYMENT_KINDS = (("PRZELEW", "bank transfer"), ("KART", "card payment"), ("CARD", "card payment"),
+                  ("BLIK", "BLIK payment"))
+
+def _describe(payment: bank.Payment) -> str:
+    """A payment as the model sees it: the payee, and the kind of payment or the description."""
+    details = [payment.party or payment.description]
+    description = payment.description.upper()
+    kind = next((kind for marker, kind in _PAYMENT_KINDS if marker in description), None)
+    if kind:
+        details.append(kind)
+    elif payment.party and payment.description:
+        details.append(f"description: {payment.description}")
+    if payment.merchant_code:
+        details.append(f"card merchant category code {payment.merchant_code}")
+    return "; ".join(details)
+
+# The model's answer for a payee it can't place; the user labels those (the app's s key)
+UNSURE = "Unsure"
 
 def _labeling_prompt(payees: list[tuple[str, bank.Payment]]) -> str:
-    lines = []
-    for number, (_, payment) in enumerate(payees, 1):
-        details = [payment.party or payment.description]
-        if payment.party and payment.description:
-            details.append(f"description: {payment.description}")
-        if payment.merchant_code:
-            details.append(f"card merchant category code {payment.merchant_code}")
-        lines.append(f"{number}. " + "; ".join(details))
-    return (f"Categories: {', '.join(CATEGORIES)}.\n"
-            f"Give each payment below one of these categories. Use {TRANSFERS} for money sent to a person or "
-            f"to the user's own accounts, and {OTHER} only when nothing else fits. Answer with only a JSON "
-            'object mapping each number to its category, like {"1": "Groceries"}.\n\n' + "\n".join(lines))
+    lines = [f"{number}. {_describe(payment)}" for number, (_, payment) in enumerate(payees, 1)]
+    return (f"Sort the user's payments into spending categories: {', '.join(CATEGORIES)}.\n"
+            "Each line is a payee: a shop, a company or a person. Card and BLIK payments are purchases, so "
+            "give them the category of what the payee sells. Use Transfers only for money sent to a person "
+            f"by name or to the user's own account. If the name doesn't tell you what the payee sells, answer "
+            f"{UNSURE}.\n"
+            'Examples: "BIEDRONKA" Groceries, "ORLEN" Fuel, "MCDONALDS" Restaurants & cafés, '
+            '"NETFLIX" Entertainment & subscriptions, "JAN KOWALSKI" Transfers.\n'
+            f"Answer with only a JSON object mapping each number to a category or {UNSURE}, like "
+            f'{{"1": "Groceries", "2": "{UNSURE}"}}.\n\n' + "\n".join(lines))
 
 async def _ask_model(payees: list[tuple[str, bank.Payment]]) -> dict[str, str]:
-    """The model's category for each payee it labeled with a known category."""
+    """The model's category for each payee it labeled with a known category; the rest it was
+    unsure of or answered wrongly."""
     try:
         reply = await mlx_client.complete([{"role": "user", "content": _labeling_prompt(payees)}])
     except ModelServerError:
@@ -173,39 +198,68 @@ async def _ask_model(payees: list[tuple[str, bank.Payment]]) -> dict[str, str]:
             labeled[payee] = category
     return labeled
 
-async def _categories(payments: list[bank.Payment]) -> dict[str, str]:
-    """Each payment's payee -> category, asking the model about payees not seen before and
-    remembering what it says."""
+async def _labels(payments: list[bank.Payment], *, again: bool = False) -> dict[str, Label | None]:
+    """Each payment's payee -> its label, or None when it has none (undecided). The model is asked
+    about payees it hasn't labeled, or with again about every payee without the user's label, and
+    what it says is remembered; a payee it's unsure of again loses its old label."""
     with _database() as db:
-        labels = {payee: (category, source) for payee, category, source
+        labels = {payee: Label(category, source) for payee, category, source
                   in db.execute("SELECT payee, category, source FROM labels")}
-    found: dict[str, str] = {}
-    unknown: dict[str, bank.Payment] = {}
+    found: dict[str, Label] = {}
+    ask: dict[str, bank.Payment] = {}
     for payment in payments:
         payee = _payee(payment)
-        category = _remembered(payee, labels)
-        if category:
-            found[payee] = category
+        label = _remembered(payee, labels)
+        if label and (label.source == "user" or not again):
+            found[payee] = label
         else:
-            unknown.setdefault(payee, payment)
-    # A small model loses track of a long list
-    batch_size = 40
-    pending = list(unknown.items())
+            ask.setdefault(payee, payment)
+    # A small model loses track of a long list, and sometimes rambles until no answer can be read
+    batch_size = 15
+    pending = list(ask)
     for first in range(0, len(pending), batch_size):
-        labeled = await _ask_model(pending[first:first + batch_size])
+        batch = pending[first:first + batch_size]
+        labeled = await _ask_model([(payee, ask[payee]) for payee in batch])
         stamp = clock.now().isoformat(timespec="seconds")
         with _database() as db:
+            db.executemany("DELETE FROM labels WHERE payee = ? AND source = 'model'",
+                           [(payee,) for payee in batch if payee not in labeled])
             db.executemany("INSERT OR REPLACE INTO labels VALUES (?, ?, 'model', ?)",
                            [(payee, category, stamp) for payee, category in labeled.items()])
-        found |= labeled
-    return {payee: found.get(payee, OTHER) for payee in map(_payee, payments)}
+        found |= {payee: Label(category, "model") for payee, category in labeled.items()}
+    return {payee: found.get(payee) for payee in map(_payee, payments)}
+
+@dataclass
+class Payee:
+    """One payee of the payments under review."""
+    payee: str
+    # The name as the bank gives it, from its latest payment
+    name: str
+    label: Label | None
+    count: int = 0
+    amounts: dict[str, Decimal] = field(default_factory=lambda: defaultdict(Decimal))
+
+async def review(days: int = 30) -> list[Payee]:
+    """The payees of the last `days` days, labeled again by the model except those the user
+    labeled; undecided ones first, then the most paid."""
+    today = clock.today()
+    payments = await bank.payments(today - dt.timedelta(days=days), today)
+    labels = await _labels(payments, again=True)
+    payees: dict[str, Payee] = {}
+    for payment in sorted(payments, key=lambda payment: payment.date, reverse=True):
+        key = _payee(payment)
+        payee = payees.setdefault(key, Payee(key, payment.party or payment.description or key, labels[key]))
+        payee.count += 1
+        payee.amounts[payment.currency] += payment.amount
+    return sorted(payees.values(), key=lambda payee: (payee.label is not None, -sum(payee.amounts.values())))
 
 async def _totals(start: dt.date, end: dt.date) -> Totals:
     payments = await bank.payments(start, end)
-    categories = await _categories(payments)
+    labels = await _labels(payments)
     totals: Totals = defaultdict(Total)
     for payment in payments:
-        total = totals[categories[_payee(payment)], payment.currency]
+        label = labels[_payee(payment)]
+        total = totals[label.category if label else OTHER, payment.currency]
         total.amount += payment.amount
         total.count += 1
     return dict(totals)

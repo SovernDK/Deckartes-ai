@@ -325,6 +325,12 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         await run.execute(progress)
         return run
 
+    def case_score(self, run: validation.Run, index=0) -> validation.Score:
+        """The score of a case that was scored, not stopped by an error."""
+        score = run.results[index].score
+        assert score is not None, "the case wasn't scored"
+        return score
+
     def tool_names(self, client: FakeClient, index=0) -> list[str]:
         return [tool.__name__ for tool in client.sent[index]["tools"] or []]
 
@@ -333,7 +339,7 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         self.use([chunk(tool_calls=[call("get_cpu_usage")], done=True)], [chunk("CPU is fine.", done=True)])
         run = await self.run_cases(case_data())
         result = run.results[0]
-        self.assertTrue(result.score.full_pass)
+        self.assertTrue(self.case_score(run).full_pass)
         self.assertEqual(result.calls, [validation.Call("get_cpu_usage", {})])
         self.assertEqual(result.reply, "CPU is fine.")
 
@@ -439,14 +445,14 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         self.route({"q": {"server": 0.9}})
         self.use([chunk(tool_calls=[mlx_client.ToolCall("id", "get_cpu_usage", None)], done=True)], [chunk("ok", done=True)])
         run = await self.run_cases(case_data())
-        self.assertEqual(run.results[0].score.label, "bad_arguments")
+        self.assertEqual(self.case_score(run).label, "bad_arguments")
 
     async def test_text_before_a_tool_call_is_narration_but_still_passes(self):
         self.route({"q": {"server": 0.9}})
         self.use([chunk("Let me check.", [call("get_cpu_usage")], done=True)], [chunk("ok", done=True)])
         run = await self.run_cases(case_data())
         self.assertTrue(run.results[0].narration)
-        self.assertTrue(run.results[0].score.full_pass)
+        self.assertTrue(self.case_score(run).full_pass)
 
     async def test_text_only_after_the_tool_is_not_narration(self):
         self.route({"q": {"server": 0.9}})
@@ -458,7 +464,7 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
         self.route({"q": {"server": 0.9}})
         self.use(*[[chunk(tool_calls=[call("get_cpu_usage")], done=True)] for _ in range(10)])
         run = await self.run_cases(case_data())
-        self.assertEqual(run.results[0].score.label, "looped")
+        self.assertEqual(self.case_score(run).label, "looped")
 
     async def test_a_server_failure_is_an_error_excluded_from_the_score(self):
         self.route({"one": {"server": 0.9}, "two": {"server": 0.9}})
@@ -563,6 +569,7 @@ class RunTest(unittest.IsolatedAsyncioTestCase):
     async def test_scores_weight_each_category_equally(self):
         run = await self.mixed_run()
         # explicit 3/4, no-tool 0/1, paraphrased 1/1 for tools and 0/1 with arguments
+        assert run.tool_score is not None and run.full_score is not None
         self.assertAlmostEqual(run.tool_score, (75 + 0 + 100) / 3)
         self.assertAlmostEqual(run.full_score, (75 + 0 + 0) / 3)
 

@@ -23,7 +23,7 @@ class RegistryTest(unittest.TestCase):
     def test_decorator_returns_the_function(self):
         # tool_schema builds the tool definition from the function's own name, signature and docstring
         self.assertEqual(tools.get_cs_team.__name__, "get_cs_team")
-        self.assertIn("Args:", tools.get_cs_team.__doc__)
+        self.assertIn("Args:", tools.get_cs_team.__doc__ or "")
 
     def test_registering_in_an_unknown_group_raises(self):
         async def new_tool() -> str:

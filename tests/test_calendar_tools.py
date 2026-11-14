@@ -5,8 +5,6 @@ import unittest
 from unittest import mock
 from zoneinfo import ZoneInfo
 
-from Foundation import NSDate
-
 from frozen_clock import TIMEZONE, freeze
 from tools import calendar_api as calendar_tools
 from tools import tools
@@ -41,10 +39,10 @@ class FakeEvent:
         return self.values[2]
 
     def startDate(self):
-        return NSDate.dateWithTimeIntervalSince1970_(self.start.timestamp())
+        return calendar_tools._nsdate(self.start)
 
     def endDate(self):
-        return NSDate.dateWithTimeIntervalSince1970_(self.end.timestamp())
+        return calendar_tools._nsdate(self.end)
 
     def isAllDay(self) -> bool:
         return self.all_day

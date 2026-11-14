@@ -78,7 +78,7 @@ class LiveRoutingTest(unittest.IsolatedAsyncioTestCase):
 
     async def scores(self, question: str) -> str:
         examples = await tool_router._example_vectors()
-        vector = (await mlx_client.embed([question]))[0]
+        vector = tool_router._unit(await mlx_client.embed([question]))[0]
         scores = tool_router._scores(vector, examples)
         return ", ".join(f"{name or 'no tools'} {score:.2f}"
                          for name, score in sorted(scores.items(), key=lambda s: -s[1]))
@@ -88,7 +88,7 @@ class LiveRoutingTest(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(config, "tool_routing", True):
             for questions, expected in LIVE_CASES:
                 with self.subTest(questions[-1]):
-                    groups = (await tool_router.select_tools(*ask(*questions))).groups
+                    groups = (await tool_router.select_tools(*ask(*questions))).groups or []
                     detail = f"chose {groups}; scores: {await self.scores(questions[-1])}"
                     if expected:
                         self.assertLessEqual(set(expected), set(groups), detail)

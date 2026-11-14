@@ -23,7 +23,7 @@ def names(tools) -> list[str] | None:
 
 def group_tools(*groups: str) -> list[str]:
     """The tools sent when the router picks these groups (the rule is tested in test_tool_groups.py)."""
-    return names(GROUPS.sent_with(groups, TOOLS))
+    return [tool.__name__ for tool in GROUPS.sent_with(groups, TOOLS)]
 
 def ask(*questions: str) -> tuple[str, str | None]:
     """The arguments of select_tools for the last of these questions."""
@@ -45,7 +45,7 @@ class FakeEmbeddings:
 
     def __init__(self, scores: dict[str, dict]):
         self.scores = scores
-        self.example_axis = {text: None for text in tool_router.NO_TOOL_EXAMPLES}
+        self.example_axis: dict[str, str | None] = {text: None for text in tool_router.NO_TOOL_EXAMPLES}
         shared = []
         for name in GROUPS.names:
             for text in GROUPS.examples(name):
@@ -89,15 +89,17 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_selection_reports_each_group_score_and_the_no_tools_score(self):
         self.embed({"q": {"cs": 0.8, "anime": 0.3, None: 0.2}})
-        selection = await tool_router.select_tools(*ask("q"))
-        self.assertAlmostEqual(selection.scores["cs"], 0.8)
-        self.assertAlmostEqual(selection.scores["anime"], 0.3)
-        self.assertAlmostEqual(selection.scores["no_tools"], 0.2)
+        scores = (await tool_router.select_tools(*ask("q"))).scores
+        assert scores is not None
+        self.assertAlmostEqual(scores["cs"], 0.8)
+        self.assertAlmostEqual(scores["anime"], 0.3)
+        self.assertAlmostEqual(scores["no_tools"], 0.2)
 
     async def test_reported_scores_include_what_a_follow_up_borrowed(self):
         self.embed({"When is NAVI's next game?": {"cs": 0.9}, "and then?": {"cs": 0.1, None: 0.05}})
-        selection = await tool_router.select_tools(*ask("When is NAVI's next game?", "and then?"))
-        self.assertAlmostEqual(selection.scores["cs"], 0.72)
+        scores = (await tool_router.select_tools(*ask("When is NAVI's next game?", "and then?"))).scores
+        assert scores is not None
+        self.assertAlmostEqual(scores["cs"], 0.72)
 
     async def test_groups_within_the_margin_of_the_best_are_sent_too(self):
         self.embed({"q": {"calendar": 0.7, "anime": 0.55, "cs": 0.45}})

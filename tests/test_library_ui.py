@@ -76,8 +76,8 @@ class LibraryUiTest(unittest.IsolatedAsyncioTestCase):
         async with app.run_test(size=(100, 30)) as pilot:
             await self.settle(app, pilot)
             tree = await self.open_explorer(app, pilot)
-            line = next(i for i in range(tree.last_line + 1)
-                        if tree.get_node_at_line(i).data.path.name == "a.txt")
+            nodes = [tree.get_node_at_line(i) for i in range(tree.last_line + 1)]
+            line = next(i for i, node in enumerate(nodes) if node and node.data and node.data.path.name == "a.txt")
             tree.cursor_line = line
             await pilot.press("enter")
             await self.settle(app, pilot)
@@ -112,8 +112,9 @@ class LibraryUiTest(unittest.IsolatedAsyncioTestCase):
             app.query_one(Chat).run_command(f"forget {self.docs / 'deep'}")
             await pilot.pause()
             await pilot.pause()
-            self.assertIsInstance(app.screen, ConfirmScreen)
-            self.assertIn("Remove 1 file from the library", app.screen.question)
+            screen = app.screen
+            assert isinstance(screen, ConfirmScreen)
+            self.assertIn("Remove 1 file from the library", screen.question)
             await pilot.press("y")
             await self.settle(app, pilot)
             self.assertEqual(self.saved(), ["a.txt"])

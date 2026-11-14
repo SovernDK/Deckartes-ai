@@ -25,7 +25,7 @@ def vector(text: str) -> list[float]:
 class FakeEmbedder:
     def __init__(self):
         self.calls = []
-        self.error = None
+        self.error: Exception | None = None
 
     def __call__(self, texts):
         return self.embed(texts)

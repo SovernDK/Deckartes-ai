@@ -101,6 +101,7 @@ class ReopenTest(HistoryTest):
         save_summary(opened, "gist", at)
         save("newer", "reply", at, saver=opened)
         client = self.use([chunk("ok", done=True)])
+        assert opened.id is not None
         self.conversation.open(opened.id)
         await self.reply("now")
         self.assertEqual(self.sent_contents(client), [DATE_LINE, "Summary of the conversation so far:\ngist",

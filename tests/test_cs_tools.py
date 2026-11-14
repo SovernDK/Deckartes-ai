@@ -45,10 +45,12 @@ def match(status: str, first: dict, second: dict, *, scores: tuple[int, int] | N
     return payload | fields
 
 def finished(first: dict, second: dict, scores: tuple[int, int], winner: dict | None, **fields) -> dict:
-    return match("finished", first, second, scores=scores, winner=winner, **{"end_at": "2026-11-10T17:30:00Z"} | fields)
+    fields.setdefault("end_at", "2026-11-10T17:30:00Z")
+    return match("finished", first, second, scores=scores, winner=winner, **fields)
 
 def not_started(first: dict, second: dict, **fields) -> dict:
-    return match("not_started", first, second, **{"scheduled_at": "2026-11-13T17:00:00Z"} | fields)
+    fields.setdefault("scheduled_at", "2026-11-13T17:00:00Z")
+    return match("not_started", first, second, **fields)
 
 def running(first: dict, second: dict, **fields) -> dict:
     return match("running", first, second, scores=(1, 0),

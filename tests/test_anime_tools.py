@@ -20,7 +20,7 @@ def show(route: str, title: str, *, english: str | None = None, episodes: int | 
             "episodes": episodes,
             "stats": {"ratingCount": 100 if score else 0, "averageScore": score or 0, "trackedCount": tracked}}
 
-def episode(route: str, title: str, airs: str, number: int, english: str | None = None) -> dict:
+def episode(route: str, title: str, airs: str, number: int | None, english: str | None = None) -> dict:
     return {"route": route, "title": title, "english": english, "episodeNumber": number, "episodeDate": airs}
 
 def weekly(*episodes: dict):
@@ -166,12 +166,15 @@ class DigestTest(AnimeToolTest):
     async def test_an_episode_that_already_aired_today_is_included(self):
         # Clock is frozen at 12:00 local
         text = await self.digest([episode("e", "Early", "2026-11-11T07:00:00Z", 3)], watching=["e"])
+        assert text is not None
         self.assertIn("- Early: episode 3 at 08:00", text)
 
     async def test_low_rated_listed_show_is_kept(self):
         self.serve({USER_LIST: on_list(watching=["w"]), ANIME: ongoing(show("w", "Weak", score=40)),
                     TIMETABLE: weekly(episode("w", "Weak", "2026-11-11T13:00:00Z", 1))})
-        self.assertIn("- Weak: episode 1 at 14:00", await animeschedule_api.airing_digest())
+        text = await animeschedule_api.airing_digest()
+        assert text is not None
+        self.assertIn("- Weak: episode 1 at 14:00", text)
 
     async def test_today_means_the_local_date(self):
         text = await self.digest([episode("a", "Past Midnight Here", "2026-11-10T23:30:00Z", 1),
@@ -181,6 +184,7 @@ class DigestTest(AnimeToolTest):
 
     async def test_unknown_episode_number_is_left_out(self):
         text = await self.digest([episode("a", "Special", "2026-11-11T13:00:00Z", None)], watching=["a"])
+        assert text is not None
         self.assertIn("- Special: at 14:00", text)
 
     async def test_nothing_airing_is_none(self):

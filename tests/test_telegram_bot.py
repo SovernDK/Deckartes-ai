@@ -9,6 +9,7 @@ import tempfile
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 
 import httpx
@@ -30,7 +31,7 @@ TOKEN = "123:SECRET"
 OWNER = 42
 PATH = f"/bot{TOKEN}/"
 
-def ok(result=True):
+def ok(result: object = True) -> dict:
     return {"ok": True, "result": result}
 
 def message(text, sender=OWNER, chat_type="private", update_id=1):
@@ -56,7 +57,7 @@ class BotTest(HttpTest):
             patcher = mock.patch.object(telegram_bot, name, 0)
             patcher.start()
             self.addCleanup(patcher.stop)
-        self.routes = {PATH + method: ok({"message_id": 7}) for method in (
+        self.routes: dict[str, Any] = {PATH + method: ok({"message_id": 7}) for method in (
             "sendMessage", "sendChatAction", "answerCallbackQuery", "editMessageText", "setMyCommands")}
         self.routes[PATH + "getUpdates"] = ok([])
         self.server = self.serve(self.routes)
@@ -93,9 +94,19 @@ class BotTest(HttpTest):
             self.assertLess(time.monotonic(), deadline, "condition never became true")
             await asyncio.sleep(0.001)
 
+    def current_turn(self) -> asyncio.Task:
+        """The bot's running or finished turn."""
+        assert self.bot.turn is not None, "the bot has no turn"
+        return self.bot.turn
+
+    def pending_answer(self) -> asyncio.Future[bool]:
+        """The user's answer to the Yes/No question the bot is waiting on."""
+        assert self.bot.pending is not None, "the bot isn't asking anything"
+        return self.bot.pending.answer
+
     async def ask_and_finish(self, text="Hi") -> None:
         await self.bot.handle(message(text))
-        await self.bot.turn
+        await self.current_turn()
 
     async def start_confirmation(self) -> str:
         """Run a turn up to the Yes/No question and return its Yes button's data."""
@@ -126,9 +137,9 @@ class AccessTest(BotTest):
     async def test_another_users_button_press_changes_nothing(self):
         data = await self.start_confirmation()
         await self.bot.handle(press(data, sender=999))
-        self.assertFalse(self.bot.pending.answer.done())
+        self.assertFalse(self.pending_answer().done())
         self.assertEqual(self.calls("answerCallbackQuery"), [])
-        self.bot.turn.cancel()
+        self.current_turn().cancel()
 
     def test_refuses_to_start_without_a_token(self):
         with mock.patch.object(config, "telegram_token", ""), self.assertRaises(telegram_bot.SetupError):
@@ -154,7 +165,7 @@ class TurnTest(BotTest):
         await self.until(lambda: self.calls("sendChatAction"))
         self.assertEqual(self.calls("sendChatAction")[0]["action"], "typing")
         release.set()
-        await self.bot.turn
+        await self.current_turn()
 
     async def test_markdown_arrives_as_formatting_not_markers(self):
         self.use_model([chunk("# Title\n**bold** and `x`", done=True)])
@@ -199,7 +210,7 @@ class TurnTest(BotTest):
         await self.bot.handle(message("Second", update_id=2))
         self.assertEqual(self.texts(), [telegram_bot.BUSY])
         release.set()
-        await self.bot.turn
+        await self.current_turn()
         self.assertEqual(self.texts(), [telegram_bot.BUSY, "Late answer"])
 
     async def test_a_message_without_text_is_declined(self):
@@ -250,7 +261,7 @@ class CommandTest(BotTest):
         await self.bot.handle(message("/clear", update_id=2))
         self.assertEqual(self.texts(), [telegram_bot.BUSY])
         release.set()
-        await self.bot.turn
+        await self.current_turn()
         self.assertEqual(len(self.bot.conversation.history), 3)
 
     async def test_stop_cancels_the_turn_and_saves_nothing(self):
@@ -258,7 +269,7 @@ class CommandTest(BotTest):
         await self.bot.handle(message("First"))
         await started.wait()
         await self.bot.handle(message("/stop", update_id=2))
-        self.assertTrue(self.bot.turn.done())
+        self.assertTrue(self.current_turn().done())
         self.assertEqual(self.texts(), ["Stopped."])
         self.assertEqual(self.bot.conversation.history, [])
 
@@ -288,7 +299,7 @@ class HistoryTest(BotTest):
         await self.ask_and_finish("First")
         await self.bot.handle(message("/clear", update_id=2))
         await self.bot.handle(message("Second", update_id=3))
-        await self.bot.turn
+        await self.current_turn()
         self.assertEqual([(c.title, c.source) for c in history.list_conversations()],
                          [("Second", "telegram"), ("First", "telegram")])
 
@@ -306,7 +317,7 @@ class ConfirmationTest(BotTest):
     async def test_yes_lets_the_change_through(self):
         client_data = await self.start_confirmation()
         await self.bot.handle(press(client_data))
-        await self.bot.turn
+        await self.current_turn()
         self.assertEqual(self.texts()[-1], "Done")
         self.assertEqual(self.calls("answerCallbackQuery")[0]["callback_query_id"], "press")
         edit = self.calls("editMessageText")[0]
@@ -319,7 +330,7 @@ class ConfirmationTest(BotTest):
         await self.until(lambda: self.bot.pending is not None and self.calls("sendMessage"))
         no_button = self.calls("sendMessage")[0]["reply_markup"]["inline_keyboard"][0][1]["callback_data"]
         await self.bot.handle(press(no_button))
-        await self.bot.turn
+        await self.current_turn()
         self.assertEqual(self.tool_result(client), "declined")
 
     async def test_no_answer_in_time_counts_as_no(self):
@@ -333,7 +344,7 @@ class ConfirmationTest(BotTest):
     async def test_stop_while_asking_cancels_and_removes_the_buttons(self):
         await self.start_confirmation()
         await self.bot.handle(message("/stop", update_id=3))
-        self.assertTrue(self.bot.turn.done())
+        self.assertTrue(self.current_turn().done())
         self.assertIsNone(self.bot.pending)
         self.assertEqual(self.calls("editMessageText")[0]["text"], "Add this event?\n\nStopped")
         self.assertEqual(self.bot.conversation.history, [])
@@ -341,10 +352,10 @@ class ConfirmationTest(BotTest):
     async def test_an_old_button_does_nothing_but_is_answered(self):
         data = await self.start_confirmation()
         await self.bot.handle(press("00000000:yes"))
-        self.assertFalse(self.bot.pending.answer.done())
+        self.assertFalse(self.pending_answer().done())
         self.assertEqual(self.calls("answerCallbackQuery")[0]["text"], telegram_bot.EXPIRED)
         await self.bot.handle(press(data))
-        await self.bot.turn
+        await self.current_turn()
 
     async def test_a_question_that_cannot_be_sent_adds_nothing(self):
         freeze(self, "2026-11-11 12:00")
@@ -377,9 +388,9 @@ class PollingTest(BotTest):
         await self.bot.poll_once()
         await started.wait()
         self.assertEqual(self.bot.offset, 51)
-        self.assertFalse(self.bot.turn.done())
+        self.assertFalse(self.current_turn().done())
         release.set()
-        await self.bot.turn
+        await self.current_turn()
 
     async def test_the_next_poll_confirms_the_offset(self):
         self.routes[PATH + "getUpdates"] = ok([message("/help", update_id=50)])
@@ -414,7 +425,7 @@ class PollingTest(BotTest):
         patcher = mock.patch.object(mlx_server, "ensure_chat")
         patcher.start()
         self.addCleanup(patcher.stop)
-        turn = self.bot.turn
+        turn = self.current_turn()
         def poll(request):
             raise asyncio.CancelledError  # A fake poll never yields, so task.cancel() wouldn't land
         self.routes[PATH + "getUpdates"] = poll

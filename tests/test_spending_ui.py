@@ -15,7 +15,7 @@ from test_conversation import FakeClient
 from test_spending import labels
 from tools import tools
 from ui.app import DecartesApp
-from ui.spending_screen import CategoryScreen, SpendingScreen
+from ui.spending_screen import CategoryScreen, PayeeItem, SpendingScreen
 
 PAYMENTS = page(
     entry("DBIT", "40.00", "2026-11-03", creditor="BIEDRONKA 1234 KROSNO", remittance=["TRANSAKCJA KARTĄ PŁATNICZĄ"]),
@@ -89,7 +89,7 @@ class SpendingUiTest(HttpTest):
         app = DecartesApp()
         async with app.run_test(size=(100, 30)) as pilot:
             screen = await self.open(app, pilot)
-            screen.label(screen.query("PayeeItem").first(), "Health")
+            screen.label(screen.query(PayeeItem).first(), "Health")
             await pilot.press("escape")
             screen = await self.open(app, pilot)
 

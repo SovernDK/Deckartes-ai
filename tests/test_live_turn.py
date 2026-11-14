@@ -37,6 +37,7 @@ class LiveTurnTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("<think>", self.text(events))
         usage = self.conversation.last_turn.usage
         self.assertGreater(usage.input, 0)
+        assert usage.tokens_per_second is not None
         self.assertGreater(usage.tokens_per_second, 1)
 
     async def test_tool_round_ends_in_an_answer(self):

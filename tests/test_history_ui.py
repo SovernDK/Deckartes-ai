@@ -122,8 +122,9 @@ class HistoryUiTest(unittest.IsolatedAsyncioTestCase):
             await self.show_panel(app, pilot)
             await pilot.press("d")
             await pilot.pause()
-            self.assertIsInstance(app.screen, ConfirmScreen)
-            self.assertEqual(app.screen.question, "Delete 'Delete me'?")
+            screen = app.screen
+            assert isinstance(screen, ConfirmScreen)
+            self.assertEqual(screen.question, "Delete 'Delete me'?")
             await pilot.press("y")
             await self.settle(app, pilot)
             self.assertEqual([c.title for c in history.list_conversations()], ["Keep me"])

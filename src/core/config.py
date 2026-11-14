@@ -85,6 +85,10 @@ class Config:
     # Transactions listed per account by get_bank_transactions; keeps a long range inside the
     # context window, while the totals still count every transaction
     bank_max_transactions: int = 100
+    # Stored transactions of the last this many days are fetched again once they're older than
+    # bank_fresh_minutes, since recent payments still change (pending ones book, sometimes on another day)
+    bank_settle_days: int = 7
+    bank_fresh_minutes: int = 15
     # Spending categories each payee is labeled with, and each finished week's and month's totals
     # (spending.py); not in ~/.cache, since past periods can't be fetched again
     spending_path: Path = Path.home() / ".local" / "share" / "deckartes" / "spending.db"

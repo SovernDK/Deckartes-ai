@@ -130,8 +130,8 @@ class SpendingTest(HttpTest):
         self.serve({TRANSACTIONS: page()})
 
         self.assertEqual(await tools.get_spending_by_category("2026-08-14"),
-                         "The bank gives only the last 90 days, so this starts on 2026-08-16, not 2026-08-14.\n\n"
-                         "No payments out in 2026-08-16 to 2026-11-14.")
+                         "Nothing is stored from 2026-08-14 to 2026-08-15, and the bank gives only the last 90 days.\n\n"
+                         "No payments out in 2026-08-14 to 2026-11-14.")
 
 class DigestJobTest(HttpTest):
     def setUp(self):

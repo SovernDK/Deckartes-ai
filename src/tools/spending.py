@@ -14,15 +14,14 @@ import json
 import re
 import sqlite3
 from collections import defaultdict
-from collections.abc import Generator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from decimal import Decimal
 
 from core import clock, names
-from core.config import config
 from model import mlx_client
 from model.mlx_server import ModelServerError
+from tools import bank_store
 from tools import enable_banking_api as bank
 
 CATEGORIES = ("Groceries", "Restaurants & cafés", "Transport", "Fuel", "Housing & bills", "Shopping", "Health",
@@ -60,19 +59,9 @@ CREATE TABLE IF NOT EXISTS totals (
 );
 """
 
-@contextmanager
-def _database() -> Generator[sqlite3.Connection, None, None]:
-    """A connection whose changes are committed together at the end, or not at all."""
-    path = config.spending_sandbox_path if config.enable_banking_sandbox else config.spending_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path, timeout=30)
-    try:
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.executescript(_SCHEMA)
-        with connection:
-            yield connection
-    finally:
-        connection.close()
+def _database() -> AbstractContextManager[sqlite3.Connection]:
+    """A connection to the spending database, which also stores the transactions (bank_store.py)."""
+    return bank_store.database(_SCHEMA)
 
 @dataclass
 class Total:
@@ -243,7 +232,7 @@ async def review(days: int = 30) -> list[Payee]:
     """The payees of the last `days` days, labeled again by the model except those the user
     labeled; undecided ones first, then the most paid."""
     today = clock.today()
-    payments = await bank.payments(today - dt.timedelta(days=days), today, user_present=True)
+    payments, _ = await bank.payments(today - dt.timedelta(days=days), today, user_present=True)
     labels = await _labels(payments, again=True)
     payees: dict[str, Payee] = {}
     for payment in sorted(payments, key=lambda payment: payment.date, reverse=True):
@@ -253,8 +242,9 @@ async def review(days: int = 30) -> list[Payee]:
         payee.amounts[payment.currency] += payment.amount
     return sorted(payees.values(), key=lambda payee: (payee.label is not None, -sum(payee.amounts.values())))
 
-async def _totals(start: dt.date, end: dt.date, *, user_present: bool) -> Totals:
-    payments = await bank.payments(start, end, user_present=user_present)
+async def _totals(start: dt.date, end: dt.date, *, user_present: bool) -> tuple[Totals, list[str]]:
+    """The totals per category and currency, and notes about days that couldn't be read."""
+    payments, notes = await bank.payments(start, end, user_present=user_present)
     labels = await _labels(payments)
     totals: Totals = defaultdict(Total)
     for payment in payments:
@@ -262,7 +252,7 @@ async def _totals(start: dt.date, end: dt.date, *, user_present: bool) -> Totals
         total = totals[label.category if label else OTHER, payment.currency]
         total.amount += payment.amount
         total.count += 1
-    return dict(totals)
+    return dict(totals), notes
 
 def _saved(db: sqlite3.Connection, period: Period) -> Totals | None:
     """A saved period's totals; None when it wasn't saved."""
@@ -353,10 +343,12 @@ def _report(title: str, totals: Totals, baselines: list[_Baseline], *, notes: bo
 async def by_category(date_from: str, date_to: str | None = None) -> str:
     """Tool text: spending per category between two YYYY-MM-DD dates; for exactly a week or a
     month, compared with the saved totals of the ones before."""
-    start, end, note = bank.date_range(date_from, date_to)
+    start, end = bank.date_range(date_from, date_to)
     period = _exact_period(start, end)
     title = period.title() if period else f"{start} to {end}"
-    return note + _report(title, await _totals(start, end, user_present=True), _baselines(period) if period else [], notes=True)
+    totals, notes = await _totals(start, end, user_present=True)
+    return "".join(f"{note}\n\n" for note in notes) + _report(title, totals, _baselines(period) if period else [],
+                                                              notes=True)
 
 def set_category(payee: str, category: str) -> str:
     """Tool text: from now on, payments whose payee has these words count as this category."""
@@ -402,7 +394,7 @@ async def due_digests() -> list[Digest]:
                if _saved(db, period) is None]
     digests = []
     for period in due:
-        totals = await _totals(period.start, period.end, user_present=False)
+        totals, _ = await _totals(period.start, period.end, user_present=False)
         digest = Digest(period, totals)
         if totals:
             report = _report(period.title(), totals, _baselines(period), notes=False)

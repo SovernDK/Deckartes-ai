@@ -85,7 +85,8 @@ class BankingTest(HttpTest):
                                "2026-11-10  -1.02 EUR  Onni: Coffee and cake\n"
                                "2026-11-02  -2 EUR  no description\n"
                                "Total: in +10.50 EUR, out -3.02 EUR")
-        self.assertEqual(dict(server.requests[0].url.params), {"date_from": "2026-11-01", "date_to": "2026-11-14"})
+        # The first read fills the store with all the bank gives
+        self.assertEqual(dict(server.requests[0].url.params), {"date_from": "2026-08-16", "date_to": "2026-11-14"})
         # The user asked, so the bank's limit of 4 reads a day without them doesn't apply
         self.assertEqual(server.requests[0].headers["psu-user-agent"], "Deckartes")
         self.assertRegex(server.requests[0].headers["psu-ip-address"], r"^\d+\.\d+\.\d+\.\d+$")
@@ -128,21 +129,20 @@ class BankingTest(HttpTest):
 
     async def test_a_reversed_range_is_swapped_and_the_future_cut_to_today(self):
         self.link()
-        server = self.serve({TRANSACTIONS: page()})
+        self.serve({TRANSACTIONS: page()})
 
         text = await tools.get_bank_transactions("2026-12-01", "2026-11-01")
 
         self.assertEqual(text, "Ella (EUR): no transactions from 2026-11-01 to 2026-11-14.")
-        self.assertEqual(dict(server.requests[0].url.params), {"date_from": "2026-11-01", "date_to": "2026-11-14"})
 
-    async def test_a_start_past_the_banks_90_days_is_moved_up_and_the_model_told(self):
+    async def test_days_past_the_banks_90_days_that_are_not_stored_are_named(self):
         self.link()
         server = self.serve({TRANSACTIONS: page()})
 
         text = await tools.get_bank_transactions("2026-08-01")
 
-        self.assertEqual(text, "The bank gives only the last 90 days, so this starts on 2026-08-16, not 2026-08-01.\n\n"
-                               "Ella (EUR): no transactions from 2026-08-16 to 2026-11-14.")
+        self.assertEqual(text, "Nothing is stored from 2026-08-01 to 2026-08-15, and the bank gives only the last 90 days.\n\n"
+                               "Ella (EUR): no transactions from 2026-08-01 to 2026-11-14.")
         self.assertEqual(server.requests[0].url.params["date_from"], "2026-08-16")
 
     async def test_each_account_gets_its_own_block(self):
@@ -174,8 +174,6 @@ class BankingTest(HttpTest):
         cases = [
             ("unlinked", lambda: None,
              "No bank is linked: link one with `python -m tools.enable_banking_api` from src/"),
-            ("expired", lambda: self.link(valid_until="2026-11-14T10:00:00Z"),
-             f"The bank link expired on 2026-11-14: {RELINK}"),
             ("damaged", damaged, f"The saved bank link is damaged: {RELINK}"),
             ("no credentials", lambda: (self.link(), config.__setattr__("enable_banking_app_id", "")),
              "No Enable Banking production credentials: set ENABLE_BANKING_APP_ID and ENABLE_BANKING_KEY_PATH in .env"),
@@ -188,6 +186,96 @@ class BankingTest(HttpTest):
                 self.assertEqual(await tools.run_tool("get_bank_transactions", {"date_from": "2026-11-01"}),
                                  f"Tool get_bank_transactions failed: {message}")
                 self.assertEqual(server.requests, [])
+
+    async def test_a_question_soon_after_is_answered_from_the_store(self):
+        self.link()
+        server = self.serve({TRANSACTIONS: page(entry("DBIT", "1.00", "2026-11-02"), entry("DBIT", "2.00", "2026-11-13"))})
+
+        first = await tools.get_bank_transactions("2026-11-01")
+        freeze(self, "2026-11-14 12:10")
+        again = await tools.get_bank_transactions("2026-11-01")
+        narrower = await tools.get_bank_transactions("2026-11-01", "2026-11-05")
+
+        self.assertEqual(first, again)
+        self.assertEqual(narrower, "Ella (EUR), 1 transactions from 2026-11-01 to 2026-11-05, newest first:\n"
+                                   "2026-11-02  -1.00 EUR  no description\n"
+                                   "Total: in +0.00 EUR, out -1.00 EUR")
+        self.assertEqual(len(server.requests), 1)
+        self.assertEqual(config.spending_path.stat().st_mode & 0o777, 0o600)
+
+    async def test_after_15_minutes_the_last_7_days_are_read_again_in_place_of_what_was_stored(self):
+        self.link()
+        self.serve({TRANSACTIONS: page(entry("DBIT", "1.00", "2026-11-02"),
+                                       entry("DBIT", "2.00", "2026-11-13", creditor="Lidl", status="PDNG"))})
+        await tools.get_bank_transactions("2026-11-01")
+        freeze(self, "2026-11-14 12:16")
+        server = self.serve({TRANSACTIONS: page(entry("DBIT", "2.50", "2026-11-14", creditor="Lidl"))})
+
+        text = await tools.get_bank_transactions("2026-11-01")
+
+        self.assertEqual(dict(server.requests[0].url.params), {"date_from": "2026-11-08", "date_to": "2026-11-14"})
+        # The pending payment booked a day later, for a different amount: it's there once
+        self.assertEqual(text, "Ella (EUR), 2 transactions from 2026-11-01 to 2026-11-14, newest first:\n"
+                               "2026-11-14  -2.50 EUR  Lidl\n"
+                               "2026-11-02  -1.00 EUR  no description\n"
+                               "Total: in +0.00 EUR, out -3.50 EUR")
+
+    async def test_stored_days_are_answered_past_the_banks_90_days_and_after_the_link_expires(self):
+        self.link(valid_until="2026-12-01T10:00:00Z")
+        self.serve({TRANSACTIONS: page(entry("DBIT", "1.00", "2026-11-02"))})
+        await tools.get_bank_transactions("2026-11-01")
+        freeze(self, "2027-03-01 12:00")
+        server = self.serve({TRANSACTIONS: page()})
+
+        stored = await tools.get_bank_transactions("2026-11-01", "2026-11-10")
+        partly = await tools.get_bank_transactions("2026-11-10", "2026-11-20")
+
+        self.assertEqual(stored, "Ella (EUR), 1 transactions from 2026-11-01 to 2026-11-10, newest first:\n"
+                                 "2026-11-02  -1.00 EUR  no description\n"
+                                 "Total: in +0.00 EUR, out -1.00 EUR")
+        self.assertEqual(partly, "The bank link expired on 2026-12-01, so nothing from 2026-11-15 to 2026-11-20 is "
+                                 f"stored: {RELINK}.\n\n"
+                                 "Ella (EUR): no transactions from 2026-11-10 to 2026-11-20.")
+        self.assertEqual(server.requests, [])
+
+    async def test_when_the_bank_cannot_be_read_stored_days_are_answered_with_a_note(self):
+        self.link()
+        self.serve({TRANSACTIONS: page(entry("DBIT", "1.00", "2026-11-02"))})
+        await tools.get_bank_transactions("2026-11-01")
+        freeze(self, "2026-11-14 12:20")
+        self.serve({TRANSACTIONS: httpx.Response(429, json={"error": "ASPSP_RATE_LIMIT_EXCEEDED"})})
+
+        text = await tools.get_bank_transactions("2026-11-01")
+
+        self.assertEqual(text, "Could not refresh from the bank (The bank refused: too many reads of the account "
+                               "today. Try again tomorrow), so payments since 2026-11-08 may be missing.\n\n"
+                               "Ella (EUR), 1 transactions from 2026-11-01 to 2026-11-14, newest first:\n"
+                               "2026-11-02  -1.00 EUR  no description\n"
+                               "Total: in +0.00 EUR, out -1.00 EUR")
+
+    async def test_a_read_cut_short_is_tried_again_next_time(self):
+        self.link()
+        server = self.serve({TRANSACTIONS: page(entry("DBIT", "1.00"), continuation_key="more")})
+
+        await tools.get_bank_transactions("2026-11-01")
+        reads = len(server.requests)
+        await tools.get_bank_transactions("2026-11-01")
+
+        self.assertEqual(len(server.requests), 2 * reads)
+
+    async def test_relinking_keeps_an_accounts_history_by_its_iban(self):
+        iban = {"account_id": {"iban": "PL00 1240 0000 5017"}, "currency": "PLN", "product": "Konto"}
+        self.link({"uid": "acc-1", **iban})
+        self.serve({TRANSACTIONS: page(entry("DBIT", "1.00", "2026-11-02"))})
+        await tools.get_bank_transactions("2026-11-01")
+        freeze(self, "2026-11-14 12:20")
+        self.link({"uid": "acc-9", **iban})
+        server = self.serve({"/accounts/acc-9/transactions": page()})
+
+        text = await tools.get_bank_transactions("2026-11-01")
+
+        self.assertEqual(dict(server.requests[0].url.params), {"date_from": "2026-11-08", "date_to": "2026-11-14"})
+        self.assertIn("2026-11-02  -1.00 EUR  no description", text)
 
     async def run_linking(self, server, *, bank_number: str = "1", state: str | None = None) -> str:
         """Run `python -m tools.enable_banking_api`, typing a wrong bank number first, and return what it printed."""

@@ -227,7 +227,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
   <tr><td><code>embed_model</code></td><td><code>mlx-community/all-MiniLM-L6-v2-4bit</code></td><td>Routing embeddings</td></tr>
   <tr><td><code>rag_embed_model</code></td><td><code>mlx-community/embeddinggemma-2-4bit</code></td><td>Library chunks and searches</td></tr>
   <tr><td><code>library_path</code></td><td><code>~/.local/share/deckartes/library.db</code></td><td>Where saved files are kept</td></tr>
-  <tr><td><code>spending_path</code></td><td><code>~/.local/share/deckartes/spending.db</code></td><td>Payee labels and each digest's category totals (<code>spending_sandbox_path</code> for the sandbox)</td></tr>
+  <tr><td><code>spending_path</code></td><td><code>~/.local/share/deckartes/spending.db</code></td><td>Stored transactions, payee labels and each digest's category totals (<code>spending_sandbox_path</code> for the sandbox)</td></tr>
   <tr><td><code>detailed</code></td><td><code>False</code></td><td>Detailed mode: thinking and usage lines (key <code>shift+t</code>)</td></tr>
   <tr><td><code>system_prompt</code></td><td><code>Assistant</code></td><td>Preset name</td></tr>
   <tr><td><code>glances_host</code></td><td><code>http://thinkpad:61208</code></td><td>Home server</td></tr>
@@ -514,6 +514,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
     <li>A bank link is made once in a browser (<code>python -m tools.enable_banking_api</code>) and lasts as long as the bank allows, at most 180 days.</li>
     <li>Every page read, newest first, at most <code>bank_max_transactions</code> (100) listed per account; totals count all.</li>
     <li>Reversed ranges swapped, future ends cut to today, starts at most 90 days back; an expired link says how to relink.</li>
+    <li>Transactions are kept in <code>spending.db</code> (<code>bank_store.py</code>, forever, mode 0600): the first read fetches 90 days, later ones only missing days plus the last 7 days after 15 minutes. Accounts are filed by IBAN, so relinking keeps their history; stored days are answered after the link expires.</li>
     <li>Reads you ask for send <code>Psu-*</code> headers (you're present), so PSD2's limit of 4 background reads a day doesn't apply; the morning job sends none.</li>
     <li>The bank job messages you 7 days and 1 day before the link expires.</li></ul></div>
   <div class="card"><h4>Spending <small>spending.py</small></h4><ul>
@@ -680,7 +681,7 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td><code>tool_router.py</code></td><td>Tool groups per question</td></tr>
   <tr><td><code>tool_groups.py</code></td><td>Tool groups and their example questions; the one place that decides which tools go with the chosen groups</td></tr>
   <tr><td><code>tools.py</code></td><td>Registry, <code>run_tool</code> (the one place a call becomes tool text, confirmation included)</td></tr>
-  <tr><td><code>glances_api</code> · <code>disk_scan</code> · <code>web_search</code> · <code>animeschedule_api</code> · <code>cs_api</code> · <code>calendar_api</code> · <code>enable_banking_api</code> · <code>spending</code></td><td>Backends</td></tr>
+  <tr><td><code>glances_api</code> · <code>disk_scan</code> · <code>web_search</code> · <code>animeschedule_api</code> · <code>cs_api</code> · <code>calendar_api</code> · <code>enable_banking_api</code> · <code>bank_store</code> · <code>spending</code></td><td>Backends</td></tr>
   <tr><td><code>http_client.py</code></td><td><code>request</code>, <code>pages</code></td></tr>
   <tr><td><code>mlx_client.py</code></td><td>Chat, embeddings and the model list from the Rapid-MLX servers</td></tr>
   <tr><td><code>mlx_server.py</code></td><td>Starting and stopping the Rapid-MLX servers</td></tr>

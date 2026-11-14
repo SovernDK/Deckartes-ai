@@ -32,6 +32,7 @@ import jwt
 
 from core import clock, http_client
 from core.config import PROJECT_ROOT, config
+from tools import bank_store
 
 API_URL = "https://api.enablebanking.com"
 
@@ -249,29 +250,112 @@ def _totals(entries: list[dict]) -> str:
     return "; ".join(f"in +{sums[currency, False]:.2f} {currency}, out -{sums[currency, True]:.2f} {currency}"
                      for currency in currencies)
 
-def date_range(date_from: str, date_to: str | None) -> tuple[dt.date, dt.date, str]:
-    """A tool's YYYY-MM-DD range, up to today when there's no end, and a note for the tool text
-    ("" or a paragraph). A reversed range is swapped, the future cut off and a start older than the
-    bank gives moved up, rather than failing, since a small model retries poorly."""
+def date_range(date_from: str, date_to: str | None) -> tuple[dt.date, dt.date]:
+    """A tool's YYYY-MM-DD range, up to today when there's no end; a reversed range is swapped and
+    the future cut off rather than failing, since a small model retries poorly."""
     start, end = sorted((clock.parse_date(date_from), clock.parse_date(date_to) if date_to else clock.today()))
     # Nothing has happened after today
     end = min(end, clock.today())
-    # PSD2 makes banks give the last 90 days without the user approving again, and no more (Pekao
-    # refuses day 91 with ASPSP_ERROR). From the later of the local and UTC dates, in case the
-    # bank counts in UTC
-    days = 90
-    earliest = max(clock.today(), clock.now().astimezone(dt.UTC).date()) - dt.timedelta(days=days)
-    if start >= earliest:
-        return start, end, ""
-    note = f"The bank gives only the last {days} days, so this starts on {earliest}, not {start}.\n\n"
-    return earliest, max(end, earliest), note
+    return min(start, end), end
+
+# PSD2 makes banks give the last 90 days without the user approving again, and no more (Pekao
+# refuses day 91 with ASPSP_ERROR)
+BANK_HISTORY_DAYS = 90
+
+def _bank_earliest() -> dt.date:
+    """The first day the bank still gives, counted from the later of the local and UTC dates in
+    case the bank counts in UTC."""
+    return max(clock.today(), clock.now().astimezone(dt.UTC).date()) - dt.timedelta(days=BANK_HISTORY_DAYS)
+
+def _account_key(account: dict) -> str:
+    """What the store files an account under: its IBAN and currency, which stay the same when the
+    user relinks, unlike Enable Banking's uid; the uid when there's no IBAN (the sandbox)."""
+    iban = ((account.get("account_id") or {}).get("iban") or "").replace(" ", "")
+    return f"{iban} {account.get('currency') or ''}".strip() if iban else account["uid"]
+
+def _days(start: dt.date, end: dt.date) -> list[dt.date]:
+    return [start + dt.timedelta(days=offset) for offset in range((end - start).days + 1)]
+
+def _runs(days: list[dt.date]) -> list[tuple[dt.date, dt.date]]:
+    """Sorted days as (first, last) runs of consecutive days."""
+    runs: list[tuple[dt.date, dt.date]] = []
+    for day in days:
+        if runs and day == runs[-1][1] + dt.timedelta(days=1):
+            runs[-1] = (runs[-1][0], day)
+        else:
+            runs.append((day, day))
+    return runs
+
+@dataclass
+class _Read:
+    # (account, its stored entries in the range, whether every fetch was complete)
+    accounts: list[tuple[dict, list[dict], bool]]
+    # Paragraphs for the tool text about days the range couldn't get
+    notes: list[str]
+
+async def _sync(account: dict, start: dt.date, end: dt.date, *, user_present: bool) -> tuple[bool, str | None]:
+    """Fetch the account's days from the bank that the store lacks or that may have changed since
+    (the last config.bank_settle_days, after config.bank_fresh_minutes); the first read of an
+    account fetches everything the bank gives. Returns whether every fetch was complete, and a note
+    when the bank couldn't be read but every day asked for is stored."""
+    key = _account_key(account)
+    earliest = _bank_earliest()
+    first, last = (earliest, clock.today()) if not bank_store.has_any(key) else (max(start, earliest), end)
+    if first > last:
+        return True, None
+    synced = bank_store.synced(key, first, last)
+    settled_before = clock.today() - dt.timedelta(days=config.bank_settle_days - 1)
+    stale_before = clock.now() - dt.timedelta(minutes=config.bank_fresh_minutes)
+    needed = [day for day in _days(first, last)
+              if day not in synced or (day >= settled_before and synced[day] < stale_before)]
+    complete = True
+    for run_start, run_end in _runs(needed):
+        try:
+            entries, done = await _get_transactions(account["uid"], run_start, run_end, user_present=user_present)
+        except BankingError as e:
+            if any(day not in bank_store.synced(key, start, end) for day in _days(start, end)):
+                raise
+            return complete, f"Could not refresh from the bank ({e}), so payments since {run_start} may be missing."
+        bank_store.replace(key, run_start, run_end, [(_date(entry), entry) for entry in entries], complete=done)
+        complete = complete and done
+    return complete, None
+
+async def _read(start: dt.date, end: dt.date, *, user_present: bool) -> _Read:
+    """Every linked account's transactions between two dates, from the store after fetching what it
+    lacks. With an expired link, the stored days are still read."""
+    link = _saved_link()
+    expires = _expiry(link)
+    earliest = _bank_earliest()
+    read = _Read([], [])
+    for account in link["accounts"]:
+        complete = True
+        if expires > clock.now():
+            complete, note = await _sync(account, start, end, user_present=user_present)
+            if note:
+                read.notes.append(note)
+        key = _account_key(account)
+        synced = bank_store.synced(key, start, end)
+        for run_start, run_end in _runs([day for day in _days(start, end) if day not in synced]):
+            if expires <= clock.now():
+                read.notes.append(f"The bank link expired on {expires:%Y-%m-%d}, so nothing from {run_start} to "
+                                  f"{run_end} is stored: relink with {_app().command}.")
+            elif run_start < earliest:
+                read.notes.append(f"Nothing is stored from {run_start} to {min(run_end, earliest - dt.timedelta(days=1))}, "
+                                  f"and the bank gives only the last {BANK_HISTORY_DAYS} days.")
+        read.accounts.append((account, bank_store.entries(key, start, end), complete))
+    # Accounts usually share a note
+    read.notes = list(dict.fromkeys(read.notes))
+    return read
+
+def _with_notes(notes: list[str], text: str) -> str:
+    return "".join(f"{note}\n\n" for note in notes) + text
 
 async def transactions(date_from: str, date_to: str | None = None) -> str:
     """Tool text: every linked account's transactions between two YYYY-MM-DD dates, newest first."""
-    start, end, note = date_range(date_from, date_to)
+    start, end = date_range(date_from, date_to)
+    read = await _read(start, end, user_present=True)
     blocks = []
-    for account in _live_link()["accounts"]:
-        entries, complete = await _get_transactions(account["uid"], start, end, user_present=True)
+    for account, entries, complete in read.accounts:
         title = _account_title(account)
         if not entries:
             blocks.append(f"{title}: no transactions from {start} to {end}.")
@@ -285,7 +369,7 @@ async def transactions(date_from: str, date_to: str | None = None) -> str:
                          "from this list and the totals")
         blocks.append(f"{title}, {len(entries)} transactions from {start} to {end}, newest first:\n"
                       + "\n".join(lines) + f"\nTotal: {_totals(entries)}")
-    return note + "\n\n".join(blocks)
+    return _with_notes(read.notes, "\n\n".join(blocks))
 
 @dataclass(frozen=True)
 class Payment:
@@ -307,24 +391,22 @@ def has_live_link() -> bool:
         return False
     return True
 
-async def payments(start: dt.date, end: dt.date, *, user_present: bool) -> list[Payment]:
+async def payments(start: dt.date, end: dt.date, *, user_present: bool) -> tuple[list[Payment], list[str]]:
     """The booked payments out of every linked account between two dates, by booking date, so a
-    payment pending at the end of a range lands in the range it books in and is counted once.
-    user_present: the user asked for them, rather than a scheduled job (see _user_present)."""
+    payment pending at the end of a range lands in the range it books in and is counted once; and
+    notes about days that couldn't be read. user_present: the user asked for them, rather than a
+    scheduled job (see _user_present)."""
+    read = await _read(start, end, user_present=user_present)
     found = []
-    for account in _live_link()["accounts"]:
-        entries, _ = await _get_transactions(account["uid"], start, end, user_present=user_present)
+    for _, entries, _ in read.accounts:
         for entry in entries:
             if not _is_outgoing(entry) or entry.get("status") == "PDNG" or not _date(entry):
                 continue
-            day = dt.date.fromisoformat(_date(entry))
-            if not start <= day <= end:
-                continue
             money = entry["transaction_amount"]
             party, description = _counterparty(entry)
-            found.append(Payment(day, Decimal(money["amount"]), money["currency"],
+            found.append(Payment(dt.date.fromisoformat(_date(entry)), Decimal(money["amount"]), money["currency"],
                                  party, description, entry.get("merchant_category_code") or ""))
-    return found
+    return found, read.notes
 
 def _choose(banks: list[dict]) -> dict:
     while True:

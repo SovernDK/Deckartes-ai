@@ -2,15 +2,15 @@
 finished week's and month's totals so later ones can be compared with them.
 
 A payee (the paid side's name, or the description when the bank gives none) is labeled by the local
-model the first time it's seen, and the label is remembered, so the same shop lands in the same
+decision model the first time it's seen, and the label is remembered, so the same shop lands in the same
 category every week. The user's own labels (set_category) are rules matched by words, and win over
 the model's. The morning bank job (jobs/bank_digest.py) sends the digest of a finished week on
 Monday and of a finished month on the 1st, and saves its totals once Telegram took the message.
 Details are in docs/tools-banking.md.
 """
 
+import asyncio
 import datetime as dt
-import json
 import re
 import sqlite3
 from collections import defaultdict
@@ -19,7 +19,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from core import clock, names, prompt_file
-from model import mlx_client
+from core.config import config
+from model import mlx_client, mlx_server
 from model.mlx_server import ModelServerError
 from tools import bank_store
 from tools import enable_banking_api as bank
@@ -132,51 +133,39 @@ def _remembered(payee: str, known: dict[str, Label]) -> Label | None:
         return Label(max(rules)[1], "user")
     return known.get(payee)
 
-# What the bank's description says about the kind of payment, first match wins. A small model
-# reads Pekao's "PŁATNOŚĆ BLIK" and "TRANSAKCJA KARTĄ PŁATNICZĄ" as transfers unless told
-_PAYMENT_KINDS = (("PRZELEW", "bank transfer"), ("KART", "card payment"), ("CARD", "card payment"),
-                  ("BLIK", "BLIK payment"))
+# What the bank's description says about the kind of payment, first match wins, as a key of the
+# decision's "kinds". It's told the kind instead of Pekao's boilerplate, like "TRANSAKCJA KARTĄ PŁATNICZĄ"
+_PAYMENT_KINDS = (("PRZELEW", "transfer"), ("KART", "card"), ("CARD", "card"), ("BLIK", "blik"))
 
-def _describe(payment: bank.Payment) -> str:
-    """A payment as the model sees it: the payee, and the kind of payment or the description."""
-    details = [payment.party or payment.description]
+def _state(payment: bank.Payment, decision: dict) -> str:
+    """A payment as the decision model reads it: the payee, then the kind of payment or the
+    description, and the card merchant category code when the bank gives one."""
+    words = decision["state"]
+    lines = [f"{words['payee']}: {payment.party or payment.description}"]
     description = payment.description.upper()
     kind = next((kind for marker, kind in _PAYMENT_KINDS if marker in description), None)
     if kind:
-        details.append(kind)
+        lines.append(f"{words['kind']}: {decision['kinds'][kind]}")
     elif payment.party and payment.description:
-        details.append(f"description: {payment.description}")
+        lines.append(f"{words['description']}: {payment.description}")
     if payment.merchant_code:
-        details.append(f"card merchant category code {payment.merchant_code}")
-    return "; ".join(details)
-
-# The model's answer for a payee it can't place; the user labels those (the app's s key)
-UNSURE = "Unsure"
-
-def _labeling_prompt(payees: list[tuple[str, bank.Payment]]) -> str:
-    lines = [f"{number}. {_describe(payment)}" for number, (_, payment) in enumerate(payees, 1)]
-    return prompt_file.task("spending_labels", categories=", ".join(CATEGORIES), unsure=UNSURE,
-                            payees="\n".join(lines))
+        lines.append(f"{words['merchant_code']}: {payment.merchant_code}")
+    return "\n".join(lines)
 
 async def _ask_model(to_label: list[tuple[str, bank.Payment]]) -> dict[str, str]:
-    """The model's category for each payee it labeled with a known category; the rest it was
-    unsure of or answered wrongly."""
-    try:
-        reply = await mlx_client.complete([{"role": "user", "content": _labeling_prompt(to_label)}])
-    except ModelServerError:
-        return {}
-    text = reply.content
-    try:
-        answers = json.loads(text[text.find("{"):text.rfind("}") + 1])
-    except ValueError:
-        return {}
-    if not isinstance(answers, dict):
-        return {}
-    known = {category.lower(): category for category in CATEGORIES}
+    """The decision model's category for each payee it gives one at least
+    config.spending_label_min_probability; the rest stay undecided, and so does every payee after
+    the server fails."""
+    decision = prompt_file.decision("spending_category")
     labeled = {}
-    for number, (payee, _) in enumerate(to_label, 1):
-        category = known.get(str(answers.get(str(number), "")).strip().lower())
-        if category:
+    for payee, payment in to_label:
+        try:
+            probabilities = await mlx_client.decide(_state(payment, decision), decision["question"],
+                                                    decision["options"])
+        except ModelServerError:
+            break
+        category, probability = max(probabilities.items(), key=lambda item: item[1])
+        if category in CATEGORIES and probability >= config.spending_label_min_probability:
             labeled[payee] = category
     return labeled
 
@@ -196,16 +185,16 @@ async def _labels(to_label: list[bank.Payment], *, again: bool = False) -> dict[
             found[payee] = label
         else:
             ask.setdefault(payee, payment)
-    # A small model loses track of a long list, and sometimes rambles until no answer can be read
-    batch_size = 15
-    pending = list(ask)
-    for first in range(0, len(pending), batch_size):
-        batch = pending[first:first + batch_size]
-        labeled = await _ask_model([(payee, ask[payee]) for payee in batch])
+    if ask:
+        try:
+            labeled = await _ask_model(list(ask.items()))
+        finally:
+            # The decision model takes 2 GB, and labeling is rare: a few new payees a day
+            await asyncio.to_thread(mlx_server.stop_decisions)
         stamp = clock.now().isoformat(timespec="seconds")
         with _database() as db:
             db.executemany("DELETE FROM labels WHERE payee = ? AND source = 'model'",
-                           [(payee,) for payee in batch if payee not in labeled])
+                           [(payee,) for payee in ask if payee not in labeled])
             db.executemany("INSERT OR REPLACE INTO labels VALUES (?, ?, 'model', ?)",
                            [(payee, category, stamp) for payee, category in labeled.items()])
         found |= {payee: Label(category, "model") for payee, category in labeled.items()}

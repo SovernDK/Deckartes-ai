@@ -247,14 +247,15 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
 <section id="model-server">
 <h2>Model server</h2>
 <p class="lead">Local models run in Rapid-MLX, as child processes of the app. <code>mlx_server.py</code> starts and stops them; <code>mlx_client.py</code> is the only module that talks to them.</p>
-<svg class="diagram" viewBox="0 0 760 186" role="img" aria-label="mlx_client calls two Rapid-MLX servers over HTTP, and mlx_server runs both"><rect class="b1" x="20" y="62" width="150" height="64" rx="8"/><text x="95" y="90" text-anchor="middle" class="t">mlx_client.py</text><text x="95" y="106" text-anchor="middle" class="s">chat · embeddings</text><rect class="b3" x="610" y="62" width="130" height="64" rx="8"/><text x="675" y="90" text-anchor="middle" class="t">mlx_server.py</text><text x="675" y="106" text-anchor="middle" class="s">child processes</text><rect class="b2" x="260" y="14" width="260" height="64" rx="8"/><text x="390" y="35" text-anchor="middle" class="t">Chat server</text><text x="390" y="51" text-anchor="middle" class="s">chat model + embed_model (routing)</text><text x="390" y="66" text-anchor="middle" class="s">config.host · started on mount</text><rect class="b2" x="260" y="108" width="260" height="64" rx="8"/><text x="390" y="129" text-anchor="middle" class="t">File search server</text><text x="390" y="145" text-anchor="middle" class="s">rag_embed_model only</text><text x="390" y="160" text-anchor="middle" class="s">config.file_embed_host · first library use</text><polyline class="ln" points="170,94 215,94 215,46 260,46" marker-end="url(#arr)"/><polyline class="ln" points="215,94 215,140 260,140" marker-end="url(#arr)"/><polyline class="ln" points="610,94 565,94 565,46 520,46" marker-end="url(#arr)"/><polyline class="ln" points="565,94 565,140 520,140" marker-end="url(#arr)"/><text x="176" y="86" class="lab">HTTP</text><text x="572" y="86" class="lab">runs</text></svg>
-<p>A Rapid-MLX server holds one embedding model and rejects any other name, which is why there are two.</p>
+<svg class="diagram" viewBox="0 0 760 280" role="img" aria-label="mlx_client calls three Rapid-MLX servers over HTTP, and mlx_server runs all three"><rect class="b1" x="20" y="62" width="150" height="64" rx="8"/><text x="95" y="90" text-anchor="middle" class="t">mlx_client.py</text><text x="95" y="106" text-anchor="middle" class="s">chat · embeddings · decisions</text><rect class="b3" x="610" y="62" width="130" height="64" rx="8"/><text x="675" y="90" text-anchor="middle" class="t">mlx_server.py</text><text x="675" y="106" text-anchor="middle" class="s">child processes</text><rect class="b2" x="260" y="14" width="260" height="64" rx="8"/><text x="390" y="35" text-anchor="middle" class="t">Chat server</text><text x="390" y="51" text-anchor="middle" class="s">chat model + embed_model (routing)</text><text x="390" y="66" text-anchor="middle" class="s">config.host · started on mount</text><rect class="b2" x="260" y="108" width="260" height="64" rx="8"/><text x="390" y="129" text-anchor="middle" class="t">File search server</text><text x="390" y="145" text-anchor="middle" class="s">rag_embed_model only</text><text x="390" y="160" text-anchor="middle" class="s">config.file_embed_host · first library use</text><polyline class="ln" points="170,94 215,94 215,46 260,46" marker-end="url(#arr)"/><polyline class="ln" points="215,94 215,140 260,140" marker-end="url(#arr)"/><polyline class="ln" points="610,94 565,94 565,46 520,46" marker-end="url(#arr)"/><polyline class="ln" points="565,94 565,140 520,140" marker-end="url(#arr)"/><text x="176" y="86" class="lab">HTTP</text><text x="572" y="86" class="lab">runs</text><rect class="b2" x="260" y="202" width="260" height="64" rx="8"/><text x="390" y="223" text-anchor="middle" class="t">Decision server</text><text x="390" y="239" text-anchor="middle" class="s">decider-2b-4bit · system-one</text><text x="390" y="254" text-anchor="middle" class="s">config.decision_host · only while labeling</text><polyline class="ln" points="215,140 215,234 260,234" marker-end="url(#arr)"/><polyline class="ln" points="565,140 565,234 520,234" marker-end="url(#arr)"/></svg>
+<p>A Rapid-MLX server holds one embedding model and rejects any other name, which is why there are two for embeddings. The third, <code>rapid-mlx system-one</code>, serves the decision model that labels spending payees: it scores every category instead of writing an answer.</p>
 <h3>When servers start and stop</h3>
 <table>
   <tr><th>Moment</th><th>What happens</th></tr>
   <tr><td>App opens</td><td>Chat server starts; the spinner says "Starting model server...". The first start downloads the model.</td></tr>
-  <tr><td>Every chat or embedding call</td><td><code>ensure_chat</code> / <code>ensure_files</code> run first, so a crashed server returns on the next turn</td></tr>
+  <tr><td>Every chat or embedding call</td><td><code>ensure_chat</code> / <code>ensure_files</code> / <code>ensure_decisions</code> run first, so a crashed server returns on the next turn</td></tr>
   <tr><td>First library load or search</td><td>File search server starts</td></tr>
+  <tr><td>Payees to label (spending tool, digest, key <code>s</code>)</td><td>Decision server starts (about 8 s), labels them, and stops, since it takes about 2 GB</td></tr>
   <tr><td>Key <code>m</code>, new model</td><td>Chat server restarts, since the model is a launch argument; refused while a reply is running</td></tr>
   <tr><td><code>/kill</code></td><td>Stops the servers this app started; the next question starts them again</td></tr>
   <tr><td>App exits</td><td><code>atexit</code> stops them</td></tr>
@@ -365,12 +366,12 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
   <tr><th>Section</th><th>Holds</th><th>Read with</th></tr>
   <tr><td><code>presets</code></td><td>System prompts, selected by <code>config.system_prompt</code></td><td><code>prompt_file.presets()</code>, via <code>prompts.py</code></td></tr>
   <tr><td><code>tasks</code></td><td>Fixed prompts of single jobs, with <code>{placeholders}</code> (literal braces doubled)</td><td><code>prompt_file.task(name, **values)</code></td></tr>
+  <tr><td><code>decisions</code></td><td>The decision model's questions: the question, its options with descriptions, and the words of the state (<code>spending_category</code>, in Polish)</td><td><code>prompt_file.decision(name)</code></td></tr>
 </table>
 <table>
   <tr><th>Task</th><th>Used by</th></tr>
   <tr><td><code>tool_values_rule</code></td><td>Appended to presets with tools: take values from the conversation instead of asking</td></tr>
   <tr><td><code>compact_summary</code></td><td>Compaction in <code>conversation.py</code></td></tr>
-  <tr><td><code>spending_labels</code></td><td>Labeling payees with categories in <code>spending.py</code></td></tr>
   <tr><td><code>spending_comment</code></td><td>The model's comment under a spending digest in <code>spending.py</code></td></tr>
 </table>
 <table>
@@ -531,8 +532,8 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
     <li>The bank job messages you 7 days and 1 day before the link expires.</li></ul></div>
   <div class="card"><h4>Spending <small>spending.py</small></h4><ul>
     <li>Booked payments out, totaled per category (12 fixed ones); <code>Transfers</code> listed but not counted as spending.</li>
-    <li>Each payee (name without store numbers) is labeled once by the local model and remembered in <code>spending.db</code>; your own labels are word rules that win over the model's.</li>
-    <li>The model sees the kind of payment (card, BLIK, transfer) rather than the bank's boilerplate, and may answer Unsure; undecided payees count as Other until you label them with key <code>s</code>.</li>
+    <li>Each payee (name without store numbers) is labeled once by the decision model (Decider-2b, 4-bit) and remembered in <code>spending.db</code>; your own labels are word rules that win over the model's.</li>
+    <li>The model gets the payee, the kind of payment (card, BLIK, transfer) rather than the bank's boilerplate, and the merchant code, and gives every category a probability. Below 0.5 the payee is undecided: it counts as Other until you label it with key <code>s</code>.</li>
     <li>The bank job sends last week's digest on Monday and last month's on the 1st (or the next morning it runs): a table with % changes worked out in code, plus a few sentences from the model.</li>
     <li>Each digest's totals are saved once Telegram took it; a week is compared with the average of the 4 saved weeks before, a month month on month and year on year. No backfill.</li></ul></div>
 </div>

@@ -57,6 +57,11 @@ class Config:
     embed_model: str = "mlx-community/all-MiniLM-L6-v2-4bit"
     # Embeds the library's chunks and searches (library.py); multilingual, unlike embed_model
     rag_embed_model: str = "mlx-community/embeddinggemma-2-4bit"
+    # Labels spending payees (spending.py): a decision model, which scores every category rather than
+    # writing an answer. It runs on its own Rapid-MLX server, started only while labeling
+    decision_host: str = "http://127.0.0.1:8002"
+    # Decider-2b quantized to 4 bits, made by model/quantize_decider.py (docs/model-server.md)
+    decision_model: Path = Path.home() / ".local" / "share" / "deckartes" / "models" / "decider-2b-4bit"
     # Detailed mode (key shift+t): show the model's thinking and the tokens used; off = Default mode
     detailed: bool = False
     # Name of a preset in prompts.json
@@ -94,6 +99,9 @@ class Config:
     spending_path: Path = Path.home() / ".local" / "share" / "deckartes" / "spending.db"
     # The sandbox app's, kept apart so made-up payments never mix with the real history
     spending_sandbox_path: Path = Path.home() / ".local" / "share" / "deckartes" / "spending_sandbox.db"
+    # A payee's category is the decision model's best one only when it gives it at least this
+    # probability; otherwise the payee stays undecided for the user to label. Fitted to the 4-bit model
+    spending_label_min_probability: float = 0.5
     telegram_token: str = field(default_factory=lambda: read_env("TELEGRAM_BOT_TOKEN"), repr=False)
     # The only Telegram user the bot answers; the bot won't start without it
     telegram_user_id: str = field(default_factory=lambda: read_env("TELEGRAM_USER_ID"), repr=False)

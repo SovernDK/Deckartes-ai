@@ -37,6 +37,7 @@ class ClientTest(unittest.IsolatedAsyncioTestCase):
         transport = httpx.MockTransport(self.handle)
         for target, name, value in [(mlx_client, "_transport", transport), (mlx_client, "_sync_transport", transport),
                                     (mlx_server, "ensure_chat", mock.Mock()), (mlx_server, "ensure_files", mock.Mock()),
+                                    (mlx_server, "ensure_decisions", mock.Mock()),
                                     (config, "model", "some/model"), (config, "temperature", 0.1),
                                     (config, "top_k", 50), (config, "repetition_penalty", 1.1),
                                     (config, "max_tokens", 4096), (config, "enable_thinking", False)]:
@@ -160,6 +161,24 @@ class EmbedTest(ClientTest):
         self.response = httpx.Response(400, json={"error": {"message": "too long"}})
         with self.assertRaisesRegex(ModelServerError, "too long"):
             mlx_client.embed_file_text(["a"])
+
+class DecideTest(ClientTest):
+    async def test_asks_the_decision_server_one_choice_and_returns_its_probabilities(self):
+        self.response = httpx.Response(200, json={"answers": {"answer": {
+            "type": "choice", "choice": "a", "probabilities": {"a": 0.7, "b": 0.3}}}})
+
+        probabilities = await mlx_client.decide("state", "Which?", {"a": "first", "b": "second"})
+
+        self.assertEqual(probabilities, {"a": 0.7, "b": 0.3})
+        self.assertEqual(str(self.requests[-1].url), f"{config.decision_host}/v1/systemone")
+        self.assertEqual(self.body(), {"model": config.decision_model.name, "state": "state", "questions": {
+            "answer": {"type": "choice", "instructions": "Which?", "criteria": {"a": "first", "b": "second"}}}})
+        mlx_server.ensure_decisions.assert_called_once_with()
+
+    async def test_decision_error_uses_the_server_message(self):
+        self.response = httpx.Response(422, json={"error": {"message": "choice criteria must be a non-empty object"}})
+        with self.assertRaisesRegex(ModelServerError, "non-empty object"):
+            await mlx_client.decide("state", "Which?", {})
 
 class ListModelsTest(unittest.TestCase):
     def test_complete_chat_models_only_and_the_current_one(self):

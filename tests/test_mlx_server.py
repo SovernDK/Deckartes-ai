@@ -45,7 +45,12 @@ class ServerTest(unittest.TestCase):
         self.folder = Path(folder.name)
         self.url = f"http://127.0.0.1:{free_port()}"
         self.files_url = f"http://127.0.0.1:{free_port()}"
+        self.decisions_url = f"http://127.0.0.1:{free_port()}"
+        self.decision_model = self.folder / "decider-2b-4bit"
+        self.decision_model.mkdir()
         for target, name, value in [(config, "host", self.url), (config, "file_embed_host", self.files_url),
+                                    (config, "decision_host", self.decisions_url),
+                                    (config, "decision_model", self.decision_model),
                                     (config, "mlx_server_command", self.program(FAKE_SERVER)),
                                     (config, "model", "some/model"), (mlx_server, "LOG_DIR", self.folder / "logs"),
                                     (mlx_server, "POLL_SECONDS", 0.02)]:
@@ -146,6 +151,21 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.arguments(), f"serve --host 127.0.0.1 --port {port} --yes "
                                            f"--embedding-model {config.rag_embed_model}")
         self.assertEqual(mlx_server.stop_all(), ["file search"])
+
+    def test_decision_server_holds_the_decision_model_until_stopped(self):
+        mlx_server.ensure_decisions()
+        port = self.decisions_url.rsplit(":", 1)[1]
+        self.assertEqual(self.arguments(), f"system-one {self.decision_model} --backend decider "
+                                           f"--host 127.0.0.1 --port {port}")
+        self.assertTrue(mlx_server.stop_decisions())
+        self.assertEqual(mlx_server.stop_all(), [])
+
+    def test_missing_decision_model_says_how_to_make_it(self):
+        self.decision_model.rmdir()
+        with self.assertRaisesRegex(mlx_server.ModelServerError, f"^No decision model at {self.decision_model}. "
+                                                                 "Make it with: .*quantize_decider.py"):
+            mlx_server.ensure_decisions()
+        self.assertEqual(self.launches(), [])
 
     def test_restart_uses_the_new_model(self):
         mlx_server.ensure_chat()

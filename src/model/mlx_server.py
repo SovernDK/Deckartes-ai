@@ -2,7 +2,9 @@
 
 The chat server (config.host) holds the chat model and the routing embedding model. A second,
 embeddings-only server (config.file_embed_host) holds config.rag_embed_model and is started only
-when the library needs it, because a Rapid-MLX server can serve one embedding model.
+when the library needs it, because a Rapid-MLX server can serve one embedding model. The decision
+server (config.decision_host, `rapid-mlx system-one`) holds config.decision_model, which labels
+spending payees; it's started for a labeling and stopped after it, since the model takes 2 GB.
 
 A server already answering on a port is used as it is and never stopped, which also covers one
 left behind by a crash. Servers started here stop when the app exits. Their output goes to a log
@@ -38,10 +40,13 @@ class ModelServerError(Exception):
     """A model server couldn't be started or reached, or refused a request. The message says why."""
 
 class _Server:
-    def __init__(self, name: str, url: Callable[[], str], arguments: Callable[[], list[str]]) -> None:
+    def __init__(self, name: str, url: Callable[[], str], arguments: Callable[[], list[str]],
+                 ready_path: str = READY_PATH) -> None:
         self.name = name
         self.url = url
         self.arguments = arguments
+        # The decision server answers /health only once its model has loaded
+        self.ready_path = ready_path
         self.process: subprocess.Popen | None = None
         self.lock = threading.Lock()
 
@@ -51,7 +56,7 @@ class _Server:
 
     def status(self) -> int | None:
         try:
-            return httpx.get(self.url() + READY_PATH, timeout=2).status_code
+            return httpx.get(self.url() + self.ready_path, timeout=2).status_code
         except httpx.HTTPError:
             return None
 
@@ -123,14 +128,28 @@ def _chat_arguments() -> list[str]:
 def _file_arguments() -> list[str]:
     return ["serve", *_address(config.file_embed_host), "--yes", "--embedding-model", config.rag_embed_model]
 
+def _decision_arguments() -> list[str]:
+    model = config.decision_model
+    if not model.is_dir():
+        raise ModelServerError(f"No decision model at {model}. Make it with: "
+                               f"~/.local/share/uv/tools/rapid-mlx/bin/python src/model/quantize_decider.py {model}")
+    return ["system-one", str(model), "--backend", "decider", *_address(config.decision_host)]
+
 _chat = _Server("chat", lambda: config.host, _chat_arguments)
 _files = _Server("file search", lambda: config.file_embed_host, _file_arguments)
+_decisions = _Server("decision", lambda: config.decision_host, _decision_arguments, ready_path="/health")
 
 def ensure_chat() -> None:
     _chat.ensure_running()
 
 def ensure_files() -> None:
     _files.ensure_running()
+
+def ensure_decisions() -> None:
+    _decisions.ensure_running()
+
+def stop_decisions() -> bool:
+    return _decisions.stop()
 
 def chat_is_ready() -> bool:
     return _chat.status() == 200
@@ -140,6 +159,6 @@ def restart_chat() -> None:
     _chat.ensure_running()
 
 def stop_all() -> list[str]:
-    return [server.name for server in (_chat, _files) if server.stop()]
+    return [server.name for server in (_chat, _files, _decisions) if server.stop()]
 
 atexit.register(stop_all)

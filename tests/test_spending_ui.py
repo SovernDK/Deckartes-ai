@@ -8,11 +8,10 @@ from textual.widgets import ListView, OptionList, Static
 from core.config import config
 from frozen_clock import freeze
 from http_fake import HttpTest
-from model import mlx_client, mlx_server
+from model import mlx_server
 from temp_history import temp_history
 from test_banking_tools import TRANSACTIONS, entry, link, page, use_fake_bank
-from test_conversation import FakeClient
-from test_spending import labels
+from test_spending import sure, unsure, use_decisions
 from tools import tools
 from ui.app import DecartesApp
 from ui.spending_screen import CategoryScreen, PayeeItem, SpendingScreen
@@ -36,13 +35,6 @@ class SpendingUiTest(HttpTest):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def model(self, *rounds) -> FakeClient:
-        client = FakeClient(*rounds)
-        patcher = mock.patch.object(mlx_client, "complete", client.complete)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        return client
-
     async def open(self, app, pilot) -> SpendingScreen:
         app.screen.set_focus(None)
         await pilot.press("s")
@@ -56,7 +48,7 @@ class SpendingUiTest(HttpTest):
         return [str(item.query_one(Static).render()) for item in screen.query("PayeeItem")]
 
     async def test_the_model_labels_recent_payees_and_the_user_picks_the_undecided(self):
-        client = self.model(labels(_1="Groceries", _2="Unsure"))
+        decisions = use_decisions(self, sure("Groceries"), unsure("Shopping"))
         app = DecartesApp()
         async with app.run_test(size=(100, 30)) as pilot:
             screen = await self.open(app, pilot)
@@ -66,8 +58,8 @@ class SpendingUiTest(HttpTest):
             self.assertEqual(str(screen.query_one("#spending_status", Static).render()),
                              "1 of 2 payees from the last 30 days are undecided and count as Other.")
             # The bank's boilerplate becomes the kind of payment
-            self.assertTrue(client.sent[0]["messages"][0]["content"].endswith(
-                "\n\n1. BIEDRONKA 1234 KROSNO; card payment\n2. KOMIS U ZBYSZKA; BLIK payment"))
+            self.assertEqual(decisions.states, ["Odbiorca: BIEDRONKA 1234 KROSNO\nRodzaj: płatność kartą",
+                                                "Odbiorca: KOMIS U ZBYSZKA\nRodzaj: płatność BLIK"])
 
             await pilot.press("enter")
             await pilot.pause()
@@ -85,7 +77,7 @@ class SpendingUiTest(HttpTest):
         self.assertIn("- Shopping: 99.00 EUR (1 payment)\n", await tools.get_spending_by_category("2026-11-01"))
 
     async def test_reopening_asks_the_model_again_except_about_the_users_labels(self):
-        client = self.model(labels(_1="Groceries", _2="Shopping"), labels(_1="Unsure"))
+        decisions = use_decisions(self, sure("Groceries"), sure("Shopping"), unsure("Groceries"))
         app = DecartesApp()
         async with app.run_test(size=(100, 30)) as pilot:
             screen = await self.open(app, pilot)
@@ -96,7 +88,7 @@ class SpendingUiTest(HttpTest):
             # Biedronka lost the model's label when it was unsure the second time
             self.assertEqual(self.shown(screen), ["BIEDRONKA 5678 KROSNO  undecided\n2 payments · 52.00 EUR",
                                                   "KOMIS U ZBYSZKA  Health (yours)\n1 payment · 99.00 EUR"])
-        self.assertTrue(client.sent[1]["messages"][0]["content"].endswith("\n\n1. BIEDRONKA 1234 KROSNO; card payment"))
+        self.assertEqual(decisions.states[2:], ["Odbiorca: BIEDRONKA 1234 KROSNO\nRodzaj: płatność kartą"])
 
     async def test_without_a_bank_link_the_popup_says_so(self):
         config.banking_session_path.unlink()

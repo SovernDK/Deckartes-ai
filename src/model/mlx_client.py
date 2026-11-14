@@ -1,4 +1,5 @@
-"""Chat and embeddings from the local Rapid-MLX servers, over their OpenAI-style HTTP API.
+"""Chat, embeddings and decisions from the local Rapid-MLX servers, over their HTTP APIs: the
+OpenAI-style one, and System One's for the decision model.
 
 Every call makes sure its server is running first (mlx_server.py), so a server that crashed comes
 back on the next turn. Failures raise ModelServerError with a readable message.
@@ -157,6 +158,21 @@ async def complete(messages: list[dict]) -> Reply:
     data = response.json()
     content = data["choices"][0]["message"].get("content") or ""
     return Reply(content, _token_count(data.get("usage"), data.get("metrics")))
+
+async def decide(state: str, question: str, options: dict[str, str]) -> dict[str, float]:
+    """The decision model's probability for each option (answer -> description) of a question about
+    state. It scores the options rather than writing text, so the answer is always one of them."""
+    await asyncio.to_thread(mlx_server.ensure_decisions)
+    body = {"model": config.decision_model.name, "state": state,
+            "questions": {"answer": {"type": "choice", "instructions": question, "criteria": options}}}
+    try:
+        async with httpx.AsyncClient(transport=_transport, timeout=TIMEOUT) as client:
+            response = await client.post(f"{config.decision_host}/v1/systemone", json=body)
+    except httpx.TransportError as e:
+        raise _unreachable(config.decision_host) from e
+    if response.status_code != 200:
+        raise _status_error(response.status_code, response.text)
+    return response.json()["answers"]["answer"]["probabilities"]
 
 def _vectors(response: httpx.Response) -> list[list[float]]:
     if response.status_code != 200:

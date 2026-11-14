@@ -13,7 +13,7 @@ from core.config import config
 from frozen_clock import freeze
 from http_fake import HttpTest
 from jobs import bank_digest, runner
-from model import mlx_client
+from model import mlx_client, mlx_server
 from model.mlx_server import ModelServerError
 from test_banking_tools import TRANSACTIONS, entry, link, page, use_fake_bank
 from test_conversation import FakeClient
@@ -26,9 +26,42 @@ def says(text: str) -> list[mlx_client.Delta]:
     """One model reply."""
     return [mlx_client.Delta(content=text)]
 
-def labels(**categories: str) -> list[mlx_client.Delta]:
-    """The model's labeling answer, numbered as asked: labels(_1="Groceries")."""
-    return says(json.dumps({number.lstrip("_"): category for number, category in categories.items()}))
+def sure(category: str) -> dict[str, float]:
+    """The decision model's answer for a payee, with the category above the labeling limit."""
+    return {"Other": 0.1, category: 0.9}
+
+def unsure(category: str) -> dict[str, float]:
+    """An answer whose best category is below the limit, which leaves the payee undecided."""
+    return {"Other": 0.35, "Shopping": 0.25, category: 0.4}
+
+class FakeDecisions:
+    """Stands in for mlx_client.decide: answers each payee with the next answer (an exception is
+    raised), and records the payments' states and the options asked."""
+
+    def __init__(self, *answers):
+        self.answers = list(answers)
+        self.states = []
+        self.options = {}
+
+    async def decide(self, state: str, question: str, options: dict[str, str]) -> dict[str, float]:
+        self.states.append(state)
+        self.options = options
+        if not self.answers:
+            raise ConnectionError("no more answers")
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+def use_decisions(test: unittest.TestCase, *answers) -> FakeDecisions:
+    """Fakes the decision model for the test, and records stopping its server (a mock)."""
+    decisions = FakeDecisions(*answers)
+    for target, name, value in ((mlx_client, "decide", decisions.decide),
+                                (mlx_server, "stop_decisions", mock.Mock(return_value=True))):
+        patcher = mock.patch.object(target, name, value)
+        patcher.start()
+        test.addCleanup(patcher.stop)
+    return decisions
 
 def saved(kind: str, start: str, **amounts: str) -> spending.Digest:
     """A digest already sent, with EUR totals per category: saved("month", "2026-09-01", Groceries="100")."""
@@ -53,16 +86,9 @@ class SpendingTest(HttpTest):
         use_fake_bank(self)
         link()
 
-    def model(self, *rounds) -> FakeClient:
-        client = FakeClient(*rounds)
-        patcher = mock.patch.object(mlx_client, "complete", client.complete)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        return client
-
     async def test_a_week_is_totaled_by_category_and_payees_are_labeled_once(self):
         self.serve({TRANSACTIONS: page(*WEEK)})
-        client = self.model(labels(_1="Groceries", _2="Fuel", _3="Transfers"))
+        decisions = use_decisions(self, sure("Groceries"), sure("Fuel"), sure("Transfers"))
 
         text = await tools.get_spending_by_category("2026-11-02", "2026-11-08")
 
@@ -72,28 +98,28 @@ class SpendingTest(HttpTest):
                                "Total spent: 265.50 EUR\n"
                                "Transfers, not counted as spending: 100.00 EUR (1 payment)\n"
                                "Not compared on the weeks before: no saved totals for the 4 weeks before.")
-        # Both Biedronka shops are one payee
-        prompt = client.sent[0]["messages"][0]["content"]
-        self.assertTrue(prompt.endswith("\n\n1. BIEDRONKA 1234 WARSZAWA\n2. ORLEN\n"
-                                        "3. Jan Kowalski; description: Rent share"), prompt)
+        # Both Biedronka shops are one payee, asked about once with every category as an option
+        self.assertEqual(decisions.states, ["Odbiorca: BIEDRONKA 1234 WARSZAWA", "Odbiorca: ORLEN",
+                                            "Odbiorca: Jan Kowalski\nOpis: Rent share"])
+        self.assertEqual(list(decisions.options), list(spending.CATEGORIES))
+        mlx_server.stop_decisions.assert_called_once_with()
         # Remembered: no second question to the model
         self.assertIn("Total spent: 265.50 EUR", await tools.get_spending_by_category("2026-11-02", "2026-11-08"))
-        self.assertEqual(len(client.sent), 1)
+        self.assertEqual(len(decisions.states), 3)
 
     async def test_a_payee_the_model_did_not_label_counts_as_other_and_is_asked_about_again(self):
         self.serve({TRANSACTIONS: page(entry("DBIT", "12.00", "2026-11-10", creditor="Apteka Zdrowie"))})
-        client = self.model(says("I think it's a pharmacy"), [ModelServerError("down")],
-                            labels(_1="Health"))
+        decisions = use_decisions(self, unsure("Health"), ModelServerError("down"), sure("Health"))
 
         for _ in range(2):
             self.assertIn("- Other: 12.00 EUR (1 payment)\n",
                           await tools.get_spending_by_category("2026-11-10"))
         self.assertIn("- Health: 12.00 EUR (1 payment)\n", await tools.get_spending_by_category("2026-11-10"))
-        self.assertEqual(len(client.sent), 3)
+        self.assertEqual(len(decisions.states), 3)
 
     async def test_the_users_label_wins_over_the_models_for_every_matching_payee(self):
         self.serve({TRANSACTIONS: page(*WEEK)})
-        self.model(labels(_1="Shopping", _2="Fuel", _3="Transfers"))
+        use_decisions(self, sure("Shopping"), sure("Fuel"), sure("Transfers"))
         await tools.get_spending_by_category("2026-11-02", "2026-11-08")
 
         self.assertEqual(await tools.set_spending_category("Biedronka", "groceries"),
@@ -110,7 +136,7 @@ class SpendingTest(HttpTest):
                        saved("month", "2025-10-01", Groceries="40.00", Transfers="999.00")])
         self.serve({TRANSACTIONS: page(*(dict(payment, booking_date=payment["booking_date"].replace("-11-", "-10-"))
                                          for payment in WEEK))})
-        self.model(labels(_1="Groceries", _2="Fuel", _3="Transfers"))
+        use_decisions(self, sure("Groceries"), sure("Fuel"), sure("Transfers"))
 
         text = await tools.get_spending_by_category("2026-10-01", "2026-10-31")
 
@@ -148,6 +174,7 @@ class DigestJobTest(HttpTest):
         patcher = mock.patch.object(mlx_client, "complete", self.client.complete)
         patcher.start()
         self.addCleanup(patcher.stop)
+        self.decisions = use_decisions(self, sure("Groceries"))
 
     async def run_job(self, *payments: dict, send=SEND_OK) -> list[str]:
         """Run the morning bank job; returns the Telegram messages it sent."""
@@ -159,7 +186,7 @@ class DigestJobTest(HttpTest):
     async def test_monday_after_a_month_end_sends_the_week_and_the_month_then_not_again(self):
         spending.save([saved("week", "2026-10-19", Groceries="40.00"), saved("week", "2026-10-12", Groceries="20.00"),
                        saved("month", "2026-09-01", Groceries="100.00")])
-        self.client.rounds = [labels(_1="Groceries"), says("Groceries cost more than usual this week."),
+        self.client.rounds = [says("Groceries cost more than usual this week."),
                               says("You spent less on groceries than in September.")]
         shopping = [entry("DBIT", "45.00", "2026-10-31", creditor="Lidl"),
                     entry("DBIT", "30.00", "2026-10-05", creditor="Lidl")]
@@ -178,6 +205,7 @@ class DigestJobTest(HttpTest):
         self.assertEqual(await self.run_job(*shopping), [])
 
     async def test_without_the_model_the_digest_is_the_table_alone(self):
+        self.decisions.answers = [ModelServerError("down")] * 4
         self.client.rounds = [[ModelServerError("down")]] * 4
 
         self.assertEqual(await self.run_job(entry("DBIT", "45.00", "2026-10-31", creditor="Lidl")), [
@@ -189,7 +217,7 @@ class DigestJobTest(HttpTest):
             "Total spent: 45.00 EUR")])
 
     async def test_a_digest_that_could_not_be_sent_is_sent_the_next_morning(self):
-        self.client.rounds = [labels(_1="Groceries"), says("Week."), says("Month."),
+        self.client.rounds = [says("Week."), says("Month."),
                               says("Week again."), says("Month again.")]
         payment = entry("DBIT", "45.00", "2026-10-31", creditor="Lidl")
 

@@ -159,7 +159,7 @@
   <li><strong>Anime</strong>: seasons, ratings, airing schedule, your list (AnimeSchedule.net).</li>
   <li><strong>Counter-Strike</strong>: teams, players, matches, tournaments (PandaScore) and Valve's ranking.</li>
   <li><strong>Calendar</strong>: read and search Apple Calendar, add events after you confirm.</li>
-  <li><strong>Bank</strong>: your transactions for a date range, newest first with totals (Enable Banking).</li>
+  <li><strong>Bank</strong>: your transactions for a date range, newest first with totals, and spending per category compared with earlier weeks and months (Enable Banking).</li>
   <li><strong>Your files</strong>: save files or whole folders once and ask about them in any session.</li>
 </ol>
 <div class="tip">Built for <em>small</em> local models: tool text is short and carefully worded so it can't be misread, and only the tools a question needs are sent.</div>
@@ -227,6 +227,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
   <tr><td><code>embed_model</code></td><td><code>mlx-community/all-MiniLM-L6-v2-4bit</code></td><td>Routing embeddings</td></tr>
   <tr><td><code>rag_embed_model</code></td><td><code>mlx-community/embeddinggemma-2-4bit</code></td><td>Library chunks and searches</td></tr>
   <tr><td><code>library_path</code></td><td><code>~/.local/share/deckartes/library.db</code></td><td>Where saved files are kept</td></tr>
+  <tr><td><code>spending_path</code></td><td><code>~/.local/share/deckartes/spending.db</code></td><td>Payee labels and each digest's category totals (<code>spending_sandbox_path</code> for the sandbox)</td></tr>
   <tr><td><code>detailed</code></td><td><code>False</code></td><td>Detailed mode: thinking and usage lines (key <code>shift+t</code>)</td></tr>
   <tr><td><code>system_prompt</code></td><td><code>Assistant</code></td><td>Preset name</td></tr>
   <tr><td><code>glances_host</code></td><td><code>http://thinkpad:61208</code></td><td>Home server</td></tr>
@@ -427,7 +428,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
 
 <section id="tools">
 <h2>Tool catalogue</h2>
-<p class="lead">35 tools, registered in <code>tools.py</code> with <code>@tool("&lt;group&gt;")</code>.</p>
+<p class="lead">37 tools, registered in <code>tools.py</code> with <code>@tool("&lt;group&gt;")</code>.</p>
 <div class="bars">
   <div class="bar"><span>server</span><div class="fill" style="width:100%"></div><b>10</b></div>
   <div class="bar"><span>anime</span><div class="fill" style="width:70%"></div><b>7</b></div>
@@ -435,7 +436,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
   <div class="bar"><span>calendar</span><div class="fill" style="width:40%"></div><b>4</b></div>
   <div class="bar"><span>disk</span><div class="fill" style="width:30%"></div><b>3</b></div>
   <div class="bar"><span>web</span><div class="fill" style="width:20%"></div><b>2</b></div>
-  <div class="bar"><span>banking</span><div class="fill" style="width:10%"></div><b>1</b></div>
+  <div class="bar"><span>banking</span><div class="fill" style="width:30%"></div><b>3</b></div>
 </div>
 <div class="cards">
   <div class="card"><h4>server <small>glances_api.py</small></h4><ul>
@@ -459,8 +460,10 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
     <li><code>search_library(query)</code> sent with every question</li></ul></div>
   <div class="card"><h4>web <small>web_search.py</small></h4><ul>
     <li><code>search_web(query)</code></li><li><code>fetch_web_page(url)</code></li></ul></div>
-  <div class="card"><h4>banking <small>enable_banking_api.py</small></h4><ul>
-    <li><code>get_bank_transactions(date_from, date_to)</code></li></ul></div>
+  <div class="card"><h4>banking <small>enable_banking_api.py · spending.py</small></h4><ul>
+    <li><code>get_bank_transactions(date_from, date_to)</code></li>
+    <li><code>get_spending_by_category(date_from, date_to)</code></li>
+    <li><code>set_spending_category(payee, category)</code></li></ul></div>
 </div>
 <h3>How tools run</h3>
 <ol>
@@ -512,6 +515,11 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
     <li>Every page read, newest first, at most <code>bank_max_transactions</code> (100) listed per account; totals count all.</li>
     <li>Reversed ranges swapped, future ends cut to today; an expired link says how to relink.</li>
     <li>The bank job messages you 7 days and 1 day before the link expires.</li></ul></div>
+  <div class="card"><h4>Spending <small>spending.py</small></h4><ul>
+    <li>Booked payments out, totaled per category (12 fixed ones); <code>Transfers</code> listed but not counted as spending.</li>
+    <li>Each payee (name without store numbers) is labeled once by the local model and remembered in <code>spending.db</code>; your own labels are word rules that win over the model's.</li>
+    <li>The bank job sends last week's digest on Monday and last month's on the 1st (or the next morning it runs): a table with % changes worked out in code, plus a few sentences from the model.</li>
+    <li>Each digest's totals are saved once Telegram took it; a week is compared with the average of the 4 saved weeks before, a month month on month and year on year. No backfill.</li></ul></div>
 </div>
 </section>
 
@@ -661,7 +669,7 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td><code>schedule.py</code></td><td>The scheduled jobs and when they run (<code>JOBS</code>); <code>python -m jobs.schedule</code> writes and loads their launchd LaunchAgents (see <code>docs/telegram.md</code>)</td></tr>
   <tr><td><code>runner.py</code></td><td>What every job shares: settings check, one Telegram message, retries for an hour, exit codes</td></tr>
   <tr><td><code>anime_digest.py</code></td><td>Morning Telegram message of today's anime from the user's list, separate from the bot</td></tr>
-  <tr><td><code>bank_digest.py</code></td><td>Morning Telegram reminder 7 days and 1 day before the bank link expires</td></tr>
+  <tr><td><code>bank_digest.py</code></td><td>Morning Telegram message: the weekly and monthly spending digests, and a reminder 7 days and 1 day before the bank link expires</td></tr>
   <tr><td><code>conversation.py</code></td><td><code>Conversation</code>, events, <code>Usage</code>, <code>TurnInfo</code>, tool loop, compaction</td></tr>
   <tr><td><code>history.py</code></td><td>Saved conversations in <code>history.db</code>: <code>Saver</code> (save turns and summaries, resume), list, load, delete</td></tr>
   <tr><td><code>library.py</code></td><td>Read, chunk, embed, store and search saved files</td></tr>
@@ -669,7 +677,7 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td><code>tool_router.py</code></td><td>Tool groups per question</td></tr>
   <tr><td><code>tool_groups.py</code></td><td>Tool groups and their example questions; the one place that decides which tools go with the chosen groups</td></tr>
   <tr><td><code>tools.py</code></td><td>Registry, <code>run_tool</code> (the one place a call becomes tool text, confirmation included)</td></tr>
-  <tr><td><code>glances_api</code> · <code>disk_scan</code> · <code>web_search</code> · <code>animeschedule_api</code> · <code>cs_api</code> · <code>calendar_api</code> · <code>enable_banking_api</code></td><td>Backends</td></tr>
+  <tr><td><code>glances_api</code> · <code>disk_scan</code> · <code>web_search</code> · <code>animeschedule_api</code> · <code>cs_api</code> · <code>calendar_api</code> · <code>enable_banking_api</code> · <code>spending</code></td><td>Backends</td></tr>
   <tr><td><code>http_client.py</code></td><td><code>request</code>, <code>pages</code></td></tr>
   <tr><td><code>mlx_client.py</code></td><td>Chat, embeddings and the model list from the Rapid-MLX servers</td></tr>
   <tr><td><code>mlx_server.py</code></td><td>Starting and stopping the Rapid-MLX servers</td></tr>
@@ -690,6 +698,7 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td>Tool text</td><td>Short plain text a tool returns, worded so a small model can't misread it</td></tr>
   <tr><td>Backend</td><td>Module that gets a tool's data from one outside source</td></tr>
   <tr><td>Local time</td><td>Time in the configured time zone; used in all tool text</td></tr>
+  <tr><td>Spending digest</td><td>The Telegram summary of a finished week or month per spending category, compared with the saved totals of earlier ones</td></tr>
   <tr><td>Bank link</td><td>The user's one-time approval at their bank that lets the tools read its accounts until it expires</td></tr>
   <tr><td>Compaction</td><td>Replacing the history with the model's summary near the window limit</td></tr>
   <tr><td>Model server</td><td>A Rapid-MLX process the app starts to hold a model</td></tr>

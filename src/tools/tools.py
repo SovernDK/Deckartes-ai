@@ -14,7 +14,7 @@ from model.tool_schema import CONFIRM, model_signature
 from tools import animeschedule_api as anime
 from tools import calendar_api as cal
 from tools import cs_api as cs
-from tools import disk_scan, library
+from tools import disk_scan, library, spending
 from tools import enable_banking_api as bank
 from tools import glances_api as glances
 from tools import web_search as web
@@ -367,6 +367,31 @@ async def get_bank_transactions(date_from: str, date_to: str | None = None) -> s
         date_to: Optional. Last day as YYYY-MM-DD; leave it out to go up to today
     """
     return await bank.transactions(date_from, date_to)
+
+@tool("banking")
+async def get_spending_by_category(date_from: str, date_to: str | None = None) -> str:
+    """Get how much the user spent per category (Groceries, Restaurants & cafés, Transport...)
+    between two dates, with the total spent. For exactly a Monday-to-Sunday week or a calendar
+    month it also says how each category changed: month on month and year on year for a month,
+    against the weeks before for a week. Use it for "what did I spend on groceries", "where does
+    my money go" and comparisons with earlier months.
+
+    Args:
+        date_from: First day as YYYY-MM-DD. Work it out from the current date: "last month" starts on its 1st, "last week" on its Monday
+        date_to: Optional. Last day as YYYY-MM-DD, e.g. the month's last day; leave it out to go up to today
+    """
+    return await spending.by_category(date_from, date_to)
+
+@tool("banking")
+async def set_spending_category(payee: str, category: str) -> str:
+    """Put a shop or payee in a spending category from now on, when the user says one is labeled
+    wrong or asks to file it somewhere, e.g. "Żabka is groceries".
+
+    Args:
+        payee: The shop or payee's name, as the user or the transactions give it, e.g. "Żabka"
+        category: One of: Groceries, Restaurants & cafés, Transport, Fuel, Housing & bills, Shopping, Health, Entertainment & subscriptions, Travel, Cash, Transfers, Other
+    """
+    return spending.set_category(payee, category)
 
 def tools_for(names: list[str] | None) -> list:
     if names is None:

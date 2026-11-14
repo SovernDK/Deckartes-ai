@@ -85,6 +85,11 @@ class Config:
     # Transactions listed per account by get_bank_transactions; keeps a long range inside the
     # context window, while the totals still count every transaction
     bank_max_transactions: int = 100
+    # Spending categories each payee is labeled with, and each finished week's and month's totals
+    # (spending.py); not in ~/.cache, since past periods can't be fetched again
+    spending_path: Path = Path.home() / ".local" / "share" / "deckartes" / "spending.db"
+    # The sandbox app's, kept apart so made-up payments never mix with the real history
+    spending_sandbox_path: Path = Path.home() / ".local" / "share" / "deckartes" / "spending_sandbox.db"
     telegram_token: str = field(default_factory=lambda: read_env("TELEGRAM_BOT_TOKEN"), repr=False)
     # The only Telegram user the bot answers; the bot won't start without it
     telegram_user_id: str = field(default_factory=lambda: read_env("TELEGRAM_USER_ID"), repr=False)

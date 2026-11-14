@@ -199,33 +199,44 @@ def _account_title(account: dict) -> str:
 def _date(entry: dict) -> str:
     return entry.get("booking_date") or entry.get("value_date") or entry.get("transaction_date") or ""
 
+def _is_outgoing(entry: dict) -> bool:
+    return entry["credit_debit_indicator"] == "DBIT"
+
+def _counterparty(entry: dict) -> tuple[str, str]:
+    """(the other side's name, the description), each "" when the bank gives none. The other side
+    is who was paid for money out, who paid for money in."""
+    party = (entry.get("creditor") if _is_outgoing(entry) else entry.get("debtor")) or {}
+    return party.get("name") or "", " ".join(entry.get("remittance_information") or [])
+
 def _line(entry: dict) -> str:
     """One transaction as 'date  amount currency  counterparty: description'."""
     money = entry["transaction_amount"]
-    outgoing = entry["credit_debit_indicator"] == "DBIT"
-    # The other side: who was paid for money out, who paid for money in
-    party = (entry.get("creditor") if outgoing else entry.get("debtor")) or {}
-    description = " ".join(entry.get("remittance_information") or [])
-    details = ": ".join(part for part in (party.get("name"), description) if part) or "no description"
+    details = ": ".join(part for part in _counterparty(entry) if part) or "no description"
     pending = " (pending)" if entry.get("status") == "PDNG" else ""
-    return f"{_date(entry) or 'no date'}  {'-' if outgoing else '+'}{money['amount']} {money['currency']}  {details}{pending}"
+    sign = "-" if _is_outgoing(entry) else "+"
+    return f"{_date(entry) or 'no date'}  {sign}{money['amount']} {money['currency']}  {details}{pending}"
 
 def _totals(entries: list[dict]) -> str:
     """Money in and out per currency."""
     sums: dict[tuple[str, bool], Decimal] = defaultdict(Decimal)
     for entry in entries:
         money = entry["transaction_amount"]
-        sums[money["currency"], entry["credit_debit_indicator"] == "DBIT"] += Decimal(money["amount"])
+        sums[money["currency"], _is_outgoing(entry)] += Decimal(money["amount"])
     currencies = sorted({currency for currency, _ in sums})
     return "; ".join(f"in +{sums[currency, False]:.2f} {currency}, out -{sums[currency, True]:.2f} {currency}"
                      for currency in currencies)
 
-async def transactions(date_from: str, date_to: str | None = None) -> str:
-    """Tool text: every linked account's transactions between two YYYY-MM-DD dates, newest first."""
+def date_range(date_from: str, date_to: str | None) -> tuple[dt.date, dt.date]:
+    """A tool's YYYY-MM-DD range, up to today when there's no end; a reversed range is swapped and
+    the future cut off rather than failing, since a small model retries poorly."""
     start, end = sorted((clock.parse_date(date_from), clock.parse_date(date_to) if date_to else clock.today()))
     # Nothing has happened after today
     end = min(end, clock.today())
-    start = min(start, end)
+    return min(start, end), end
+
+async def transactions(date_from: str, date_to: str | None = None) -> str:
+    """Tool text: every linked account's transactions between two YYYY-MM-DD dates, newest first."""
+    start, end = date_range(date_from, date_to)
     blocks = []
     for account in _live_link()["accounts"]:
         entries, complete = await _get_transactions(account["uid"], start, end)
@@ -243,6 +254,44 @@ async def transactions(date_from: str, date_to: str | None = None) -> str:
         blocks.append(f"{title}, {len(entries)} transactions from {start} to {end}, newest first:\n"
                       + "\n".join(lines) + f"\nTotal: {_totals(entries)}")
     return "\n\n".join(blocks)
+
+@dataclass(frozen=True)
+class Payment:
+    """Money that went out of a linked account."""
+    date: dt.date
+    amount: Decimal
+    currency: str
+    # Who was paid and the description, each "" when the bank gives none
+    party: str
+    description: str
+    # The card payment's merchant category code (ISO 18245), when the bank gives one
+    merchant_code: str
+
+def has_live_link() -> bool:
+    """Whether a bank is linked and the link hasn't expired."""
+    try:
+        _live_link()
+    except BankingError:
+        return False
+    return True
+
+async def payments(start: dt.date, end: dt.date) -> list[Payment]:
+    """The booked payments out of every linked account between two dates, by booking date, so a
+    payment pending at the end of a range lands in the range it books in and is counted once."""
+    found = []
+    for account in _live_link()["accounts"]:
+        entries, _ = await _get_transactions(account["uid"], start, end)
+        for entry in entries:
+            if not _is_outgoing(entry) or entry.get("status") == "PDNG" or not _date(entry):
+                continue
+            day = dt.date.fromisoformat(_date(entry))
+            if not start <= day <= end:
+                continue
+            money = entry["transaction_amount"]
+            party, description = _counterparty(entry)
+            found.append(Payment(day, Decimal(money["amount"]), money["currency"],
+                                 party, description, entry.get("merchant_category_code") or ""))
+    return found
 
 def _choose(banks: list[dict]) -> dict:
     while True:

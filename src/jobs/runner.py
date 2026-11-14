@@ -29,9 +29,10 @@ async def _send(chat_id: int, text: str) -> None:
         await telegram_api.send_message(chat_id, part.rstrip())
 
 async def run(message: Callable[[], Awaitable[str | None]], *, settings: dict[str, str] | None = None,
-              errors: tuple[type[Exception], ...] = ()) -> int:
+              errors: tuple[type[Exception], ...] = (), done: Callable[[], None] | None = None) -> int:
     """Send message() to the user, retrying on errors (and Telegram's) for an hour.
-    settings maps each environment variable the job needs to its value in config."""
+    settings maps each environment variable the job needs to its value in config. done() runs once
+    the message was sent, or there was nothing to send, so what it records is never lost unsent."""
     needed = {"TELEGRAM_BOT_TOKEN": config.telegram_token,
               "TELEGRAM_USER_ID": config.telegram_user_id if config.telegram_user_id.isdigit() else "",
               **(settings or {})}
@@ -47,6 +48,8 @@ async def run(message: Callable[[], Awaitable[str | None]], *, settings: dict[st
             else:
                 await _send(int(config.telegram_user_id), text)
                 log.info("Sent the message")
+            if done is not None:
+                done()
             return 0
         except (*errors, TelegramError) as e:
             log.warning("Attempt %d of %d failed: %s", attempt, MAX_ATTEMPTS, e)

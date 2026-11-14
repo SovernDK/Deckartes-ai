@@ -33,11 +33,14 @@
 
   <h2>Where it goes</h2>
   <ul>
-    <li>Transactions are fetched only when the owner asks a question that needs them, and are read by a language model
+    <li>Transactions are fetched only when the owner asks a question that needs them, or once a week and once a month for
+    the owner's spending summary, and are read by a language model
     running locally on the owner's computer. They are not sent to any AI provider.</li>
     <li>The answers are kept in the owner's local chat history on the same computer.</li>
     <li>If the owner asks through their own Telegram bot, the answer passes through Telegram's servers to the owner's phone.</li>
     <li>The bank link (Enable Banking's session id and the account list) is stored on the owner's computer, readable only by them.</li>
+    <li>Each payee's spending category and each finished week's and month's totals per category are stored on the owner's
+    computer, and a weekly and monthly summary of them is sent to the owner's own Telegram bot.</li>
     <li>Nothing is sold, shared, used for advertising or sent to any other party.</li>
   </ul>
 

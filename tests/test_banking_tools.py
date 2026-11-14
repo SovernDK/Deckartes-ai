@@ -40,27 +40,36 @@ def entry(direction: str, amount: str, day: str = "2026-11-13", *, creditor: str
 def page(*entries: dict, continuation_key: str | None = None) -> dict:
     return {"transactions": list(entries), "continuation_key": continuation_key}
 
+def use_fake_bank(test: unittest.TestCase) -> None:
+    """Point the bank settings, the bank link and the spending history at a temporary folder for one test."""
+    folder = tempfile.TemporaryDirectory()
+    test.addCleanup(folder.cleanup)
+    (Path(folder.name) / "key.pem").write_bytes(PEM)
+    for name, value in [("enable_banking_sandbox", False), ("enable_banking_app_id", "app-1"),
+                        ("enable_banking_key_path", str(Path(folder.name) / "key.pem")),
+                        ("banking_session_path", Path(folder.name) / "link" / "session.json"),
+                        ("enable_banking_sandbox_id", "sandbox-1"),
+                        ("enable_banking_sandbox_key_path", str(Path(folder.name) / "key.pem")),
+                        ("banking_sandbox_session_path", Path(folder.name) / "link" / "sandbox.json"),
+                        ("spending_path", Path(folder.name) / "spending.db"),
+                        ("spending_sandbox_path", Path(folder.name) / "spending_sandbox.db")]:
+        patcher = mock.patch.object(config, name, value)
+        patcher.start()
+        test.addCleanup(patcher.stop)
+
+def link(*accounts: dict, valid_until: str = "2027-05-13T10:00:00Z") -> None:
+    """Save a bank link, as linking does."""
+    config.banking_session_path.parent.mkdir(parents=True, exist_ok=True)
+    config.banking_session_path.write_text(json.dumps(
+        {"session_id": "s-1", "accounts": list(accounts) or [ACCOUNT], "valid_until": valid_until}))
+
 class BankingTest(HttpTest):
     def setUp(self):
         freeze(self, "2026-11-14 12:00")
-        folder = tempfile.TemporaryDirectory()
-        self.addCleanup(folder.cleanup)
-        (Path(folder.name) / "key.pem").write_bytes(PEM)
-        for name, value in [("enable_banking_sandbox", False), ("enable_banking_app_id", "app-1"),
-                            ("enable_banking_key_path", str(Path(folder.name) / "key.pem")),
-                            ("banking_session_path", Path(folder.name) / "link" / "session.json"),
-                            ("enable_banking_sandbox_id", "sandbox-1"),
-                            ("enable_banking_sandbox_key_path", str(Path(folder.name) / "key.pem")),
-                            ("banking_sandbox_session_path", Path(folder.name) / "link" / "sandbox.json")]:
-            patcher = mock.patch.object(config, name, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        use_fake_bank(self)
 
     def link(self, *accounts: dict, valid_until: str = "2027-05-13T10:00:00Z"):
-        """Save a bank link, as linking does."""
-        config.banking_session_path.parent.mkdir(parents=True, exist_ok=True)
-        config.banking_session_path.write_text(json.dumps(
-            {"session_id": "s-1", "accounts": list(accounts) or [ACCOUNT], "valid_until": valid_until}))
+        link(*accounts, valid_until=valid_until)
 
     async def test_transactions_are_listed_newest_first_with_totals(self):
         self.link()
@@ -257,10 +266,13 @@ class BankingTest(HttpTest):
             patcher = mock.patch.object(config, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
-        server = self.serve({"/bot123:SECRET/sendMessage": {"ok": True, "result": {"message_id": 7}}})
+        # A digest of last week and last month is due, with no payments to report
+        server = self.serve({"/bot123:SECRET/sendMessage": {"ok": True, "result": {"message_id": 7}},
+                             TRANSACTIONS: page()})
         with self.assertLogs("deckartes.jobs", "INFO"):
             self.assertEqual(await bank_digest.run(), 0)
-        return [json.loads(request.content)["text"] for request in server.requests]
+        return [json.loads(request.content)["text"] for request in server.requests
+                if request.url.path.endswith("/sendMessage")]
 
     async def test_bank_job_reminds_7_days_and_1_day_before_the_link_expires(self):
         for valid_until, expected in [

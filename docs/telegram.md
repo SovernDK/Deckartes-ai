@@ -15,7 +15,7 @@ It has to be Terminal. Tested on this Mac, a launchd LaunchAgent was refused cal
 **Scheduled jobs (`jobs/`).** Short scripts, separate from the bot, that each send the user one Telegram message with fixed text and no model call, and send nothing when there's nothing to say. `sendMessage` doesn't conflict with the bot's polling, so they run side by side and the jobs work when the bot is down.
 
 - **Morning anime digest (`anime_digest.py`)**, 09:00: the episodes airing today from the shows on the user's list with a `config.anime_digest_statuses` status.
-- **Bank job (`bank_digest.py`)**, 09:05: a reminder when the bank link expires in 7 days or 1 day ([tools-banking.md](tools-banking.md)). Later also the weekly and monthly transaction digest.
+- **Bank job (`bank_digest.py`)**, 09:05: last week's spending digest on Monday and last month's on the 1st, and a reminder when the bank link expires in 7 days or 1 day, in one message ([tools-banking.md](tools-banking.md)). It calls the local model, starting its server if needed. A digest's totals are saved through the runner's `done` callback, only once the message was sent.
 
 `JOBS` in `jobs/schedule.py` lists them: name, module, `hour`, `minute`, and an optional `weekday` (0 = Sunday, as launchd counts) or `day` of the month. To add a job or change when one runs, edit the list and apply it from `src/`:
 
@@ -26,7 +26,7 @@ launchctl kickstart gui/$(id -u)/com.deckartes.anime-digest     # run a job now
 
 It writes `~/Library/LaunchAgents/com.deckartes.<name>.plist` for each job and loads new ones. A changed one is unloaded and loaded again, and a loaded, unchanged one is left alone. `com.deckartes.*` jobs no longer in the list are unloaded and deleted. They can be launchd jobs because they don't touch the calendar; a future job that needs Apple Calendar has to run inside the bot. A `StartCalendarInterval` job missed during sleep runs on wake, and several missed ones count as one. If the Mac is off at that time the day is skipped.
 
-`jobs/runner.py` holds what they share. A job's `run()` passes it a function that builds the message (`None` = nothing to send), the settings it needs besides Telegram's, and the errors worth retrying. launchd doesn't re-run a failed job, and the network can be down just after waking, so the runner retries every 5 minutes for an hour and then exits 1 (2 for a missing setting). Messages are plain text, split with `split_entities`, because titles can hold `*` or `_`. Each job's log is `~/.cache/deckartes/<name>.log`, and a failure appears only there. The root logger stays at WARNING because httpx's INFO lines print the token.
+`jobs/runner.py` holds what they share. A job's `run()` passes it a function that builds the message (`None` = nothing to send), the settings it needs besides Telegram's, the errors worth retrying, and optionally `done`, run once the message was sent or there was nothing to send. launchd doesn't re-run a failed job, and the network can be down just after waking, so the runner retries every 5 minutes for an hour and then exits 1 (2 for a missing setting). Messages are plain text, split with `split_entities`, because titles can hold `*` or `_`. Each job's log is `~/.cache/deckartes/<name>.log`, and a failure appears only there. The root logger stays at WARNING because httpx's INFO lines print the token.
 
 **Access.** Only private chats from `config.telegram_user_id` are handled, checked on messages and button presses. Anything else is dropped with no reply, and only the sender's numeric id is logged.
 

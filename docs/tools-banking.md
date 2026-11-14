@@ -50,6 +50,19 @@ One block per account: `<product> ••<last 4 of the IBAN> (<currency>), N tra
 
 Responses aren't cached, since a new payment should show at once.
 
+## Spending categories and digests (`spending.py`)
+
+`get_spending_by_category(date_from, date_to=None)` totals the payments out per category, and `set_spending_category(payee, category)` files a payee under one. The morning bank job sends the same table as a digest.
+
+- **What counts.** Booked (`BOOK`) payments out (`DBIT`) of every linked account (`enable_banking_api.payments`), placed by booking date, so a payment pending at a period's end is counted once, in the period it books in. Money in is left out. `Transfers` (to people or the user's own accounts) is listed on its own line and not counted as spending.
+- **Categories** are the fixed `spending.CATEGORIES`, also written out in `set_spending_category`'s docstring: change both together.
+- **Labels.** A payee is the paid side's name, or the description without one, normalised (`names.normalize`) and without words of 3 or more digits, so `BIEDRONKA 1234 WARSZAWA` and `Biedronka 5678 Warszawa` are one. A payee not seen before goes to the local model, up to 40 in one `mlx_client.complete` call, with the description and the card merchant category code when the bank gives them; it answers a JSON object of number → category. An answer that's a known category is saved (`source` `model`); anything else counts as `Other` and is asked again next time, and so is everything when the model server fails. `set_spending_category` saves a `user` rule: the payee's words, matching every payee that contains them as whole words, the longest rule winning, and always before the model's label. A category is matched ignoring case, then with `names.closest_name`.
+- **Storage.** `config.spending_path` (`~/.local/share/deckartes/spending.db`), or `spending_sandbox_path` in sandbox mode, so made-up payments never reach the real history: `labels`, `periods` (each saved digest) and `totals` (per period, category and currency, amounts as `Decimal` strings).
+- **Comparisons.** Only a range that is exactly a Monday-to-Sunday week or a calendar month is compared, and only with saved periods; there's no backfill, so comparisons appear as digests are saved. A month: with the month before (`month on month`) and the same month a year earlier (`year on year`). A week: with the average of whichever of the 4 weeks before are saved. Each category and the total spent per currency get `up N%`, `down N%`, `unchanged`, or `new` when the earlier period had none of it. The tool adds `Not compared ...: no saved totals for ...` for a missing baseline, so the model doesn't invent one; the digest leaves that out.
+- **Digests.** `due_digests` gives the last finished week and month not saved yet: on Monday and the 1st, or the next morning the job runs if that one was missed; older periods are skipped. A period with payments gets the table plus 2–3 sentences from the model on what stands out (left out when the model can't be reached); an empty one sends nothing but is still saved. `bank_digest.py` puts the digests and the link reminder into one message and saves the digests' totals in the runner's `done` callback, only after Telegram took it, so a digest that couldn't be sent within the hour of retries is sent the next morning. Without a live bank link it sends only the reminder.
+
 ## Tests
 
 `tests/test_banking_tools.py` calls the tool and the linking command (`_link`, with `input` faked) against `HttpTest.serve`, with a real RSA key generated for the test. It also runs the bank job with Telegram faked.
+
+`tests/test_spending.py` covers the spending tools and the digest job with the bank, the model (`FakeClient.complete`) and Telegram faked; it reuses `use_fake_bank` and `link` from the bank tests.

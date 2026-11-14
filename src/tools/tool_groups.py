@@ -92,5 +92,8 @@ GROUPS = ToolGroups({
         "How much did I pay at Lidl last month?", "Did my salary come in?",
         "What came into my account yesterday?", "List my card payments since Monday",
         "How much money went out of my account this month?", "Who did I send money to last week?",
+        "How much did I spend on groceries this month?", "Where does my money go?",
+        "Compare my spending with last month", "Did I spend more on restaurants than last year?",
+        "Put Żabka under Groceries", "That shop isn't shopping, it's health",
     ],
 })

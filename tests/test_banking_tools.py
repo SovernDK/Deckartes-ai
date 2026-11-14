@@ -86,6 +86,9 @@ class BankingTest(HttpTest):
                                "2026-11-02  -2 EUR  no description\n"
                                "Total: in +10.50 EUR, out -3.02 EUR")
         self.assertEqual(dict(server.requests[0].url.params), {"date_from": "2026-11-01", "date_to": "2026-11-14"})
+        # The user asked, so the bank's limit of 4 reads a day without them doesn't apply
+        self.assertEqual(server.requests[0].headers["psu-user-agent"], "Deckartes")
+        self.assertRegex(server.requests[0].headers["psu-ip-address"], r"^\d+\.\d+\.\d+\.\d+$")
         self.assertTrue(jwt.decode(server.requests[0].headers["authorization"].removeprefix("Bearer "),
                                    KEY.public_key(), algorithms=["RS256"], audience="api.enablebanking.com"))
 
@@ -233,6 +236,14 @@ class BankingTest(HttpTest):
         await self.run_linking(server)
 
         self.assertEqual(json.loads(server.requests[1].content)["access"], {"valid_until": "2027-02-12T11:00:00+00:00"})
+
+    async def test_the_banks_daily_limit_says_when_to_try_again(self):
+        self.link()
+        self.serve({TRANSACTIONS: httpx.Response(429, json={"error": "ASPSP_RATE_LIMIT_EXCEEDED"})})
+
+        self.assertEqual(await tools.run_tool("get_bank_transactions", {"date_from": "2026-11-01"}),
+                         "Tool get_bank_transactions failed: The bank refused: too many reads of the account "
+                         "today. Try again tomorrow")
 
     async def test_a_link_from_another_app_says_to_relink(self):
         self.link()

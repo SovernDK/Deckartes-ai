@@ -20,6 +20,7 @@ import asyncio
 import datetime as dt
 import json
 import secrets
+import socket
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -75,11 +76,28 @@ def _auth() -> str:
         {"iss": "enablebanking.com", "aud": "api.enablebanking.com", "iat": now, "exp": now + lifetime},
         key, algorithm="RS256", headers={"kid": app.app_id})
 
+def _local_ip() -> str:
+    """This Mac's address on its network; connecting a UDP socket sends nothing."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+            udp.connect(("192.0.2.1", 80))
+            return udp.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+def _user_present() -> dict[str, str]:
+    """Headers saying the user asked for this read. PSD2 lets a bank refuse more than 4 reads a day
+    made without the user (Pekao answers 429 ASPSP_RATE_LIMIT_EXCEEDED), and Enable Banking takes
+    these headers as the user being there. Only for reads the user asked for: a scheduled job
+    mustn't send them."""
+    return {"Psu-Ip-Address": _local_ip(), "Psu-User-Agent": "Deckartes"}
+
 async def _request(method: str, path: str, *, params: dict | None = None, body: dict | None = None,
-                   status_messages: dict[int, str] | None = None):
+                   status_messages: dict[int, str] | None = None, user_present: bool = False):
     res = await http_client.request(
         method, f"{API_URL}{path}", name="Enable Banking", error=BankingError,
-        params=params, json=body, token=_auth(), status_messages=status_messages)
+        params=params, json=body, token=_auth(), status_messages=status_messages,
+        headers=_user_present() if user_present else None)
     return res.json()
 
 # Linking a bank: banks -> start_auth -> (user approves in a browser) -> _session
@@ -170,17 +188,22 @@ def link_reminder() -> str | None:
     when = "tomorrow" if days_left == 1 else "in 7 days"
     return f"Your bank link expires {when} ({expires:%A %d %B %H:%M}). To keep the bank tools working, relink with {_app().command}."
 
-async def _get_transactions(uid: str, date_from: dt.date, date_to: dt.date) -> tuple[list[dict], bool]:
+async def _get_transactions(uid: str, date_from: dt.date, date_to: dt.date, *,
+                            user_present: bool) -> tuple[list[dict], bool]:
     """An account's transactions in the date range, following the API's continuation keys, and
-    whether that got all of them."""
+    whether that got all of them. user_present: the user asked for them (see _user_present)."""
     params: dict = {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()}
     entries: list[dict] = []
+    refusals = {
+        # A session belongs to the app that made it, so a link made with the other app isn't found
+        404: f"Enable Banking doesn't know the saved bank link: it was made with another Enable Banking "
+             f"app or withdrawn at the bank. Relink with {_app().command}",
+        # PSD2's daily limit, which reads with user_present don't count against
+        429: "The bank refused: too many reads of the account today. Try again tomorrow"}
     # Safety cap on following continuation keys (the mock bank pages by 10)
     for _ in range(50):
-        data = await _request("GET", f"/accounts/{uid}/transactions", params=params, status_messages={
-            # A session belongs to the app that made it, so a link made with the other app isn't found
-            404: f"Enable Banking doesn't know the saved bank link: it was made with another Enable Banking "
-                 f"app or withdrawn at the bank. Relink with {_app().command}"})
+        data = await _request("GET", f"/accounts/{uid}/transactions", params=params, user_present=user_present,
+                              status_messages=refusals)
         entries += data["transactions"]
         if not data.get("continuation_key"):
             return entries, True
@@ -248,7 +271,7 @@ async def transactions(date_from: str, date_to: str | None = None) -> str:
     start, end, note = date_range(date_from, date_to)
     blocks = []
     for account in _live_link()["accounts"]:
-        entries, complete = await _get_transactions(account["uid"], start, end)
+        entries, complete = await _get_transactions(account["uid"], start, end, user_present=True)
         title = _account_title(account)
         if not entries:
             blocks.append(f"{title}: no transactions from {start} to {end}.")
@@ -284,12 +307,13 @@ def has_live_link() -> bool:
         return False
     return True
 
-async def payments(start: dt.date, end: dt.date) -> list[Payment]:
+async def payments(start: dt.date, end: dt.date, *, user_present: bool) -> list[Payment]:
     """The booked payments out of every linked account between two dates, by booking date, so a
-    payment pending at the end of a range lands in the range it books in and is counted once."""
+    payment pending at the end of a range lands in the range it books in and is counted once.
+    user_present: the user asked for them, rather than a scheduled job (see _user_present)."""
     found = []
     for account in _live_link()["accounts"]:
-        entries, _ = await _get_transactions(account["uid"], start, end)
+        entries, _ = await _get_transactions(account["uid"], start, end, user_present=user_present)
         for entry in entries:
             if not _is_outgoing(entry) or entry.get("status") == "PDNG" or not _date(entry):
                 continue

@@ -50,6 +50,10 @@ One block per account: `<product> ••<last 4 of the IBAN> (<currency>), N tra
 
 Responses aren't cached, since a new payment should show at once.
 
+## The bank's daily limit and the user being present
+
+PSD2 lets a bank refuse more than 4 reads a day of an account made without the user present, and Pekao does: a 429 `ASPSP_RATE_LIMIT_EXCEEDED`, which a few chat questions reached. Enable Banking takes the `Psu-*` headers as the user being there, and then the limit doesn't apply (checked on Pekao: the same read went from 429 to 200 with them). So reads the user asked for (both chat tools and the app's spending popup) send `Psu-Ip-Address` (this Mac's local address, `_local_ip`) and `Psu-User-Agent` (`Deckartes`), through `user_present=True` on `payments` and `_get_transactions`. The morning job reads with `user_present=False`, since claiming the user is there when they aren't isn't allowed; its few reads a day stay inside the limit. Enable Banking wants either all the PSU headers a bank requires or none; Pekao's `/aspsps` entry lists none, and these two are accepted. A 429 that still comes says `The bank refused: too many reads of the account today. Try again tomorrow`.
+
 ## Spending categories and digests (`spending.py`)
 
 `get_spending_by_category(date_from, date_to=None)` totals the payments out per category, and `set_spending_category(payee, category)` files a payee under one. The morning bank job sends the same table as a digest.

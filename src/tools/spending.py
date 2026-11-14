@@ -243,7 +243,7 @@ async def review(days: int = 30) -> list[Payee]:
     """The payees of the last `days` days, labeled again by the model except those the user
     labeled; undecided ones first, then the most paid."""
     today = clock.today()
-    payments = await bank.payments(today - dt.timedelta(days=days), today)
+    payments = await bank.payments(today - dt.timedelta(days=days), today, user_present=True)
     labels = await _labels(payments, again=True)
     payees: dict[str, Payee] = {}
     for payment in sorted(payments, key=lambda payment: payment.date, reverse=True):
@@ -253,8 +253,8 @@ async def review(days: int = 30) -> list[Payee]:
         payee.amounts[payment.currency] += payment.amount
     return sorted(payees.values(), key=lambda payee: (payee.label is not None, -sum(payee.amounts.values())))
 
-async def _totals(start: dt.date, end: dt.date) -> Totals:
-    payments = await bank.payments(start, end)
+async def _totals(start: dt.date, end: dt.date, *, user_present: bool) -> Totals:
+    payments = await bank.payments(start, end, user_present=user_present)
     labels = await _labels(payments)
     totals: Totals = defaultdict(Total)
     for payment in payments:
@@ -356,7 +356,7 @@ async def by_category(date_from: str, date_to: str | None = None) -> str:
     start, end, note = bank.date_range(date_from, date_to)
     period = _exact_period(start, end)
     title = period.title() if period else f"{start} to {end}"
-    return note + _report(title, await _totals(start, end), _baselines(period) if period else [], notes=True)
+    return note + _report(title, await _totals(start, end, user_present=True), _baselines(period) if period else [], notes=True)
 
 def set_category(payee: str, category: str) -> str:
     """Tool text: from now on, payments whose payee has these words count as this category."""
@@ -402,7 +402,7 @@ async def due_digests() -> list[Digest]:
                if _saved(db, period) is None]
     digests = []
     for period in due:
-        totals = await _totals(period.start, period.end)
+        totals = await _totals(period.start, period.end, user_present=False)
         digest = Digest(period, totals)
         if totals:
             report = _report(period.title(), totals, _baselines(period), notes=False)

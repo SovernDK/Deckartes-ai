@@ -30,24 +30,28 @@ _cache: TLRUCache = TLRUCache(maxsize=MAX_CACHED, ttu=_expires, timer=lambda: ti
 async def request(method: str, url: str, *, name: str, error: type[Exception],
                   params: dict | None = None, json: dict | None = None,
                   token: str | None = None, token_env: str = "", max_age: float = 0,
-                  timeout: float = 30, status_messages: dict[int, str] | None = None) -> httpx.Response:
+                  timeout: float = 30, status_messages: dict[int, str] | None = None,
+                  headers: dict[str, str] | None = None) -> httpx.Response:
     """Send a request and return the 200 response, cached for max_age seconds (0 = not cached).
     A cached response keeps the max_age it was fetched with.
 
     name is how messages call the service ("Could not reach {name}"). A token is sent as a
     Bearer header; token="" (not set) raises at once, naming token_env. status_messages
-    replaces the message for given statuses, e.g. a 403 that means "not in your plan".
+    replaces the message for given statuses, e.g. a 403 that means "not in your plan". headers are
+    sent besides the token's.
     """
     if token is not None and not token:
         raise error(f"No {name} token: set {token_env} in the environment or .env")
 
     params = params or {}
-    key = (method, url, tuple(sorted(params.items())), repr(json))
+    headers = headers or {}
+    key = (method, url, tuple(sorted(params.items())), repr(json), tuple(sorted(headers.items())))
     cached = _cache.get(key) if max_age else None
     if cached:
         return cached[1]
 
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    if token:
+        headers = {**headers, "Authorization": f"Bearer {token}"}
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, transport=_transport) as client:
             res = await client.request(method, url, params=params, json=json, headers=headers)

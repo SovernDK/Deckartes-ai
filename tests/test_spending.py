@@ -151,7 +151,7 @@ class DigestJobTest(HttpTest):
 
     async def run_job(self, *payments: dict, send=SENT) -> list[str]:
         """Run the morning bank job; returns the Telegram messages it sent."""
-        server = self.serve({TRANSACTIONS: page(*payments), SEND: send})
+        server = self.server = self.serve({TRANSACTIONS: page(*payments), SEND: send})
         with self.assertLogs("deckartes.jobs", "INFO"):
             await bank_digest.run()
         return [json.loads(request.content)["text"] for request in server.requests if request.url.path == SEND]
@@ -173,6 +173,8 @@ class DigestJobTest(HttpTest):
             "- Groceries: 75.00 EUR (2 payments), down 25% month on month\n"
             "Total spent: 75.00 EUR, down 25% month on month\n\n"
             "You spent less on groceries than in September.")])
+        # Run without the user, so it mustn't claim they're there
+        self.assertNotIn("psu-ip-address", self.server.requests[0].headers)
         self.assertEqual(await self.run_job(*shopping), [])
 
     async def test_without_the_model_the_digest_is_the_table_alone(self):

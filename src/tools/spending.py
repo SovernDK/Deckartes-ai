@@ -274,8 +274,9 @@ def _baselines(period: Period) -> list[_Baseline]:
     with _database() as db:
         if period.kind == "month":
             last_month, year_ago = period.before(), Period("month", period.start.replace(year=period.start.year - 1))
-            return [_Baseline(name, _amounts(_saved(db, other)), f"no saved totals for {other.title()}")
-                    for name, other in (("month on month", last_month), ("year on year", year_ago))]
+            return [_Baseline(name, None if saved is None else _amounts(saved), f"no saved totals for {other.title()}")
+                    for name, other in (("month on month", last_month), ("year on year", year_ago))
+                    for saved in [_saved(db, other)]]
         saved_weeks = []
         other = period
         for _ in range(4):
@@ -293,10 +294,8 @@ def _baselines(period: Period) -> list[_Baseline]:
     name = "on the week before" if count == 1 else f"on the average of the {count} weeks before"
     return [_Baseline(name, {key: amount / count for key, amount in sums.items()})]
 
-def _amounts(period_totals: Totals | None) -> dict[tuple[str, str], Decimal] | None:
+def _amounts(period_totals: Totals) -> dict[tuple[str, str], Decimal]:
     """The amount per (category, currency), plus the total spent per currency under SPENT."""
-    if period_totals is None:
-        return None
     amounts: dict[tuple[str, str], Decimal] = defaultdict(Decimal)
     for (category, currency), total in period_totals.items():
         amounts[category, currency] += total.amount

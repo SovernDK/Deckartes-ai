@@ -58,7 +58,7 @@ TELEGRAM_BOT_TOKEN=...      # Telegram bot
 TELEGRAM_USER_ID=...        # your numeric Telegram id
 ```
 
-The server tools need [Glances](https://nicolargo.github.io/glances/) in web server mode on the home server (`http://thinkpad:61208` by default). The calendar tools ask macOS for calendar access on first use. The bank tools need your bank linked once, in a browser: run `../venv/bin/python -m tools.enable_banking_api` from `src/` ([docs/tools-banking.md](docs/tools-banking.md)).
+The server tools need [Glances](https://nicolargo.github.io/glances/) in web server mode on the home server (`http://thinkpad:61208` by default). The calendar tools ask macOS for calendar access on first use. The bank tools need your bank linked once; see [Bank](#bank).
 
 ## Usage
 
@@ -91,6 +91,29 @@ venv/bin/python src/main.py
 Press `e`, then `Enter` on a file or `l` on a file or folder to save it. Text files, code and PDFs with a text layer work. Saved files stay between sessions, and answers name the file and the page or line.
 
 Loading a folder again only embeds new or changed files. Small models sometimes answer from their own knowledge, so check answers that matter. Details: [docs/library.md](docs/library.md).
+
+## Bank
+
+Deckartes reads your bank transactions through [Enable Banking](https://enablebanking.com), read-only: it can't make payments. Setting it up takes two approvals at your bank: one activates the app, the other lets Deckartes read the accounts.
+
+1. **Register the app.** In the Enable Banking Control Panel, under API applications, add an application with environment **Production**. Set its redirect URL to exactly `https://soverndk.github.io/Deckartes-ai/callback/` and its privacy URL to `https://soverndk.github.io/Deckartes-ai/privacy/`.
+2. **Save its key.** Put the downloaded `.pem` in `private/` (ignored by git) and add to `.env`:
+
+   ```bash
+   ENABLE_BANKING_APP_ID=<the application id>
+   ENABLE_BANKING_KEY_PATH=private/<the key>.pem
+   ```
+
+3. **Activate it.** The new app is *Inactive*. Press **Activate by linking accounts**, log in to your bank and choose the accounts. The app is then in restricted mode: it reads only those accounts, which is all a personal app needs.
+4. **Link Deckartes.** From `src/`:
+
+   ```bash
+   ../venv/bin/python -m tools.enable_banking_api
+   ```
+
+   Check it says *production app*, enter your country (e.g. `PL`) and pick your bank's number. Open the link it prints, log in and approve the **same accounts** as in step 3. The bank sends you to a page showing its own address: press **Copy**, paste it into the terminal, and it prints `Linked N accounts, valid until …`.
+
+Then ask things like "what did I spend this week?". The bank's approval lasts up to 180 days (90 at some banks); a Telegram message comes 7 days and 1 day before it ends, and step 4 renews it. To test with made-up banks, use a sandbox app: see [docs/tools-banking.md](docs/tools-banking.md).
 
 ## Telegram
 

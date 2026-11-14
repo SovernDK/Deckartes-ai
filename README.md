@@ -27,6 +27,7 @@ A chat app built with [Textual](https://textual.textualize.io/). The model can c
 - **Anime:** seasons, ratings, airing times and your list, from AnimeSchedule.net.
 - **Counter-Strike:** teams, players, matches and Valve's ranking, from PandaScore.
 - **Calendar:** read, search and add events in Apple Calendar.
+- **Bank:** your transactions for a date range, through Enable Banking.
 - **Your files:** a library of saved documents, searched with embeddings.
 
 Long conversations are summarised automatically when they near the context limit.
@@ -38,7 +39,7 @@ You need an Apple Silicon Mac, Python 3.11+ and Rapid-MLX:
 ```bash
 uv tool install 'rapid-mlx[embeddings]'
 python3 -m venv venv
-venv/bin/pip install textual textual-dev httpx pyobjc-framework-EventKit pypdf cryptography numpy
+venv/bin/pip install textual textual-dev httpx pyobjc-framework-EventKit pypdf cryptography numpy pyjwt
 ```
 
 The app starts the model servers itself and downloads models on first use.
@@ -49,11 +50,13 @@ Put API keys in `.env` in the repo folder. A tool without its key reports an err
 OLLAMA_API_KEY=...          # web tools
 ANIMESCHEDULE_TOKEN=...     # anime tools
 PANDA_SCORE_API_TOKEN=...   # Counter-Strike tools (free plan works)
+ENABLE_BANKING_APP_ID=...   # bank tools
+ENABLE_BANKING_KEY_PATH=... # bank tools: the application's private key (.pem)
 TELEGRAM_BOT_TOKEN=...      # Telegram bot
 TELEGRAM_USER_ID=...        # your numeric Telegram id
 ```
 
-The server tools need [Glances](https://nicolargo.github.io/glances/) in web server mode on the home server (`http://thinkpad:61208` by default). The calendar tools ask macOS for calendar access on first use.
+The server tools need [Glances](https://nicolargo.github.io/glances/) in web server mode on the home server (`http://thinkpad:61208` by default). The calendar tools ask macOS for calendar access on first use. The bank tools need your bank linked once, in a browser: run `../venv/bin/python -m tools.enable_banking_api` from `src/` ([docs/tools-banking.md](docs/tools-banking.md)).
 
 ## Usage
 
@@ -93,7 +96,7 @@ A Telegram bot gives the same assistant on your phone. It answers only your user
 
 Telegram chats aren't end-to-end encrypted, so questions and replies pass through Telegram's servers.
 
-A separate morning job sends the day's anime episodes from your list, run by launchd.
+Separate morning jobs, run by launchd, send the day's anime episodes from your list and remind you before the bank link expires. `src/jobs/schedule.py` lists them and when they run.
 
 Details: [docs/telegram.md](docs/telegram.md).
 

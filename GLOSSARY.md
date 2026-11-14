@@ -1,6 +1,6 @@
 # Deckartes
 
-A terminal chat for local models that can answer from tools: a home server, the local disk, the web, anime schedules, Counter-Strike esports, the user's calendar and their saved files.
+A terminal chat for local models that can answer from tools: a home server, the local disk, the web, anime schedules, Counter-Strike esports, the user's calendar, their bank transactions and their saved files.
 
 ## Language
 
@@ -43,3 +43,7 @@ _Avoid_: fuzzy match, suggestion, correction
 **Local time**:
 A time expressed in the user's configured time zone, which is what every date and time in tool text uses.
 _Avoid_: system time, server time
+
+**Bank link**:
+The user's one-time approval at their bank that lets the tools read its accounts until it expires; renewing it needs the user again.
+_Avoid_: bank session, consent, connection

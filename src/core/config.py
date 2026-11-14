@@ -65,6 +65,16 @@ class Config:
     ollama_api_key: str = field(default_factory=lambda: read_env("OLLAMA_API_KEY"), repr=False)
     animeschedule_token: str = field(default_factory=lambda: read_env("ANIMESCHEDULE_TOKEN"), repr=False)
     pandascore_token: str = field(default_factory=lambda: read_env("PANDA_SCORE_API_TOKEN"), repr=False)
+    # Enable Banking application id and the path of the private key (.pem) downloaded with it
+    enable_banking_app_id: str = field(default_factory=lambda: read_env("ENABLE_BANKING_APP_ID"), repr=False)
+    enable_banking_key_path: str = field(default_factory=lambda: read_env("ENABLE_BANKING_KEY_PATH"), repr=False)
+    # Must match a redirect URL registered for the Enable Banking application
+    enable_banking_redirect_url: str = "https://localhost:8080/callback"
+    # The bank link: Enable Banking's session and accounts (enable_banking_api.py); not in ~/.cache, since linking needs the user
+    banking_session_path: Path = Path.home() / ".local" / "share" / "deckartes" / "banking_session.json"
+    # Transactions listed per account by get_bank_transactions; keeps a long range inside the
+    # context window, while the totals still count every transaction
+    bank_max_transactions: int = 100
     telegram_token: str = field(default_factory=lambda: read_env("TELEGRAM_BOT_TOKEN"), repr=False)
     # The only Telegram user the bot answers; the bot won't start without it
     telegram_user_id: str = field(default_factory=lambda: read_env("TELEGRAM_USER_ID"), repr=False)

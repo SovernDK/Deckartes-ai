@@ -87,4 +87,10 @@ GROUPS = ToolGroups({
         "Schedule gym tomorrow at 18:00",
         "Remind me about the doctor's appointment on Thursday",
     ],
+    "banking": [
+        "What did I spend this week?", "Show my bank transactions from October",
+        "How much did I pay at Lidl last month?", "Did my salary come in?",
+        "What came into my account yesterday?", "List my card payments since Monday",
+        "How much money went out of my account this month?", "Who did I send money to last week?",
+    ],
 })

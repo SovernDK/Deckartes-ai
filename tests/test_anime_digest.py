@@ -1,9 +1,6 @@
-"""The morning digest script, with AnimeSchedule's and Telegram's HTTP faked, and its launchd job."""
+"""The morning digest script, with AnimeSchedule's and Telegram's HTTP faked."""
 
 import json
-import plistlib
-import unittest
-from pathlib import Path
 from unittest import mock
 
 import httpx
@@ -11,7 +8,7 @@ import httpx
 from core.config import config
 from frozen_clock import freeze
 from http_fake import HttpTest
-from jobs import anime_digest
+from jobs import anime_digest, runner
 from telegram import telegram_api
 from test_anime_tools import TIMETABLE, USER_LIST, episode, on_list, weekly
 
@@ -19,7 +16,6 @@ TOKEN = "123:SECRET"
 OWNER = 42
 SEND = f"/bot{TOKEN}/sendMessage"
 SENT = {"ok": True, "result": {"message_id": 7}}
-ROOT = Path(__file__).parent.parent
 AIRING = episode("f", "Frieren", "2026-11-11T16:30:00Z", 5)
 
 class DigestScriptTest(HttpTest):
@@ -27,7 +23,7 @@ class DigestScriptTest(HttpTest):
         freeze(self, "2026-11-11 12:00")
         for target, name, value in ((config, "telegram_token", TOKEN), (config, "telegram_user_id", str(OWNER)),
                                     (config, "animeschedule_token", "token"), (config, "animeschedule_user", "tester"),
-                                    (config, "anime_air_type", "sub"), (anime_digest, "RETRY_SECONDS", 0)):
+                                    (config, "anime_air_type", "sub"), (runner, "RETRY_SECONDS", 0)):
             patcher = mock.patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -72,21 +68,11 @@ class DigestScriptTest(HttpTest):
 
     async def test_gives_up_after_the_last_attempt(self):
         server = self.serve_digest(AIRING, send=httpx.ConnectError("no network"))
-        with self.assertLogs("deckartes.digest", "ERROR"):
+        with self.assertLogs("deckartes.jobs", "ERROR"):
             self.assertEqual(await anime_digest.run(), 1)
-        self.assertEqual(len(self.sent(server)), anime_digest.MAX_ATTEMPTS)
+        self.assertEqual(len(self.sent(server)), runner.MAX_ATTEMPTS)
 
     async def test_refuses_to_start_without_the_settings(self):
         for name, value in (("telegram_token", ""), ("telegram_user_id", "me"), ("animeschedule_token", "")):
-            with self.subTest(name), mock.patch.object(config, name, value), self.assertLogs("deckartes.digest", "ERROR"):
+            with self.subTest(name), mock.patch.object(config, name, value), self.assertLogs("deckartes.jobs", "ERROR"):
                 self.assertEqual(await anime_digest.run(), 2)
-
-class LaunchdJobTest(unittest.TestCase):
-    def test_runs_the_script_at_nine(self):
-        with open(ROOT / "launchd" / "com.deckartes.anime-digest.plist", "rb") as file:
-            job = plistlib.load(file)
-        self.assertEqual(job["Label"], "com.deckartes.anime-digest")
-        self.assertEqual(job["StartCalendarInterval"], {"Hour": 9, "Minute": 0})
-        self.assertEqual(job["ProgramArguments"], [str(ROOT / "venv" / "bin" / "python"), "-m", "jobs.anime_digest"])
-        self.assertEqual(job["WorkingDirectory"], str(ROOT / "src"))
-        self.assertNotIn("RunAtLoad", job)

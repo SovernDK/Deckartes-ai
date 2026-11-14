@@ -146,8 +146,8 @@
 <h2>Overview</h2>
 <p class="lead">A terminal chat (Textual) for local MLX models, served by Rapid-MLX, that can call tools.</p>
 <div class="stat">
-  <div><b>33</b><span>tools</span></div>
-  <div><b>6</b><span>tool groups</span></div>
+  <div><b>35</b><span>tools</span></div>
+  <div><b>7</b><span>tool groups</span></div>
   <div><b>1</b><span>prompt preset</span></div>
   <div><b>~4,100</b><span>lines of Python</span></div>
 </div>
@@ -159,6 +159,7 @@
   <li><strong>Anime</strong>: seasons, ratings, airing schedule, your list (AnimeSchedule.net).</li>
   <li><strong>Counter-Strike</strong>: teams, players, matches, tournaments (PandaScore) and Valve's ranking.</li>
   <li><strong>Calendar</strong>: read and search Apple Calendar, add events after you confirm.</li>
+  <li><strong>Bank</strong>: your transactions for a date range, newest first with totals (Enable Banking).</li>
   <li><strong>Your files</strong>: save files or whole folders once and ask about them in any session.</li>
 </ol>
 <div class="tip">Built for <em>small</em> local models: tool text is short and carefully worded so it can't be misread, and only the tools a question needs are sent.</div>
@@ -180,6 +181,7 @@
   <tr><td><code>OLLAMA_API_KEY</code></td><td>web search and page reading</td></tr>
   <tr><td><code>ANIMESCHEDULE_TOKEN</code></td><td>anime tools</td></tr>
   <tr><td><code>PANDA_SCORE_API_TOKEN</code></td><td>Counter-Strike tools (free plan works)</td></tr>
+  <tr><td><code>ENABLE_BANKING_APP_ID</code> · <code>ENABLE_BANKING_KEY_PATH</code></td><td>bank tools: the application id and its private key (<code>.pem</code>); then link a bank once</td></tr>
 </table>
 <h3>Run</h3>
 <pre><code>venv/bin/python src/main.py                   # the app
@@ -187,7 +189,9 @@ PYTHONPATH=src venv/bin/textual run --dev src/main.py  # with devtools (+ `textu
 PYTHONPATH=src venv/bin/python -m unittest discover tests  # tests; live ones skip unless LIVE=1
 LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_live_*.py'  # live tests only
 ./deckartes-telegram.command                  # the Telegram bot, in Terminal (calendar access needs it)
-(cd src &amp;&amp; ../venv/bin/python -m jobs.anime_digest)  # send today's anime digest now (launchd runs it at 09:00)</code></pre>
+(cd src &amp;&amp; ../venv/bin/python -m jobs.anime_digest)  # send today's anime digest now (launchd runs it at 09:00)
+(cd src &amp;&amp; ../venv/bin/python -m jobs.schedule)      # apply the jobs list to launchd
+(cd src &amp;&amp; ../venv/bin/python -m tools.enable_banking_api)  # link a bank in a browser</code></pre>
 <div class="tip">If the routing embeddings fail, every allowed tool is sent with the question.</div>
 </section>
 
@@ -423,7 +427,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
 
 <section id="tools">
 <h2>Tool catalogue</h2>
-<p class="lead">33 tools, registered in <code>tools.py</code> with <code>@tool("&lt;group&gt;")</code>.</p>
+<p class="lead">35 tools, registered in <code>tools.py</code> with <code>@tool("&lt;group&gt;")</code>.</p>
 <div class="bars">
   <div class="bar"><span>server</span><div class="fill" style="width:100%"></div><b>10</b></div>
   <div class="bar"><span>anime</span><div class="fill" style="width:70%"></div><b>7</b></div>
@@ -431,6 +435,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
   <div class="bar"><span>calendar</span><div class="fill" style="width:40%"></div><b>4</b></div>
   <div class="bar"><span>disk</span><div class="fill" style="width:30%"></div><b>3</b></div>
   <div class="bar"><span>web</span><div class="fill" style="width:20%"></div><b>2</b></div>
+  <div class="bar"><span>banking</span><div class="fill" style="width:10%"></div><b>1</b></div>
 </div>
 <div class="cards">
   <div class="card"><h4>server <small>glances_api.py</small></h4><ul>
@@ -454,6 +459,8 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
     <li><code>search_library(query)</code> sent with every question</li></ul></div>
   <div class="card"><h4>web <small>web_search.py</small></h4><ul>
     <li><code>search_web(query)</code></li><li><code>fetch_web_page(url)</code></li></ul></div>
+  <div class="card"><h4>banking <small>enable_banking_api.py</small></h4><ul>
+    <li><code>get_bank_transactions(date_from, date_to)</code></li></ul></div>
 </div>
 <h3>How tools run</h3>
 <ol>
@@ -497,6 +504,12 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
     <li>Store reset before each read to see outside changes.</li>
     <li>Parses "today", "next friday", ISO dates, months.</li>
     <li>Add: end is optional (one hour by default); refuses past or backwards events, skips duplicates, asks you first.</li></ul></div>
+  <div class="card"><h4>Bank <small>enable_banking_api.py</small></h4><ul>
+    <li>Enable Banking (PSD2); every request signed with a fresh RS256 JWT from the app's private key.</li>
+    <li>A bank link is made once in a browser (<code>python -m tools.enable_banking_api</code>) and lasts as long as the bank allows, at most 180 days.</li>
+    <li>Every page read, newest first, at most <code>bank_max_transactions</code> (100) listed per account; totals count all.</li>
+    <li>Reversed ranges swapped, future ends cut to today; an expired link says how to relink.</li>
+    <li>The bank job messages you 7 days and 1 day before the link expires.</li></ul></div>
 </div>
 </section>
 
@@ -643,7 +656,10 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td><code>telegram_bot.py</code></td><td>Headless Telegram front end: polling, access check, turns, Yes/No confirmations (see <code>docs/telegram.md</code>)</td></tr>
   <tr><td><code>telegram_api.py</code></td><td>Bot API calls through <code>http_client</code>, with the token kept out of errors</td></tr>
   <tr><td><code>telegram_format.py</code></td><td>Turns the model's Markdown reply into Telegram messages: plain text plus formatting entities (via <code>telegramify-markdown</code>), split under the size limit</td></tr>
-  <tr><td><code>anime_digest.py</code></td><td>Morning Telegram message of today's anime from the user's list, run by launchd, separate from the bot (see <code>docs/telegram.md</code>)</td></tr>
+  <tr><td><code>schedule.py</code></td><td>The scheduled jobs and when they run (<code>JOBS</code>); <code>python -m jobs.schedule</code> writes and loads their launchd LaunchAgents (see <code>docs/telegram.md</code>)</td></tr>
+  <tr><td><code>runner.py</code></td><td>What every job shares: settings check, one Telegram message, retries for an hour, exit codes</td></tr>
+  <tr><td><code>anime_digest.py</code></td><td>Morning Telegram message of today's anime from the user's list, separate from the bot</td></tr>
+  <tr><td><code>bank_digest.py</code></td><td>Morning Telegram reminder 7 days and 1 day before the bank link expires</td></tr>
   <tr><td><code>conversation.py</code></td><td><code>Conversation</code>, events, <code>Usage</code>, <code>TurnInfo</code>, tool loop, compaction</td></tr>
   <tr><td><code>history.py</code></td><td>Saved conversations in <code>history.db</code>: <code>Saver</code> (save turns and summaries, resume), list, load, delete</td></tr>
   <tr><td><code>library.py</code></td><td>Read, chunk, embed, store and search saved files</td></tr>
@@ -651,7 +667,7 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td><code>tool_router.py</code></td><td>Tool groups per question</td></tr>
   <tr><td><code>tool_groups.py</code></td><td>Tool groups and their example questions; the one place that decides which tools go with the chosen groups</td></tr>
   <tr><td><code>tools.py</code></td><td>Registry, <code>run_tool</code> (the one place a call becomes tool text, confirmation included)</td></tr>
-  <tr><td><code>glances_api</code> · <code>disk_scan</code> · <code>web_search</code> · <code>animeschedule_api</code> · <code>cs_api</code> · <code>calendar_api</code></td><td>Backends</td></tr>
+  <tr><td><code>glances_api</code> · <code>disk_scan</code> · <code>web_search</code> · <code>animeschedule_api</code> · <code>cs_api</code> · <code>calendar_api</code> · <code>enable_banking_api</code></td><td>Backends</td></tr>
   <tr><td><code>http_client.py</code></td><td><code>request</code>, <code>pages</code></td></tr>
   <tr><td><code>mlx_client.py</code></td><td>Chat, embeddings and the model list from the Rapid-MLX servers</td></tr>
   <tr><td><code>mlx_server.py</code></td><td>Starting and stopping the Rapid-MLX servers</td></tr>
@@ -672,6 +688,7 @@ async with app.run_test(size=(100, 30)) as pilot:
   <tr><td>Tool text</td><td>Short plain text a tool returns, worded so a small model can't misread it</td></tr>
   <tr><td>Backend</td><td>Module that gets a tool's data from one outside source</td></tr>
   <tr><td>Local time</td><td>Time in the configured time zone; used in all tool text</td></tr>
+  <tr><td>Bank link</td><td>The user's one-time approval at their bank that lets the tools read its accounts until it expires</td></tr>
   <tr><td>Compaction</td><td>Replacing the history with the model's summary near the window limit</td></tr>
   <tr><td>Model server</td><td>A Rapid-MLX process the app starts to hold a model</td></tr>
 </table>

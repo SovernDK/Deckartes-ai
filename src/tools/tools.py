@@ -15,6 +15,7 @@ from tools import animeschedule_api as anime
 from tools import calendar_api as cal
 from tools import cs_api as cs
 from tools import disk_scan, library
+from tools import enable_banking_api as bank
 from tools import glances_api as glances
 from tools import web_search as web
 from tools.tool_groups import GROUPS
@@ -354,6 +355,18 @@ async def add_calendar_event(title: str, date: str, start_time: str, end_date: s
         end_time: Optional. Local end time as HH:MM (24-hour), e.g. "15:30"; leave it out for a one-hour event
     """
     return await cal.add_event(title, date, start_time, end_date, end_time, confirm)
+
+@tool("banking")
+async def get_bank_transactions(date_from: str, date_to: str | None = None) -> str:
+    """Get the transactions of the user's own bank accounts between two dates, newest first: date,
+    amount (- money out, + money in), who was paid or who paid, description, plus total money in
+    and out. Use it for spending, income, payments and "did my salary come in".
+
+    Args:
+        date_from: First day as YYYY-MM-DD. Work it out from the current date: "this week" starts on Monday, "last month" on its 1st
+        date_to: Optional. Last day as YYYY-MM-DD; leave it out to go up to today
+    """
+    return await bank.transactions(date_from, date_to)
 
 def tools_for(names: list[str] | None) -> list:
     if names is None:

@@ -35,7 +35,8 @@
   "get_calendar_events": "Wednesday 2026-11-11: 15:00 Team sync (Work).",
   "get_calendar_period": "Monday 2026-11-16: 09:00 Standup (Work).\nThursday 2026-11-19: 19:00 Dinner (Home).",
   "find_calendar_events": "Upcoming: Tuesday 2026-12-08 09:15 Appointment (Home).",
-  "add_calendar_event": "Added to the calendar: the event was saved."
+  "add_calendar_event": "Added to the calendar: the event was saved.",
+  "get_bank_transactions": "Main account (EUR), 3 transactions from 2026-11-01 to 2026-11-11, newest first:\n2026-11-10  +4200.00 EUR  Northwind Ltd: Salary October\n2026-11-08  -54.20 EUR  Lidl: Card payment\n2026-11-03  -12.99 EUR  Streamly: Subscription\nTotal: in +4200.00 EUR, out -67.19 EUR"
 },
 "cases": [
   {"id": "get_server_overview-e", "category": "explicit", "question": "Give me a full health overview of my home server.", "expect": ["get_server_overview"]},
@@ -140,6 +141,9 @@
   {"id": "add_calendar_event-e", "category": "explicit", "question": "Add a meeting with Anna to my calendar on Monday at 10:00.", "expect": ["add_calendar_event"], "arguments": {"add_calendar_event": {"title": "anna", "date": "2026-11-16", "start_time": "10:00"}}},
   {"id": "add_calendar_event-p", "category": "paraphrased", "question": "Stick gym in my schedule tomorrow at 18:00.", "expect": ["add_calendar_event"], "arguments": {"add_calendar_event": {"title": "gym", "date": "2026-11-12", "start_time": "18:00"}}},
   {"id": "add_calendar_event-o", "category": "obfuscated", "question": "Don't let me forget the vet with Milo on the 17th at half past two in the afternoon.", "expect": ["add_calendar_event"], "arguments": {"add_calendar_event": {"title": ["vet", "milo"], "date": "2026-11-17", "start_time": "14:30"}}},
+  {"id": "get_bank_transactions-e", "category": "explicit", "question": "Show my bank transactions since November 1.", "expect": ["get_bank_transactions"], "arguments": {"get_bank_transactions": {"date_from": "2026-11-01"}}},
+  {"id": "get_bank_transactions-p", "category": "paraphrased", "question": "How much did I spend last week?", "expect": ["get_bank_transactions"], "arguments": {"get_bank_transactions": {"date_from": "2026-11-02"}}},
+  {"id": "get_bank_transactions-o", "category": "obfuscated", "question": "Payday was supposed to be on the 10th. Did my employer actually pay up?", "expect": ["get_bank_transactions"], "arguments": {"get_bank_transactions": {"date_from": ["2026-11-10", "2026-11-09", "2026-11-01"]}}},
   {"id": "follow-add-match", "category": "follow-up", "question": "Put that in my calendar.", "expect": ["add_calendar_event"], "history": [{"question": "When does NAVI play next?", "reply": "NAVI play FaZe on Saturday 2026-11-14 at 18:00 at the Zephyr Cup."}], "arguments": {"add_calendar_event": {"title": ["navi", "faze"], "date": "2026-11-14", "start_time": "18:00"}}},
   {"id": "follow-other-team", "category": "follow-up", "question": "and what about Vitality?", "expect": [["get_cs_upcoming_matches", "get_cs_team"]], "history": [{"question": "When does NAVI play next?", "reply": "NAVI play FaZe on Saturday 2026-11-14 at 18:00 at the Zephyr Cup."}], "arguments": {"get_cs_upcoming_matches": {"team": "vitality"}, "get_cs_team": {"name": "vitality"}}},
   {"id": "follow-anime-tomorrow", "category": "follow-up", "question": "and tomorrow?", "expect": ["get_anime_airing_on"], "history": [{"question": "What anime airs today?", "reply": "Today Moonlit Harbor episode 7 airs at 17:30 and Copper Lantern episode 5 at 19:00."}], "arguments": {"get_anime_airing_on": {"date": "2026-11-12"}}},

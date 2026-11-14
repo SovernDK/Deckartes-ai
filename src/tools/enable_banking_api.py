@@ -75,10 +75,11 @@ def _auth() -> str:
         {"iss": "enablebanking.com", "aud": "api.enablebanking.com", "iat": now, "exp": now + lifetime},
         key, algorithm="RS256", headers={"kid": app.app_id})
 
-async def _request(method: str, path: str, *, params: dict | None = None, body: dict | None = None):
+async def _request(method: str, path: str, *, params: dict | None = None, body: dict | None = None,
+                   status_messages: dict[int, str] | None = None):
     res = await http_client.request(
         method, f"{API_URL}{path}", name="Enable Banking", error=BankingError,
-        params=params, json=body, token=_auth())
+        params=params, json=body, token=_auth(), status_messages=status_messages)
     return res.json()
 
 # Linking a bank: banks -> start_auth -> (user approves in a browser) -> _session
@@ -176,7 +177,10 @@ async def _get_transactions(uid: str, date_from: dt.date, date_to: dt.date) -> t
     entries: list[dict] = []
     # Safety cap on following continuation keys (the mock bank pages by 10)
     for _ in range(50):
-        data = await _request("GET", f"/accounts/{uid}/transactions", params=params)
+        data = await _request("GET", f"/accounts/{uid}/transactions", params=params, status_messages={
+            # A session belongs to the app that made it, so a link made with the other app isn't found
+            404: f"Enable Banking doesn't know the saved bank link: it was made with another Enable Banking "
+                 f"app or withdrawn at the bank. Relink with {_app().command}"})
         entries += data["transactions"]
         if not data.get("continuation_key"):
             return entries, True

@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+import httpx
 import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -202,6 +203,15 @@ class BankingTest(HttpTest):
         await self.run_linking(server)
 
         self.assertEqual(json.loads(server.requests[1].content)["access"], {"valid_until": "2027-02-12T11:00:00+00:00"})
+
+    async def test_a_link_from_another_app_says_to_relink(self):
+        self.link()
+        self.serve({TRANSACTIONS: httpx.Response(404, json={"error": "ACCOUNT_DOES_NOT_EXIST"})})
+
+        self.assertEqual(await tools.run_tool("get_bank_transactions", {"date_from": "2026-11-01"}),
+                         "Tool get_bank_transactions failed: Enable Banking doesn't know the saved bank link: it was "
+                         "made with another Enable Banking app or withdrawn at the bank. Relink with "
+                         "`python -m tools.enable_banking_api` from src/")
 
     async def test_sandbox_mode_uses_the_sandbox_app_and_its_own_link(self):
         real = {"uid": "real-1", "name": "Real", "currency": "PLN"}

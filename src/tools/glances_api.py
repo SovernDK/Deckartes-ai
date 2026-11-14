@@ -70,68 +70,69 @@ def _format_fs(filesystems: list) -> str:
                      f"used ({_percent(fs['percent'])}), {_gb(fs['free'])} free")
     return "\n".join(lines) or "No file systems reported"
 
-def _format_gpu(gpus: list) -> str:
+def _format_gpu(reported: list) -> str:
     lines = []
-    for gpu in gpus:
-        parts = [f"{gpu['proc']}% busy" if gpu.get("proc") is not None else "load unknown"]
-        if gpu.get("mem") is not None:
-            parts.append(f"memory {gpu['mem']}% used")
-        if gpu.get("temperature") is not None:
-            parts.append(f"{gpu['temperature']}°C")
-        lines.append(f"GPU {gpu.get('name') or gpu.get('gpu_id')}: {', '.join(parts)}")
+    for card in reported:
+        parts = [f"{card['proc']}% busy" if card.get("proc") is not None else "load unknown"]
+        if card.get("mem") is not None:
+            parts.append(f"memory {card['mem']}% used")
+        if card.get("temperature") is not None:
+            parts.append(f"{card['temperature']}°C")
+        lines.append(f"GPU {card.get('name') or card.get('gpu_id')}: {', '.join(parts)}")
     return "\n".join(lines) or "No GPU reported"
 
-def _format_sensors(sensors: list) -> str:
-    temps = [s for s in sensors if s["type"].startswith("temperature") and s["value"]]
+def _format_sensors(reported: list) -> str:
+    temps = [sensor for sensor in reported if sensor["type"].startswith("temperature") and sensor["value"]]
     lines = []
     if temps:
-        hottest = max(temps, key=lambda s: s["value"])
-        readings = ", ".join(f"{s['label']}: {s['value']}°C" for s in temps)
+        hottest = max(temps, key=lambda sensor: sensor["value"])
+        readings = ", ".join(f"{sensor['label']}: {sensor['value']}°C" for sensor in temps)
         # Without the limit, models guess one ("near its limit" at 43°C)
-        limits = [s["warning"] for s in temps if s.get("warning")]
-        limit = f", warning level {min(limits)}°C" if limits else ""
+        warning_levels = [sensor["warning"] for sensor in temps if sensor.get("warning")]
+        limit = f", warning level {min(warning_levels)}°C" if warning_levels else ""
         lines.append(f"Temperatures: hottest {hottest['value']}°C ({hottest['label']}){limit}; {readings}")
-        hot = [s for s in temps if s.get("warning") and s["value"] >= s["warning"]]
+        hot = [sensor for sensor in temps if sensor.get("warning") and sensor["value"] >= sensor["warning"]]
         if hot:
-            lines.append("Above warning level: " + ", ".join(s["label"] for s in hot))
-    fans = [s for s in sensors if s["type"] == "fan_speed"]
-    if fans:
-        lines.append("Fans: " + ", ".join(f"{s['label']}: {s['value']} RPM" for s in fans))
-    for s in sensors:
-        if s["type"] == "battery":
-            lines.append(f"Battery: {s['value']}%")
+            lines.append("Above warning level: " + ", ".join(sensor["label"] for sensor in hot))
+    fan_sensors = [sensor for sensor in reported if sensor["type"] == "fan_speed"]
+    if fan_sensors:
+        lines.append("Fans: " + ", ".join(f"{fan['label']}: {fan['value']} RPM" for fan in fan_sensors))
+    for sensor in reported:
+        if sensor["type"] == "battery":
+            lines.append(f"Battery: {sensor['value']}%")
     return "\n".join(lines) or "No sensors reported"
 
-def _common_uptime(containers: list) -> str | None:
-    uptimes = [c.get("uptime") for c in containers]
+def _common_uptime(reported: list) -> str | None:
+    uptimes = [container.get("uptime") for container in reported]
     common = max(set(uptimes), key=uptimes.count, default=None)
     return common if common and uptimes.count(common) > len(uptimes) / 2 else None
 
-def _container_line(c: dict, common_uptime: str | None = None) -> str:
+def _container_line(container: dict, common_uptime: str | None = None) -> str:
     """Uptime is left out when it's the one most containers share (given in the summary)."""
-    uptime = "" if c.get("uptime") == common_uptime else f", up {c.get('uptime') or '?'}"
-    return (f"{c['name']}: {c['status']}{uptime}, CPU {c.get('cpu_percent') or 0:.1f}%, "
-            f"RAM {_size(c.get('memory_usage') or 0)}")
+    uptime = "" if container.get("uptime") == common_uptime else f", up {container.get('uptime') or '?'}"
+    return (f"{container['name']}: {container['status']}{uptime}, CPU {container.get('cpu_percent') or 0:.1f}%, "
+            f"RAM {_size(container.get('memory_usage') or 0)}")
 
-def _problem(c: dict) -> bool:
-    return c["status"] not in ("running", "healthy")
+def _problem(container: dict) -> bool:
+    return container["status"] not in ("running", "healthy")
 
-def _containers_summary(containers: list) -> str:
-    if not containers:
+def _containers_summary(reported: list) -> str:
+    if not reported:
         return "No containers reported"
-    counts = {}
-    for c in containers:
-        counts[c["status"]] = counts.get(c["status"], 0) + 1
-    states = ", ".join(f"{n} {status}" for status, n in sorted(counts.items(), key=lambda x: -x[1]))
-    common = _common_uptime(containers)
+    tally = {}
+    for container in reported:
+        tally[container["status"]] = tally.get(container["status"], 0) + 1
+    by_status = ", ".join(f"{count} {status}"
+                          for status, count in sorted(tally.items(), key=lambda item: -item[1]))
+    common = _common_uptime(reported)
     uptime = f"; up {common} unless noted" if common else ""
-    return f"{len(containers)} containers ({states}){uptime}"
+    return f"{len(reported)} containers ({by_status}){uptime}"
 
-def _format_containers(containers: list) -> str:
+def _format_containers(reported: list) -> str:
     """Problem containers first, then busiest first."""
-    ordered = sorted(containers, key=lambda c: (not _problem(c), -(c.get("cpu_percent") or 0)))
-    common = _common_uptime(containers)
-    return "\n".join([_containers_summary(containers), *(_container_line(c, common) for c in ordered)])
+    ordered = sorted(reported, key=lambda container: (not _problem(container), -(container.get("cpu_percent") or 0)))
+    common = _common_uptime(reported)
+    return "\n".join([_containers_summary(reported), *(_container_line(container, common) for container in ordered)])
 
 async def status() -> str:
     version, uptime = await asyncio.gather(_get("status"), _get("uptime"))
@@ -163,21 +164,23 @@ async def containers() -> str:
 
 async def overview() -> str:
     """Every key number in one result, so "how is the server?" takes a single tool call."""
-    (version, uptime, cpu_data, load_data, mem_data, swap_data, fs_data, gpu_data,
+    (version, uptime, cpu_data, load_data, mem_data, swap_data, fs_data, graphics_data,
      sensor_data, container_data) = await asyncio.gather(*map(_get, [
         "status", "uptime", "cpu", "load", "mem", "memswap", "fs", "gpu", "sensors", "containers"]))
-    busiest = sorted(container_data, key=lambda c: -(c.get("cpu_percent") or 0))[:OVERVIEW_CONTAINERS]
-    biggest = sorted(container_data, key=lambda c: -(c.get("memory_usage") or 0))[:OVERVIEW_CONTAINERS]
-    problems = [c for c in container_data if _problem(c)]
+    busiest = sorted(container_data, key=lambda container: -(container.get("cpu_percent") or 0))[:OVERVIEW_CONTAINERS]
+    biggest = sorted(container_data, key=lambda container: -(container.get("memory_usage") or 0))[:OVERVIEW_CONTAINERS]
+    problems = [container for container in container_data if _problem(container)]
     common = _common_uptime(container_data)
     lines = [
         f"Online (Glances {version.get('version', '?')}), up {uptime}",
         _format_cpu(cpu_data), _format_load(load_data), _format_mem(mem_data), _format_swap(swap_data),
-        _format_fs(fs_data), _format_gpu(gpu_data), _format_sensors(sensor_data),
+        _format_fs(fs_data), _format_gpu(graphics_data), _format_sensors(sensor_data),
         _containers_summary(container_data),
-        *(f"Not running: {_container_line(c, common)}" for c in problems),
+        *(f"Not running: {_container_line(container, common)}" for container in problems),
     ]
     if container_data:
-        lines += ["Most CPU: " + "; ".join(f"{c['name']} {c.get('cpu_percent') or 0:.1f}%" for c in busiest),
-                  "Most RAM: " + "; ".join(f"{c['name']} {_size(c.get('memory_usage') or 0)}" for c in biggest)]
+        lines += ["Most CPU: " + "; ".join(f"{container['name']} {container.get('cpu_percent') or 0:.1f}%"
+                                           for container in busiest),
+                  "Most RAM: " + "; ".join(f"{container['name']} {_size(container.get('memory_usage') or 0)}"
+                                           for container in biggest)]
     return "\n".join(lines)

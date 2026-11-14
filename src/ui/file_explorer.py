@@ -25,7 +25,7 @@ SCAN_DELAY = 0.3
 class UserDirectoryTree(DirectoryTree):
 
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
-        return [path for path in paths if disk_scan.is_user_facing(path)]
+        return [entry for entry in paths if disk_scan.is_user_facing(entry)]
 
 class FileExplorerScreen(ModalScreen[Path | None]):
     BINDINGS = [("l", "load", "Save to library"), ("e", "close", "Close"), ("escape", "close", "Close")]

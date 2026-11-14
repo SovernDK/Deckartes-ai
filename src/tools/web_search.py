@@ -25,12 +25,12 @@ async def _post(endpoint: str, payload: dict) -> dict:
 async def web_search(query: str) -> list[dict]:
     """Search the web; returns up to MAX_RESULTS of {title, url, content}, long snippets cut."""
     data = await _post("web_search", {"query": query, "max_results": MAX_RESULTS})
-    results = data.get("results", [])
-    for result in results:
+    found = data.get("results", [])
+    for result in found:
         content = result.get("content") or ""
         if len(content) > MAX_SNIPPET_CHARS:
             result["content"] = content[:MAX_SNIPPET_CHARS] + " [...]"
-    return results
+    return found
 
 async def web_fetch(url: str) -> dict:
     """Fetch a web page; returns {title, content, links}, long text and link lists cut."""

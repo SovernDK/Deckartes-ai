@@ -60,7 +60,7 @@ class FakeEmbeddings:
         if text in self.scores:
             wanted = self.scores[text]
             vector = [wanted.get(axis, 0.0) for axis in self.axes]
-            vector[-1] = math.sqrt(1 - sum(v * v for v in vector))
+            vector[-1] = math.sqrt(1 - sum(value * value for value in vector))
             return vector
         return [1.0 if axis == self.example_axis[text] else 0.0 for axis in self.axes]
 

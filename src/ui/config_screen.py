@@ -62,9 +62,9 @@ class ConfigScreen(ModalScreen[bool]):
                 yield OutlineButton("Cancel", "error", id="cancel")
 
     def context_options(self) -> list[tuple[str, int]]:
-        lengths = sorted(set(CONTEXT_LENGTHS) | {config.context_length})
+        choices = sorted(set(CONTEXT_LENGTHS) | {config.context_length})
         options = []
-        for length in lengths:
+        for length in choices:
             label = f"{length // 1024}K ({length:,} tokens)" if length % 1024 == 0 else f"{length:,} tokens"
             if length < RECOMMENDED_MIN_CONTEXT:
                 label += ", little room with tools"

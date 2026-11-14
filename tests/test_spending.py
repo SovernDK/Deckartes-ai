@@ -20,7 +20,7 @@ from test_conversation import FakeClient
 from tools import spending, tools
 
 SEND = "/bot123:SECRET/sendMessage"
-SENT = {"ok": True, "result": {"message_id": 7}}
+SEND_OK = {"ok": True, "result": {"message_id": 7}}
 
 def says(text: str) -> list[mlx_client.Delta]:
     """One model reply."""
@@ -149,7 +149,7 @@ class DigestJobTest(HttpTest):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    async def run_job(self, *payments: dict, send=SENT) -> list[str]:
+    async def run_job(self, *payments: dict, send=SEND_OK) -> list[str]:
         """Run the morning bank job; returns the Telegram messages it sent."""
         server = self.server = self.serve({TRANSACTIONS: page(*payments), SEND: send})
         with self.assertLogs("deckartes.jobs", "INFO"):

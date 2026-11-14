@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from Foundation import NSDate
 
 from frozen_clock import TIMEZONE, freeze
-from tools import calendar_api as cal
+from tools import calendar_api as calendar_tools
 from tools import tools
 
 
@@ -59,9 +59,9 @@ class CalendarToolTest(unittest.IsolatedAsyncioTestCase):
         self.questions: list[str] = []
         self.answer = True
         self.save = mock.Mock()
-        for target, name, value in ((cal, "_events_between", self.between),
-                                    (cal, "_target_calendar", lambda: FakeCalendar("Home")),
-                                    (cal, "save_event", self.save)):
+        for target, name, value in ((calendar_tools, "_events_between", self.between),
+                                    (calendar_tools, "_target_calendar", lambda: FakeCalendar("Home")),
+                                    (calendar_tools, "save_event", self.save)):
             patcher = mock.patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)

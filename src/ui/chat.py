@@ -240,13 +240,13 @@ class Chat(VerticalGroup):
 
     def update_suggestions(self, value: str) -> None:
         suggestions = self.query_one("#suggestions", OptionList)
-        names = self.matching_commands(value)
+        matching = self.matching_commands(value)
         suggestions.clear_options()
-        if not names:
+        if not matching:
             suggestions.display = False
             return
         suggestions.add_options(
-            [Option(f"/{name}  [dim]{self.COMMANDS[name][1]}[/dim]", id=name) for name in names]
+            [Option(f"/{name}  [dim]{self.COMMANDS[name][1]}[/dim]", id=name) for name in matching]
         )
         suggestions.highlighted = 0
         suggestions.display = True
@@ -258,9 +258,9 @@ class Chat(VerticalGroup):
         if not value.startswith("/") or " " in value:
             return []
         typed = value[1:].lower()
-        names = list(cls.COMMANDS)
-        return ([n for n in names if n.startswith(typed)]
-                + [n for n in names if typed in n and not n.startswith(typed)])
+        known = list(cls.COMMANDS)
+        return ([command for command in known if command.startswith(typed)]
+                + [command for command in known if typed in command and not command.startswith(typed)])
 
     def action_suggestion_move(self, step: int) -> None:
         suggestions = self.query_one("#suggestions", OptionList)
@@ -517,8 +517,8 @@ class Chat(VerticalGroup):
         # Whether this model round's answer has started, for the spinner's "Answering..."
         answering = False
         try:
-            async with aclosing(self.conversation.stream_reply(query, self.confirm)) as events:
-                async for event in events:
+            async with aclosing(self.conversation.stream_reply(query, self.confirm)) as stream:
+                async for event in stream:
                     if isinstance(event, Text):
                         await reply.write_text(event.text)
                         wrote = True
@@ -567,18 +567,18 @@ class ModelChangeMenu(VerticalGroup):
 
     @work(exclusive=True)
     async def load_models(self) -> None:
-        models = await asyncio.to_thread(mlx_client.list_models)
-        names = models or ["No models found"]
+        available = await asyncio.to_thread(mlx_client.list_models)
+        shown = available or ["No models found"]
         # Same width for every label so the highlight bar spans the whole menu
-        width = max(len(name) for name in names)
-        labels = [Label(name) for name in names]
-        for label in labels:
+        width = max(len(name) for name in shown)
+        widgets = [Label(name) for name in shown]
+        for label in widgets:
             label.styles.width = width
 
         list_view = self.query_one(ListView)
         await list_view.clear()
         await list_view.extend(
-            ListItem(label, name=model) for label, model in zip(labels, models or [None])
+            ListItem(label, name=model) for label, model in zip(widgets, available or [None])
         )
         list_view.index = 0
 

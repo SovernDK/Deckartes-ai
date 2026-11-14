@@ -53,8 +53,8 @@ def _rating(anime: dict) -> float | None:
 def _keep(show_rating: float | None) -> bool:
     return show_rating is None or show_rating > config.anime_min_rating
 
-def _best_first(shows: list[dict]) -> list[dict]:
-    return sorted(shows, key=lambda show: (show["rating"] is None, -(show["rating"] or 0)))
+def _best_first(listed: list[dict]) -> list[dict]:
+    return sorted(listed, key=lambda show: (show["rating"] is None, -(show["rating"] or 0)))
 
 def _premiere_date(anime: dict) -> str | None:
     """Subtitled premiere date, falling back to the Japanese one (unset dates are 0001-01-01)."""
@@ -89,8 +89,8 @@ def _season_name(season: str) -> str:
     return season
 
 async def _season_shows(season: str, year: int) -> list[dict]:
-    shows = [_show(a) for a in await _all_anime({"seasons": season, "years": year})]
-    return _best_first([show for show in shows if _keep(show["rating"])])
+    found = [_show(anime) for anime in await _all_anime({"seasons": season, "years": year})]
+    return _best_first([show for show in found if _keep(show["rating"])])
 
 def _resolve_season(text: str) -> tuple[str, int]:
     """Season and year from "current", "next", "previous" or e.g. "winter 2027"."""
@@ -110,11 +110,11 @@ async def _top_season(season: str, count: int) -> dict:
     ratings, so the rest are filled with the most-tracked unrated shows."""
     name, year = _resolve_season(season)
     count = max(1, min(int(count), 25))
-    shows = [_show(a) for a in await _all_anime({"seasons": name, "years": year})]
-    rated = _best_first([show for show in shows if show["rating"] is not None and _keep(show["rating"])])
+    premiering = [_show(anime) for anime in await _all_anime({"seasons": name, "years": year})]
+    rated = _best_first([show for show in premiering if show["rating"] is not None and _keep(show["rating"])])
     top = rated[:count]
     if len(top) < count:
-        unrated = sorted((show for show in shows if show["rating"] is None),
+        unrated = sorted((show for show in premiering if show["rating"] is None),
                          key=lambda show: -show["tracked_by"])
         top += unrated[:count - len(top)]
     return {"season": f"{name.title()} {year}", "rated": len(rated), "shows": top}
@@ -131,21 +131,21 @@ async def _airing_shows(date: dt.date) -> list[dict]:
     so they are matched against all currently airing anime (which includes shows continuing
     from earlier seasons); shows not found there, like this week's premieres, count as unrated."""
     timetable = await _timetable(date)
-    ratings = {a["route"]: _rating(a) for a in await _all_anime({"airing-statuses": "ongoing"})}
+    ratings = {anime["route"]: _rating(anime) for anime in await _all_anime({"airing-statuses": "ongoing"})}
 
-    shows = []
+    airing = []
     for airs, entry in timetable:
         show_rating = ratings.get(entry["route"])
         if airs.date() != date or not _keep(show_rating):
             continue
-        shows.append({
+        airing.append({
             "name": entry.get("english") or entry["title"],
             "rating": show_rating,
             "episode": entry.get("episodeNumber"),
             "airs": airs,
         })
 
-    return _best_first(shows)
+    return _best_first(airing)
 
 async def _upcoming_episodes() -> dict[str, tuple[dt.datetime, dict]]:
     """Next upcoming subtitled (config.anime_air_type) episode per anime route, as
@@ -169,38 +169,38 @@ async def _find_episodes(name: str) -> tuple[list[dict], bool]:
     """Next subtitled episode of every show whose English, romaji or main title contains all
     words of name (case and punctuation ignored), soonest first. When none does, the one show
     closest to name instead; the flag says the result is that closest match."""
-    words = normalize(name).split()
-    if not words:
+    typed_words = normalize(name).split()
+    if not typed_words:
         raise AnimeScheduleError("Give the name of an anime")
 
     upcoming = list((await _upcoming_episodes()).values())
-    def titles(entry: dict) -> list[str]:
+    def entry_titles(entry: dict) -> list[str]:
         return [normalize(entry.get(key) or "") for key in ("english", "romaji", "title")]
-    matches = [(airs, entry) for airs, entry in upcoming
-               if any(all(word in title for word in words) for title in titles(entry))]
-    closest = None if matches else closest_by_words(name, ((match, titles(match[1])) for match in upcoming))
+    found = [(airs, entry) for airs, entry in upcoming
+             if any(all(word in title for word in typed_words) for title in entry_titles(entry))]
+    closest = None if found else closest_by_words(name, ((pair, entry_titles(pair[1])) for pair in upcoming))
     if closest:
-        matches = [closest]
-    matches.sort(key=lambda match: match[0])
+        found = [closest]
+    found.sort(key=lambda pair: pair[0])
 
     return [{
         "name": entry.get("english") or entry["title"],
         "episode": entry.get("episodeNumber"),
         "airs": airs,
-    } for airs, entry in matches], closest is not None
+    } for airs, entry in found], closest is not None
 
 def _titles(anime: dict) -> list[str]:
     names = anime.get("names") or {}
-    titles = [anime.get("title"), names.get("english"), names.get("romaji"), *(names.get("synonyms") or [])]
-    return [normalize(title) for title in titles if title]
+    all_titles = [anime.get("title"), names.get("english"), names.get("romaji"), *(names.get("synonyms") or [])]
+    return [normalize(title) for title in all_titles if title]
 
 async def _continuing_shows(name: str) -> tuple[str, list[dict], bool]:
     """Next season's name, and whether currently airing shows matching name will still air then, estimated from
     the next subtitled episode and the announced episode count (one episode a week). Says
     "unknown" with the reason when the count isn't announced or the show isn't in the timetable.
     When no show matches, the one closest to name instead; the flag says it is that closest match."""
-    words = normalize(name).split()
-    if not words:
+    typed_words = normalize(name).split()
+    if not typed_words:
         raise AnimeScheduleError("Give the name of an anime")
 
     season, year = _resolve_season("next")
@@ -209,12 +209,12 @@ async def _continuing_shows(name: str) -> tuple[str, list[dict], bool]:
     upcoming = await _next_episodes()
 
     ongoing = await _all_anime({"airing-statuses": "ongoing"})
-    found = [anime for anime in ongoing if any(all(word in title for word in words) for title in _titles(anime))]
+    found = [anime for anime in ongoing if any(all(word in title for word in typed_words) for title in _titles(anime))]
     closest = None if found else closest_by_words(name, ((anime, _titles(anime)) for anime in ongoing))
     if closest:
         found = [closest]
 
-    shows = []
+    continuing = []
     for anime in found:
         total = anime.get("episodes") or None
         next_airs, next_number = upcoming.get(anime["route"], (None, None))
@@ -238,9 +238,9 @@ async def _continuing_shows(name: str) -> tuple[str, list[dict], bool]:
                               f"episode a week, the final episode ({total}) airs around {final}, "
                               f"{'after' if continues else 'before'} next season starts on {season_start}. "
                               "Breaks or delays can push it later.")
-        shows.append(show)
+        continuing.append(show)
 
-    return next_season, shows, closest is not None
+    return next_season, continuing, closest is not None
 
 async def _list_entries(status: str) -> list[dict]:
     async def fetch(index: int) -> tuple[list, None]:
@@ -270,16 +270,16 @@ async def _list_shows(status: str) -> list[dict]:
     entries = await _list_entries(status)
 
     # List entries only carry the user's preferred (often romaji) title
-    english = {a["route"]: (a.get("names") or {}).get("english")
-               for a in await _all_anime({"airing-statuses": "ongoing"})}
+    english = {anime["route"]: (anime.get("names") or {}).get("english")
+               for anime in await _all_anime({"airing-statuses": "ongoing"})}
     upcoming = await _next_episodes()
 
-    shows = []
+    listed = []
     for entry in entries:
         use_auto = entry.get("useAutoScores")
         score = entry.get("averageAutoScore") if use_auto else entry.get("manualScore")
         next_airs, next_episode = upcoming.get(entry["route"], (None, None))
-        shows.append({
+        listed.append({
             "name": english.get(entry["route"]) or entry.get("preferredTitle"),
             "status": entry.get("listStatus"),
             "episodes_seen": entry.get("episodesSeen") or 0,
@@ -290,7 +290,7 @@ async def _list_shows(status: str) -> list[dict]:
             "next_episode_airs": next_airs,
         })
 
-    return sorted(shows, key=lambda show: (show["my_score"] is None, -(show["my_score"] or 0), show["name"]))
+    return sorted(listed, key=lambda show: (show["my_score"] is None, -(show["my_score"] or 0), show["name"]))
 
 # Text for the model: one line per show, shared context in a header, no null fields.
 # About half the tokens of the JSON, and nothing for a small model to misread.
@@ -308,7 +308,7 @@ def _details(show: dict, *keys: str) -> str:
         parts.append(f"{show['episodes']} episodes")
     if "premiere" in keys and show.get("premiere"):
         parts.append(f"premiere {show['premiere']}")
-    return "".join(f", {part}" for part in parts)
+    return "".join(f", {detail}" for detail in parts)
 
 # Said once in a list's header instead of "not announced" on most lines
 KNOWN_ONLY = "episode counts and premiere dates are given only when announced"
@@ -316,30 +316,30 @@ KNOWN_ONLY = "episode counts and premiere dates are given only when announced"
 def _count_shows(count: int) -> str:
     return f"{count} {'show' if count == 1 else 'shows'}"
 
-def _season_text(season: str, year: int, shows: list[dict]) -> str:
+def _season_text(season: str, year: int, ranked: list[dict]) -> str:
     title = f"{season.title()} {year}"
-    if not shows:
+    if not ranked:
         return f"No anime found for {title}."
-    lines = [(f"{title} anime, best rated first, {_count_shows(len(shows))} (ratings out of 10; shows rated "
+    lines = [(f"{title} anime, best rated first, {_count_shows(len(ranked))} (ratings out of 10; shows rated "
              f"{config.anime_min_rating:g} or lower left out; {KNOWN_ONLY}):")]
-    for i, show in enumerate(shows[:MAX_SEASON_LIST], 1):
+    for i, show in enumerate(ranked[:MAX_SEASON_LIST], 1):
         lines.append(f"{i}. {show['name']}: {_rating_text(show['rating'])}"
                      f"{_details(show, 'episodes', 'premiere')}")
-    if len(shows) > MAX_SEASON_LIST:
-        cut = len(shows) - MAX_SEASON_LIST
+    if len(ranked) > MAX_SEASON_LIST:
+        cut = len(ranked) - MAX_SEASON_LIST
         lines.append(f"...and {cut} more lower-rated or unrated {'show' if cut == 1 else 'shows'} not listed. "
                      "To check a specific show, use get_next_episode.")
     return "\n".join(lines)
 
 def _top_season_note(result: dict) -> str:
-    title, shows, rated = result["season"], result["shows"], result["rated"]
-    if not shows:
+    title, listed, rated = result["season"], result["shows"], result["rated"]
+    if not listed:
         return f"No anime found for {title}."
-    if any(show["rating"] is None for show in shows):
+    if any(show["rating"] is None for show in listed):
         verb = "show has" if rated == 1 else "shows have"
         return (f"Only {rated} {title} {verb} a rating yet; the rest of the list are unrated "
                 "shows ordered by how many users track them (anticipation, not quality).")
-    return f"Top {len(shows)} {title} shows by user rating (0-10)."
+    return f"Top {len(listed)} {title} shows by user rating (0-10)."
 
 def _top_season_text(result: dict) -> str:
     lines = [f"{_top_season_note(result)} ({KNOWN_ONLY})"]
@@ -349,12 +349,12 @@ def _top_season_text(result: dict) -> str:
                      f"{_details(show, 'episodes', 'premiere')}")
     return "\n".join(lines)
 
-def _airing_text(date: dt.date, shows: list[dict]) -> str:
-    if not shows:
+def _airing_text(date: dt.date, airing: list[dict]) -> str:
+    if not airing:
         return (f"No anime with a new subtitled episode on {date:%A %Y-%m-%d} "
                 f"(shows rated {config.anime_min_rating:g} or lower are left out).")
     lines = [f"Anime with a new subtitled episode on {date:%A %Y-%m-%d}, by airing time (local time):"]
-    for show in sorted(shows, key=lambda show: f"{show['airs']:%H:%M}"):
+    for show in sorted(airing, key=lambda show: f"{show['airs']:%H:%M}"):
         # Name first: "14:31 FX Fighter Kurumi-chan" was read as a show on a channel called FX
         lines.append(f"{show['name']}: episode {show['episode']} at {show['airs']:%H:%M} "
                      f"({_rating_text(show['rating'])})")
@@ -364,18 +364,18 @@ def _next_episode_text(name: str, episodes: list[dict]) -> str:
     if not episodes:
         return (f"{name}: No upcoming subtitled episode found in this week's or next week's "
                 "timetable. It may have finished, be on a break, or the name may differ.")
-    return "\n".join(f"{m['name']}: episode {m['episode']} airs {_format_airs(m['airs'])} (local time)"
-                     for m in episodes)
+    return "\n".join(f"{next_up['name']}: episode {next_up['episode']} airs {_format_airs(next_up['airs'])} (local time)"
+                     for next_up in episodes)
 
-def _continues_text(name: str, next_season: str, shows: list[dict]) -> str:
-    if not shows:
+def _continues_text(name: str, next_season: str, verdicts_by_show: list[dict]) -> str:
+    if not verdicts_by_show:
         return (f"{name}: No currently airing anime matches that name, so it is unknown whether "
                 "it will air next season. The name may differ, or it isn't airing now.")
     lines = [f"Next season: {next_season}"]
     # A plain sentence first: "X: continues next season: no." was read as a yes
     verdicts = {"yes": "WILL still be airing next season", "no": "will NOT be airing next season",
                 "unknown": "might or might not air next season; it is unknown"}
-    for show in shows:
+    for show in verdicts_by_show:
         lines.append(f"{show['name']} {verdicts[show['continues_next_season']]}. {show['reason']}")
     return "\n".join(lines)
 
@@ -391,13 +391,13 @@ def _relative_day(day: dt.date) -> str:
     weeks = ((day - dt.timedelta(days=day.weekday())) - (now - dt.timedelta(days=now.weekday()))).days // 7
     return {0: "this week", 1: "next week"}.get(weeks, "later")
 
-def _user_list_text(status: str, shows: list[dict]) -> str:
-    if not shows:
+def _user_list_text(status: str, listed: list[dict]) -> str:
+    if not listed:
         return f"No shows with status {status!r} on your anime list."
     # Grouped by when the next episode airs, so "which of my shows air this week" is a
     # matter of reading headings: small models filtered a flat list unreliably
     groups = {"today": [], "tomorrow": [], "this week": [], "next week": [], "later": []}
-    for show in sorted(shows, key=lambda show: show["next_episode_airs"].date() if show["next_episode_airs"]
+    for show in sorted(listed, key=lambda show: show["next_episode_airs"].date() if show["next_episode_airs"]
                        else dt.date.max):
         parts = [show["status"]] if status == "all" else []
         total = f"of {show['episodes']}" if show["episodes"] else "(total not announced)"
@@ -414,18 +414,18 @@ def _user_list_text(status: str, shows: list[dict]) -> str:
 
     headings = {"today": "Airing today", "tomorrow": "Airing tomorrow", "this week": "Airing later this week",
                 "next week": "Airing next week", "later": "No episode in the next two weeks"}
-    lines = [(f"Your anime list ({status}), {_count_shows(len(shows))} (today is {clock.today():%A %Y-%m-%d}; "
+    lines = [(f"Your anime list ({status}), {_count_shows(len(listed))} (today is {clock.today():%A %Y-%m-%d}; "
              "a week runs Monday to Sunday):")]
     for when, entries in groups.items():
         if entries:
             lines += [f"{headings[when]}:", *entries]
     return "\n".join(lines)
 
-def _digest_text(day: dt.date, shows: list[dict]) -> str | None:
-    if not shows:
+def _digest_text(day: dt.date, airing: list[dict]) -> str | None:
+    if not airing:
         return None
     lines = [f"Airing today, {day:%A} {day.day} {day:%B}:"]
-    for show in shows:
+    for show in airing:
         number = f"episode {show['episode']} " if show["episode"] else ""
         lines.append(f"- {show['name']}: {number}at {show['airs']:%H:%M}")
     return "\n".join(lines)

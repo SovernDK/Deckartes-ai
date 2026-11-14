@@ -27,13 +27,13 @@ class PayeeItem(ListItem):
     def text(self) -> Text:
         colors = self.app.get_css_variables()
         payments = "1 payment" if self.payee.count == 1 else f"{self.payee.count} payments"
-        amounts = ", ".join(f"{amount:.2f} {currency}" for currency, amount in self.payee.amounts.items())
+        paid = ", ".join(f"{amount:.2f} {currency}" for currency, amount in self.payee.amounts.items())
         label = self.payee.label
         if label is None:
             category = ("undecided", f"bold {colors['warning']}")
         else:
             category = (f"{label.category}{' (yours)' if label.source == 'user' else ''}", colors["accent"])
-        return Text.assemble((self.payee.name, "bold"), "  ", category, "\n", (f"{payments} · {amounts}", "dim"))
+        return Text.assemble((self.payee.name, "bold"), "  ", category, "\n", (f"{payments} · {paid}", "dim"))
 
     def relabel(self, label: spending.Label) -> None:
         self.payee.label = label
@@ -83,13 +83,13 @@ class SpendingScreen(ModalScreen[None]):
     @work(exclusive=True, group="spending")
     async def load(self) -> None:
         try:
-            payees = await spending.review(DAYS)
+            reviewed = await spending.review(DAYS)
         except Exception as e:
             self.show_status(f"Could not read the payments: {e}")
             return
         list_view = self.query_one(ListView)
-        await list_view.extend(PayeeItem(payee) for payee in payees)
-        if payees:
+        await list_view.extend(PayeeItem(payee) for payee in reviewed)
+        if reviewed:
             list_view.index = 0
         list_view.focus()
         self.count_undecided()
@@ -98,12 +98,12 @@ class SpendingScreen(ModalScreen[None]):
         return list(self.query(PayeeItem))
 
     def count_undecided(self) -> None:
-        items = self.items()
-        if not items:
+        listed = self.items()
+        if not listed:
             self.show_status(f"No payments out in the last {DAYS} days.")
             return
-        undecided = sum(item.payee.label is None for item in items)
-        self.show_status(f"{undecided} of {len(items)} payees from the last {DAYS} days are undecided "
+        undecided = sum(item.payee.label is None for item in listed)
+        self.show_status(f"{undecided} of {len(listed)} payees from the last {DAYS} days are undecided "
                          f"and count as {spending.OTHER}.")
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
@@ -127,8 +127,8 @@ class SpendingScreen(ModalScreen[None]):
             if f" {item.payee.payee} " in f" {other.payee.payee} ":
                 other.relabel(spending.Label(category, "user"))
         self.count_undecided()
-        items = self.items()
-        undecided = [index for index, other in enumerate(items) if other.payee.label is None]
+        listed = self.items()
+        undecided = [index for index, other in enumerate(listed) if other.payee.label is None]
         if undecided:
             self.query_one(ListView).index = undecided[0]
 

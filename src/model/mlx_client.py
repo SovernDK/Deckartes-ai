@@ -76,7 +76,7 @@ def _chat_body(messages: list[dict], tools: list | None = None, thinking: bool |
         if getattr(config, name) is not None:
             body[name] = getattr(config, name)
     if tools:
-        body["tools"] = [tool_definition(tool) for tool in tools]
+        body["tools"] = [tool_definition(function) for function in tools]
     return body
 
 def _status_error(status: int, body: str) -> ModelServerError:
@@ -96,9 +96,9 @@ def _tool_call(parts: dict) -> ToolCall:
         arguments = None
     return ToolCall(parts["id"], parts["name"], arguments if isinstance(arguments, dict) else None)
 
-def _add_tool_call_delta(calls: dict[int, dict], delta: dict) -> None:
+def _add_tool_call_delta(pending: dict[int, dict], delta: dict) -> None:
     """Join the pieces of a tool call, which may arrive over several chunks."""
-    call = calls.setdefault(delta.get("index", 0), {"id": "", "name": "", "arguments": ""})
+    call = pending.setdefault(delta.get("index", 0), {"id": "", "name": "", "arguments": ""})
     call["id"] = delta.get("id") or call["id"]
     function = delta.get("function") or {}
     call["name"] = function.get("name") or call["name"]
@@ -109,7 +109,7 @@ async def stream_chat(messages: list[dict], tools: list | None = None) -> AsyncG
     """Stream a reply. Closing this generator closes the connection, which stops the generation."""
     await asyncio.to_thread(mlx_server.ensure_chat)
     body = {**_chat_body(messages, tools), "stream": True, "stream_options": {"include_usage": True}}
-    calls: dict[int, dict] = {}
+    pending: dict[int, dict] = {}
     usage = metrics = None
     try:
         async with (
@@ -132,7 +132,7 @@ async def stream_chat(messages: list[dict], tools: list | None = None) -> AsyncG
                 for choice in data.get("choices") or []:
                     delta = choice.get("delta") or {}
                     for call in delta.get("tool_calls") or []:
-                        _add_tool_call_delta(calls, call)
+                        _add_tool_call_delta(pending, call)
                     # Rapid-MLX sends thinking as reasoning_content; other servers name it reasoning
                     reasoning = delta.get("reasoning_content") or delta.get("reasoning")
                     if reasoning:
@@ -141,7 +141,7 @@ async def stream_chat(messages: list[dict], tools: list | None = None) -> AsyncG
                         yield Delta(content=delta["content"])
     except httpx.TransportError as e:
         raise _unreachable(config.host) from e
-    yield Delta(tool_calls=[_tool_call(calls[i]) for i in sorted(calls)], usage=_token_count(usage, metrics))
+    yield Delta(tool_calls=[_tool_call(pending[index]) for index in sorted(pending)], usage=_token_count(usage, metrics))
 
 async def complete(messages: list[dict]) -> Reply:
     """A whole reply without tools or thinking, for compacting the conversation."""

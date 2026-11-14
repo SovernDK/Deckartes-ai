@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable
 
 from model.tool_schema import CONFIRM, model_signature
 from tools import animeschedule_api as anime
-from tools import calendar_api as cal
+from tools import calendar_api as calendar_tools
 from tools import cs_api as cs
 from tools import disk_scan, library, spending
 from tools import enable_banking_api as bank
@@ -314,7 +314,7 @@ async def get_calendar_events(date: str) -> str:
     Args:
         date: Date as YYYY-MM-DD. Work it out from the current date: "tomorrow" or "friday" must be given as its YYYY-MM-DD
     """
-    return await cal.events_on(date)
+    return await calendar_tools.events_on(date)
 
 @tool("calendar")
 async def get_calendar_period(period: str) -> str:
@@ -325,7 +325,7 @@ async def get_calendar_period(period: str) -> str:
     Args:
         period: "this week", "next week", "this month", "next month", a month name like "december", or YYYY-MM
     """
-    return await cal.period_events(period)
+    return await calendar_tools.period_events(period)
 
 @tool("calendar")
 async def find_calendar_events(query: str) -> str:
@@ -336,7 +336,7 @@ async def find_calendar_events(query: str) -> str:
     Args:
         query: Word to look for, e.g. "dentist"
     """
-    return await cal.find_events(query)
+    return await calendar_tools.find_events(query)
 
 @tool("calendar")
 async def add_calendar_event(title: str, date: str, start_time: str, end_date: str | None = None,
@@ -354,7 +354,7 @@ async def add_calendar_event(title: str, date: str, start_time: str, end_date: s
         end_date: Optional. The event's last day as YYYY-MM-DD, only if it runs over several days
         end_time: Optional. Local end time as HH:MM (24-hour), e.g. "15:30"; leave it out for a one-hour event
     """
-    return await cal.add_event(title, date, start_time, end_date, end_time, confirm)
+    return await calendar_tools.add_event(title, date, start_time, end_date, end_time, confirm)
 
 @tool("banking")
 async def get_bank_transactions(date_from: str, date_to: str | None = None) -> str:
@@ -393,10 +393,10 @@ async def set_spending_category(payee: str, category: str) -> str:
     """
     return spending.set_category(payee, category)
 
-def tools_for(names: list[str] | None) -> list:
-    if names is None:
+def tools_for(allowed: list[str] | None) -> list:
+    if allowed is None:
         return TOOLS
-    return [TOOLS_BY_NAME[name] for name in names]
+    return [TOOLS_BY_NAME[name] for name in allowed]
 
 async def run_tool(name: str, arguments: dict | None, confirm: Confirm | None = None, *,
                    results: Callable[[str, dict], str] | None = None) -> str:
@@ -421,8 +421,8 @@ async def run_tool(name: str, arguments: dict | None, confirm: Confirm | None = 
         return (f"Tool {name} needs the user's confirmation, which can't be asked for here, "
                 "so nothing was changed")
     try:
-        result = await (tool(**arguments, confirm=confirm) if needs_confirm else tool(**arguments))
+        output = await (tool(**arguments, confirm=confirm) if needs_confirm else tool(**arguments))
     except Exception as e:
         return f"Tool {name} failed: {e}"
     # Text results go as they are; JSON-encoding them would add quotes and escaped newlines
-    return result if isinstance(result, str) else json.dumps(result)
+    return output if isinstance(output, str) else json.dumps(output)

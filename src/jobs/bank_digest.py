@@ -14,14 +14,14 @@ from tools.enable_banking_api import BankingError
 
 async def run() -> int:
     # The digests in the message being sent, saved only once it's been sent
-    sending: list[spending.Digest] = []
+    outgoing: list[spending.Digest] = []
 
     async def message() -> str | None:
-        sending[:] = await spending.due_digests() if enable_banking_api.has_live_link() else []
-        parts = [enable_banking_api.link_reminder(), *(digest.text for digest in sending)]
-        return "\n\n".join(part for part in parts if part) or None
+        outgoing[:] = await spending.due_digests() if enable_banking_api.has_live_link() else []
+        parts = [enable_banking_api.link_reminder(), *(digest.text for digest in outgoing)]
+        return "\n\n".join(filter(None, parts)) or None
 
-    return await runner.run(message, errors=(BankingError,), done=lambda: spending.save(sending))
+    return await runner.run(message, errors=(BankingError,), done=lambda: spending.save(outgoing))
 
 if __name__ == "__main__":
     sys.exit(runner.main(run))

@@ -276,10 +276,10 @@ def _account_key(account: dict) -> str:
 def _days(start: dt.date, end: dt.date) -> list[dt.date]:
     return [start + dt.timedelta(days=offset) for offset in range((end - start).days + 1)]
 
-def _runs(days: list[dt.date]) -> list[tuple[dt.date, dt.date]]:
+def _runs(sorted_days: list[dt.date]) -> list[tuple[dt.date, dt.date]]:
     """Sorted days as (first, last) runs of consecutive days."""
     runs: list[tuple[dt.date, dt.date]] = []
-    for day in days:
+    for day in sorted_days:
         if runs and day == runs[-1][1] + dt.timedelta(days=1):
             runs[-1] = (runs[-1][0], day)
         else:
@@ -348,7 +348,7 @@ async def _read(start: dt.date, end: dt.date, *, user_present: bool) -> _Read:
     return read
 
 def _with_notes(notes: list[str], text: str) -> str:
-    return "".join(f"{note}\n\n" for note in notes) + text
+    return "\n\n".join([*notes, text])
 
 async def transactions(date_from: str, date_to: str | None = None) -> str:
     """Tool text: every linked account's transactions between two YYYY-MM-DD dates, newest first."""
@@ -418,12 +418,12 @@ def _choose(banks: list[dict]) -> dict:
 async def _link() -> None:
     print(f"Linking a bank to the Enable Banking {_app().name} app")
     country = input("Country (two letters, e.g. PL): ").strip().upper()
-    banks = await _banks(country)
-    if not banks:
+    offered = await _banks(country)
+    if not offered:
         raise BankingError(f"Enable Banking offers no banks in {country!r}")
-    for number, bank in enumerate(banks, 1):
+    for number, bank in enumerate(offered, 1):
         print(f"{number}. {bank['name']}")
-    url, state = await _start_auth(_choose(banks), country)
+    url, state = await _start_auth(_choose(offered), country)
     print(f"\nOpen this link, log in and approve:\n{url}\n")
     redirect = input("Paste the address the page shows after you approve:\n").strip()
     link = await _session(_code_from(redirect, state))

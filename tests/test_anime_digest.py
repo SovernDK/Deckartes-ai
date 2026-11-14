@@ -15,7 +15,7 @@ from test_anime_tools import TIMETABLE, USER_LIST, episode, on_list, weekly
 TOKEN = "123:SECRET"
 OWNER = 42
 SEND = f"/bot{TOKEN}/sendMessage"
-SENT = {"ok": True, "result": {"message_id": 7}}
+SEND_OK = {"ok": True, "result": {"message_id": 7}}
 AIRING = episode("f", "Frieren", "2026-11-11T16:30:00Z", 5)
 
 class DigestScriptTest(HttpTest):
@@ -28,7 +28,7 @@ class DigestScriptTest(HttpTest):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def serve_digest(self, *timetable, send=SENT):
+    def serve_digest(self, *timetable, send=SEND_OK):
         return self.serve({USER_LIST: on_list(watching=["f"]), TIMETABLE: weekly(*timetable), SEND: send})
 
     @staticmethod
@@ -42,7 +42,7 @@ class DigestScriptTest(HttpTest):
                                                                         "- Frieren: episode 5 at 17:30"}])
 
     async def test_a_long_digest_arrives_in_parts_under_the_limit(self):
-        server = self.serve({USER_LIST: on_list(watching=["f", "b", "o"]), SEND: SENT,
+        server = self.serve({USER_LIST: on_list(watching=["f", "b", "o"]), SEND: SEND_OK,
                              TIMETABLE: weekly(AIRING, episode("b", "Bocchi the Rock", "2026-11-11T17:00:00Z", 2),
                                                episode("o", "Oshi no Ko", "2026-11-11T18:00:00Z", 3))})
         with mock.patch.object(telegram_api, "MAX_MESSAGE", 60):
@@ -61,7 +61,7 @@ class DigestScriptTest(HttpTest):
         self.assertEqual(self.sent(server), [])
 
     async def test_retries_after_a_failure(self):
-        answers = iter([httpx.ConnectError("no network"), SENT])
+        answers = iter([httpx.ConnectError("no network"), SEND_OK])
         server = self.serve_digest(AIRING, send=lambda request: next(answers))
         self.assertEqual(await anime_digest.run(), 0)
         self.assertEqual(len(self.sent(server)), 2)

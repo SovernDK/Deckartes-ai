@@ -62,10 +62,10 @@ async def _example_vectors() -> dict[str | None, np.ndarray]:
     if key not in _examples:
         groups: dict[str | None, list[str]] = {name: GROUPS.examples(name) for name in GROUPS.names}
         groups[None] = NO_TOOL_EXAMPLES
-        texts = [text for examples in groups.values() for text in examples]
-        vectors = _unit(await _embed(texts))
-        starts = np.cumsum([0, *(len(examples) for examples in groups.values())])
-        _examples[key] = {name: vectors[start:end] for name, start, end in zip(groups, starts, starts[1:])}
+        example_texts = [example for group_examples in groups.values() for example in group_examples]
+        vectors = _unit(await _embed(example_texts))
+        bounds = np.cumsum([0, *(len(group_examples) for group_examples in groups.values())])
+        _examples[key] = {name: vectors[start:end] for name, start, end in zip(groups, bounds, bounds[1:])}
     return _examples[key]
 
 def _scores(vector: np.ndarray, examples: dict) -> dict:
@@ -88,8 +88,8 @@ async def _route(query: str, previous: str | None, groups: list[str]) -> tuple[l
     vectors = _unit(await _embed([query, previous] if previous else [query]))
     scores = _scores(vectors[0], examples)
     no_tools = scores.pop(None)
-    def chosen(names: list[str]) -> tuple[list[str], dict[str, float]]:
-        return names, {**scores, "no_tools": no_tools}
+    def chosen(group_names: list[str]) -> tuple[list[str], dict[str, float]]:
+        return group_names, {**scores, "no_tools": no_tools}
     if not scores:
         return chosen([])
     best = max(scores.values())
@@ -98,9 +98,9 @@ async def _route(query: str, previous: str | None, groups: list[str]) -> tuple[l
         return chosen([])
     # A vague question or a short follow-up borrows the previous question's topic
     if previous and (best < CONFIDENT or _is_follow_up(query)):
-        for name, score in _scores(vectors[1], examples).items():
+        for name, previous_score in _scores(vectors[1], examples).items():
             if name is not None:
-                scores[name] = max(scores[name], PREVIOUS_WEIGHT * score)
+                scores[name] = max(scores[name], PREVIOUS_WEIGHT * previous_score)
         best = max(scores.values())
 
     ranked = sorted(scores, key=lambda name: scores[name], reverse=True)
@@ -127,7 +127,7 @@ async def select_tools(question: str, previous: str | None) -> Selection:
     if not tools:
         return Selection(None, None)
 
-    groups = GROUPS.groups_of(tool.__name__ for tool in tools)
+    groups = GROUPS.groups_of(function.__name__ for function in tools)
     if not config.tool_routing or len(groups) < 2:
         return Selection(tools, None)
     try:

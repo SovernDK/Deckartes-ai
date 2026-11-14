@@ -123,17 +123,17 @@ def _require(condition: bool, case_id: str, problem: str) -> None:
     if not condition:
         raise ValueError(f"validation case {case_id!r}: {problem}")
 
-def _check_tools(names, case_id: str) -> None:
-    for name in names:
+def _check_tools(tool_names, case_id: str) -> None:
+    for name in tool_names:
         _require(name in TOOLS_BY_NAME, case_id, f"unknown tool {name!r}")
 
 def _check_value_checks(checks: dict, case: Case) -> None:
     expected = {tool for step in case.expect for tool in step}
     _check_tools(checks, case.id)
-    for tool, parameters in checks.items():
+    for tool, checked in checks.items():
         _require(tool in expected, case.id, f"checks arguments of {tool}, which it doesn't expect")
         known = model_signature(TOOLS_BY_NAME[tool]).parameters
-        for parameter in parameters:
+        for parameter in checked:
             _require(parameter in known, case.id, f"{tool} has no parameter {parameter!r}")
 
 def _result_for(case: Case, tool: str, defaults: dict[str, str]) -> str:
@@ -144,8 +144,8 @@ def _check_carried(case: Case, defaults: dict[str, str]) -> None:
     for tool, parameters in case.carry.items():
         earlier = [_result_for(case, name, defaults) for step in case.expect if tool not in step for name in step]
         for value in parameters.values():
-            options = value if isinstance(value, list) else [value]
-            found = any(option.lower() in result.lower() for option in options for result in earlier)
+            accepted = value if isinstance(value, list) else [value]
+            found = any(option.lower() in result.lower() for option in accepted for result in earlier)
             _require(found, case.id, f"carried value {value!r} is in no earlier tool's result")
 
 def _parse_case(data: dict, defaults: dict[str, str]) -> Case:
@@ -155,8 +155,8 @@ def _parse_case(data: dict, defaults: dict[str, str]) -> Case:
     unknown = set(data) - CASE_FIELDS
     _require(not unknown, case_id, f"unknown fields {sorted(unknown)}")
     _require(data["category"] in CATEGORIES, case_id, f"unknown category {data['category']!r}")
-    steps = [step if isinstance(step, list) else [step] for step in data["expect"]]
-    case = Case(**{**data, "expect": steps})
+    normalized = [step if isinstance(step, list) else [step] for step in data["expect"]]
+    case = Case(**{**data, "expect": normalized})
 
     _check_tools([tool for step in case.expect for tool in step], case.id)
     _check_tools(case.forbid, case.id)
@@ -197,11 +197,11 @@ def parse_suite(data: dict) -> Suite:
     missing = sorted(set(TOOLS_BY_NAME) - set(defaults))
     if missing:
         raise ValueError(f"validation cases: no default result for {', '.join(missing)}")
-    cases = [_parse_case(case, defaults) for case in data["cases"]]
-    repeated = [name for name, count in Counter(case.id for case in cases).items() if count > 1]
+    parsed = [_parse_case(case, defaults) for case in data["cases"]]
+    repeated = [name for name, count in Counter(case.id for case in parsed).items() if count > 1]
     if repeated:
         raise ValueError(f"validation cases: id used twice: {', '.join(repeated)}")
-    suite = Suite(data["now"], data["timezone"], defaults, cases)
+    suite = Suite(data["now"], data["timezone"], defaults, parsed)
     try:
         suite.moment()
     except (KeyError, ValueError) as e:
@@ -217,8 +217,8 @@ def load_suite(path: Path = CASES_FILE) -> Suite:
 # Scoring
 
 def _value_matches(actual, expected) -> bool:
-    options = expected if isinstance(expected, list) else [expected]
-    return any(option.lower() in str(actual).lower() for option in options)
+    accepted = expected if isinstance(expected, list) else [expected]
+    return any(option.lower() in str(actual).lower() for option in accepted)
 
 def _arguments_usable(call: Call) -> bool:
     if call.arguments is None:
@@ -234,23 +234,23 @@ def _call_passes(call: Call, checks: dict) -> bool:
     return arguments is not None and _arguments_usable(call) and all(
         name in arguments and _value_matches(arguments[name], expected) for name, expected in checks.items())
 
-def _arguments_ok(case: Case, calls: list[Call]) -> bool:
+def _arguments_ok(case: Case, made: list[Call]) -> bool:
     """Each step has a call with usable arguments that pass its checks."""
-    return all(any(_call_passes(call, case.arguments.get(call.name, {})) for call in calls if call.name in step)
+    return all(any(_call_passes(call, case.arguments.get(call.name, {})) for call in made if call.name in step)
                for step in case.expect)
 
-def _carried_ok(case: Case, calls: list[Call]) -> bool:
-    return all(any(_call_passes(call, checks) for call in calls if call.name == tool)
+def _carried_ok(case: Case, made: list[Call]) -> bool:
+    return all(any(_call_passes(call, checks) for call in made if call.name == tool)
                for tool, checks in case.carry.items())
 
-def _steps_met(case: Case, names: list[str]) -> bool:
+def _steps_met(case: Case, called: list[str]) -> bool:
     if not case.must_be_in_order:
-        return all(any(name in step for name in names) for step in case.expect)
+        return all(any(name in step for name in called) for step in case.expect)
     position = 0
     for step in case.expect:
-        while position < len(names) and names[position] not in step:
+        while position < len(called) and called[position] not in step:
             position += 1
-        if position == len(names):
+        if position == len(called):
             return False
         position += 1
     return True
@@ -264,9 +264,9 @@ def _says_done(reply: str) -> bool:
                 return True
     return False
 
-def _false_claim(case: Case, outcome: Outcome, names: list[str]) -> bool:
+def _false_claim(case: Case, outcome: Outcome, called: list[str]) -> bool:
     adds_event = any(ADD_EVENT in step for step in case.expect)
-    if case.category != "after-result" and not (adds_event and ADD_EVENT not in names):
+    if case.category != "after-result" and not (adds_event and ADD_EVENT not in called):
         return False
     if case.claim_patterns:
         return any(re.search(pattern, outcome.reply, re.IGNORECASE) for pattern in case.claim_patterns)
@@ -275,25 +275,25 @@ def _false_claim(case: Case, outcome: Outcome, names: list[str]) -> bool:
 def score(case: Case, outcome: Outcome) -> Score:
     """Whether the right tools ran (tool_pass), whether everything else was right too (full_pass),
     and the first label that fits a failure."""
-    names = [call.name for call in outcome.calls]
-    forbidden = any(name in case.forbid for name in names)
-    over_called = case.category == "no-tool" and bool(names)
-    steps_met = _steps_met(case, names)
+    called = [call.name for call in outcome.calls]
+    forbidden = any(name in case.forbid for name in called)
+    over_called = case.category == "no-tool" and bool(called)
+    steps_met = _steps_met(case, called)
     tool_pass = steps_met and not forbidden and not over_called and not outcome.looped
 
-    claimed = _false_claim(case, outcome, names)
+    claimed = _false_claim(case, outcome, called)
     if claimed:
         label = "false_claim"
-    elif case.category == "follow-up" and not names and "?" in outcome.reply:
+    elif case.category == "follow-up" and not called and "?" in outcome.reply:
         label = "asked_for_value"
-    elif case.expect and not names:
+    elif case.expect and not called:
         label = "missed_call"
     elif over_called:
         label = "over_call"
     elif forbidden:
         label = "wrong_tool"
     elif not steps_met:
-        started = any(name in step for step in case.expect for name in names)
+        started = any(name in step for step in case.expect for name in called)
         label = "broken_chain" if case.category == "chained" and started else "wrong_tool"
     elif not _arguments_ok(case, outcome.calls):
         label = "bad_arguments"
@@ -385,8 +385,8 @@ class Run:
         narration = False
         rounds = 0
         failure = None
-        async with aclosing(conversation.stream_reply(case.question)) as events:
-            async for event in events:
+        async with aclosing(conversation.stream_reply(case.question)) as stream:
+            async for event in stream:
                 if isinstance(event, Text):
                     reply += event.text
                     before_call += event.text
@@ -432,9 +432,9 @@ class Run:
     def category_rates(self, attribute: str) -> dict[str, float]:
         rates = {}
         for category in CATEGORIES:
-            scores = [r.score for r in self.scored if r.case.category == category]
+            scores = [result.score for result in self.scored if result.case.category == category]
             if scores:
-                rates[category] = 100 * sum(getattr(s, attribute) for s in scores) / len(scores)
+                rates[category] = 100 * sum(getattr(case_score, attribute) for case_score in scores) / len(scores)
         return rates
 
     def _headline(self, attribute: str) -> float | None:
@@ -472,13 +472,13 @@ class Run:
 
     def router_summary(self) -> dict | None:
         """Share of cases with no expected group missed, and how many extra groups were sent."""
-        records = [record for record in self.router_records if record["status"] != "error"]
-        if not records:
+        routed = [record for record in self.router_records if record["status"] != "error"]
+        if not routed:
             return None
-        missed = sum(record["status"] == "missed" for record in records)
-        return {"cases": len(records), "missed": missed,
-                "no_group_missed_percent": 100 * (len(records) - missed) / len(records),
-                "average_extra_groups": sum(len(record["extra_groups"]) for record in records) / len(records)}
+        missed = sum(record["status"] == "missed" for record in routed)
+        return {"cases": len(routed), "missed": missed,
+                "no_group_missed_percent": 100 * (len(routed) - missed) / len(routed),
+                "average_extra_groups": sum(len(record["extra_groups"]) for record in routed) / len(routed)}
 
     def save(self, folder: Path = RESULTS_FOLDER) -> tuple[Path, Path]:
         folder.mkdir(parents=True, exist_ok=True)

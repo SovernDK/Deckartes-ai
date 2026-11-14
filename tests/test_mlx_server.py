@@ -34,9 +34,9 @@ http.server.HTTPServer(("127.0.0.1", int(sys.argv[sys.argv.index("--port") + 1])
 FAILING_SERVER = f"#!{sys.executable}\nprint('no such model')\nraise SystemExit(1)\n"
 
 def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
 
 class ServerTest(unittest.TestCase):
     def setUp(self):

@@ -27,17 +27,17 @@ def normalize(text: str) -> str:
 def closest_by_words(name: str, candidates: Iterable[tuple[T, list[str]]]) -> T | None:
     """The candidate with a title in which every word of name has a close word (a typo or two
     each), best on average; for long titles of which the user types a few words."""
-    words = normalize(name).split()
+    typed_words = normalize(name).split()
     best, best_score = None, 0.0
-    for candidate, titles in candidates:
-        for title in titles:
+    for option, option_titles in candidates:
+        for title in option_titles:
             title_words = normalize(title).split()
-            if not words or not title_words:
+            if not typed_words or not title_words:
                 continue
-            scores = [process.extractOne(word, title_words, scorer=fuzz.ratio)[1] for word in words]
-            score = sum(scores) / len(scores)
-            if min(scores) >= WORD_CUTOFF and score > best_score:
-                best, best_score = candidate, score
+            word_scores = [process.extractOne(typed, title_words, scorer=fuzz.ratio)[1] for typed in typed_words]
+            average = sum(word_scores) / len(word_scores)
+            if min(word_scores) >= WORD_CUTOFF and average > best_score:
+                best, best_score = option, average
     return best
 
 def closest_name(name: str, choices: list[str]) -> str | None:

@@ -27,16 +27,16 @@ def _json_types(annotation) -> set[str]:
 
 def _parse_docstring(docstring: str) -> tuple[str, dict[str, str]]:
     """The description before Args:, and each argument's description on one line."""
-    parsed = parse(docstring, style=DocstringStyle.GOOGLE)
-    return parsed.description or "", {param.arg_name: " ".join((param.description or "").split())
-                                       for param in parsed.params}
+    doc = parse(docstring, style=DocstringStyle.GOOGLE)
+    return doc.description or "", {param.arg_name: " ".join((param.description or "").split())
+                                    for param in doc.params}
 
 # The parameter through which tools.run_tool hands a tool the turn's way of asking the user
 CONFIRM = "confirm"
 
 def model_signature(function: Callable) -> inspect.Signature:
     signature = inspect.signature(function)
-    return signature.replace(parameters=[p for p in signature.parameters.values() if p.name != CONFIRM])
+    return signature.replace(parameters=[parameter for parameter in signature.parameters.values() if parameter.name != CONFIRM])
 
 @cache
 def tool_definition(function: Callable) -> dict:

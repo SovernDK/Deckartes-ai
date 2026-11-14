@@ -280,16 +280,16 @@ class CaseFileTest(unittest.TestCase):
             self.assertGreaterEqual(sum(c.category == category for c in self.suite.cases), 15, category)
 
     def test_a_perfect_model_passes_every_case(self):
-        for c in self.suite.cases:
-            calls = [self.perfect_call(c, step[0]) for step in c.expect]
-            result = validation.score(c, outcome(*calls, reply="Here is what I found."))
-            self.assertEqual((result.full_pass, result.label), (True, None), c.id)
+        for case in self.suite.cases:
+            calls = [self.perfect_call(case, step[0]) for step in case.expect]
+            result = validation.score(case, outcome(*calls, reply="Here is what I found."))
+            self.assertEqual((result.full_pass, result.label), (True, None), case.id)
 
-    def perfect_call(self, c: validation.Case, tool: str) -> validation.Call:
+    def perfect_call(self, case: validation.Case, tool: str) -> validation.Call:
         """A call passing the case's checks, with "x" for parameters nothing checks."""
         arguments = {name: "x" for name, parameter in model_signature(TOOLS_BY_NAME[tool]).parameters.items()
                      if parameter.default is inspect.Parameter.empty}
-        for checks in (c.arguments.get(tool, {}), c.carry.get(tool, {})):
+        for checks in (case.arguments.get(tool, {}), case.carry.get(tool, {})):
             arguments.update({name: value[0] if isinstance(value, list) else value for name, value in checks.items()})
         return validation.Call(tool, arguments)
 

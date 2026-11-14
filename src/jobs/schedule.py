@@ -58,19 +58,19 @@ def _launchctl(*arguments: str, check: bool = True) -> bool:
     """Run launchctl in the user's GUI domain; whether it succeeded."""
     return subprocess.run(["launchctl", *arguments], capture_output=True, check=check).returncode == 0
 
-def apply(jobs: list[Job]) -> list[str]:
+def apply(wanted: list[Job]) -> list[str]:
     """Make launchd run exactly these jobs; returns what changed, one line each."""
     domain = f"gui/{os.getuid()}"
     LAUNCH_AGENTS.mkdir(parents=True, exist_ok=True)
     LOGS.mkdir(parents=True, exist_ok=True)
     changes = []
-    listed = {job.label for job in jobs}
+    listed = {job.label for job in wanted}
     for path in sorted(LAUNCH_AGENTS.glob(f"{PREFIX}*.plist")):
         if path.stem not in listed:
             _launchctl("bootout", f"{domain}/{path.stem}", check=False)
             path.unlink()
             changes.append(f"Removed {path.stem}")
-    for job in jobs:
+    for job in wanted:
         path = LAUNCH_AGENTS / f"{job.label}.plist"
         content = plistlib.dumps(launch_agent(job))
         loaded = _launchctl("print", f"{domain}/{job.label}", check=False)

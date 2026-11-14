@@ -28,18 +28,18 @@ class ToolGroups:
 
     def groups_of(self, tool_names: Iterable[str]) -> list[str]:
         names = set(tool_names)
-        return [group for group, tools in self._tools.items() if names & set(tools)]
+        return [group for group, members in self._tools.items() if names & set(members)]
 
-    def is_sent_with(self, tool_name: str, groups: Iterable[str]) -> bool:
+    def is_sent_with(self, tool_name: str, chosen_groups: Iterable[str]) -> bool:
         """Whether a tool goes with a question when these groups are chosen: it's in one of them,
         or in no group at all."""
-        chosen = set(groups)
-        homes = [group for group, tools in self._tools.items() if tool_name in tools]
+        chosen = set(chosen_groups)
+        homes = [group for group, members in self._tools.items() if tool_name in members]
         return not homes or bool(chosen.intersection(homes))
 
-    def sent_with(self, groups: Iterable[str], tools: list) -> list:
-        chosen = list(groups)
-        return [tool for tool in tools if self.is_sent_with(tool.__name__, chosen)]
+    def sent_with(self, chosen_groups: Iterable[str], tools: list) -> list:
+        chosen = list(chosen_groups)
+        return [function for function in tools if self.is_sent_with(function.__name__, chosen)]
 
 
 GROUPS = ToolGroups({

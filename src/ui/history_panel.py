@@ -52,7 +52,7 @@ class HistoryPanel(VerticalGroup):
         list_view = self.query_one(ListView)
         index = list_view.index
         await list_view.clear()
-        await list_view.extend(ConversationItem(c) for c in listed)
+        await list_view.extend(ConversationItem(saved) for saved in listed)
         if listed:
             list_view.index = min(index or 0, len(listed) - 1)
         if focus:

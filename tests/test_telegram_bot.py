@@ -24,7 +24,7 @@ from telegram.telegram_api import MAX_MESSAGE
 from telegram.telegram_bot import Bot
 from test_calendar_tools import FakeCalendar
 from test_conversation import FakeClient, call, chunk, think
-from tools import calendar_api as cal
+from tools import calendar_api as calendar_tools
 
 TOKEN = "123:SECRET"
 OWNER = 42
@@ -351,7 +351,7 @@ class ConfirmationTest(BotTest):
         save = mock.Mock()
         for name, value in (("_events_between", lambda start, end: []),
                             ("_target_calendar", lambda: FakeCalendar("Home")), ("save_event", save)):
-            patcher = mock.patch.object(cal, name, value)
+            patcher = mock.patch.object(calendar_tools, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
         self.routes[PATH + "sendMessage"] = httpx.Response(500, text="down")

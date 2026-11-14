@@ -170,8 +170,8 @@ class Bot:
     async def _reply_to(self, question: str) -> list[Part]:
         reply = ""
         failure = None
-        async with aclosing(self.conversation.stream_reply(question, self.confirm)) as events:
-            async for event in events:
+        async with aclosing(self.conversation.stream_reply(question, self.confirm)) as stream:
+            async for event in stream:
                 if isinstance(event, Text):
                     reply += event.text
                 elif isinstance(event, Failed):
@@ -262,15 +262,15 @@ async def serve() -> None:
     loop = asyncio.get_running_loop()
     task = asyncio.current_task()
     assert task is not None, "serve() runs as a task"
-    stop_signals = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
-    for stop_signal in stop_signals:
+    stop_on = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+    for stop_signal in stop_on:
         loop.add_signal_handler(stop_signal, task.cancel)
     try:
         await Bot().run()
     except asyncio.CancelledError:
         log.info("Stopping")
     finally:
-        for stop_signal in stop_signals:
+        for stop_signal in stop_on:
             loop.remove_signal_handler(stop_signal)
         # Here and not left to atexit, which runs too late to end a model start still waiting
         await asyncio.to_thread(mlx_server.stop_all)

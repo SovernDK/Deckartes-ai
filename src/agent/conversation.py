@@ -134,8 +134,8 @@ SUMMARY_PROMPT = (
 def _add_tool_results(messages, content, tool_calls, results) -> None:
     messages.append({"role": "assistant", "content": content,
                      "tool_calls": [call.as_message() for call in tool_calls]})
-    for call, result in zip(tool_calls, results):
-        messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+    for call, tool_text in zip(tool_calls, results):
+        messages.append({"role": "tool", "tool_call_id": call.id, "content": tool_text})
 
 class Conversation:
     def __init__(self, tool_runner=None, tool_selector=None, source: str | None = None) -> None:
@@ -244,7 +244,7 @@ class Conversation:
                 content = ""
                 thought = False
                 tool_calls = []
-                context = 0
+                context_size = 0
                 # aclosing: a closed turn stops the model's request at once, not when Python gets to it
                 async with aclosing(mlx_client.stream_chat(messages, tools)) as stream:
                     async for delta in stream:
@@ -258,7 +258,7 @@ class Conversation:
                         tool_calls.extend(delta.tool_calls)
                         if delta.usage is not None:
                             turn.usage.count(delta.usage)
-                            context = delta.usage.prompt + delta.usage.completion
+                            context_size = delta.usage.prompt + delta.usage.completion
 
                 if not tool_calls:
                     # e.g. the thinking used up max_tokens
@@ -267,7 +267,7 @@ class Conversation:
                         return
                     not_saved = self._remember(query, reply, time_line, asked_at, system)
                     if reply:
-                        self.context_tokens = context
+                        self.context_tokens = context_size
                     if not_saved:
                         yield NotSaved(not_saved)
                     return

@@ -177,14 +177,14 @@ def _read_sections(path: Path) -> list[_Section]:
         # Many PDFs are encrypted with an empty password, only to restrict printing or copying
         if reader.is_encrypted and not reader.decrypt(""):
             raise ValueError("the PDF is password-protected")
-        pages = [_Section("page", i, page.extract_text() or "") for i, page in enumerate(reader.pages, 1)]
-        if not any(page.text.strip() for page in pages):
+        page_sections = [_Section("page", i, page.extract_text() or "") for i, page in enumerate(reader.pages, 1)]
+        if not any(section.text.strip() for section in page_sections):
             raise ValueError("the PDF has no text layer (it's probably scanned images)")
-        return pages
+        return page_sections
     text = _decode(path.read_bytes())
     return [_Section("line", i, line) for i, line in enumerate(text.splitlines(), 1)]
 
-def _pieces(sections: list[_Section]) -> list[tuple[tuple[str, int], str]]:
+def _pieces(file_sections: list[_Section]) -> list[tuple[tuple[str, int], str]]:
     """Paragraphs (blank-line separated) with where each starts; long ones cut at sentence ends."""
     pieces, current, start = [], [], None
     def flush():
@@ -192,7 +192,7 @@ def _pieces(sections: list[_Section]) -> list[tuple[tuple[str, int], str]]:
         if current:
             pieces.append((start, "\n".join(current)))
         current, start = [], None
-    for section in sections:
+    for section in file_sections:
         if section.kind == "page":
             flush()
             for paragraph in re.split(r"\n\s*\n", section.text):
@@ -229,7 +229,7 @@ def _chunk(sections: list[_Section]) -> list[_Chunk]:
     # Where each part after the overlap carried over from the previous chunk comes from
     places: list[tuple[str, int]] = []
     for piece_where, text in _pieces(sections):
-        if places and sum(len(p) for p in parts) + len(text) > CHUNK_CHARS:
+        if places and sum(map(len, parts)) + len(text) > CHUNK_CHARS:
             body = "\n\n".join(parts)
             chunks.append(_Chunk(body, _span(places[0], places[-1])))
             parts, places = [body[-OVERLAP_CHARS:]], []
@@ -259,21 +259,21 @@ def _is_current(path: Path, stat: os.stat_result) -> bool:
         return db.execute("SELECT 1 FROM files WHERE path = ? AND mtime_ns = ? AND size = ? AND model = ? AND settings = ?",
                           (str(path), stat.st_mtime_ns, stat.st_size, config.rag_embed_model, SETTINGS)).fetchone() is not None
 
-def _embed_chunks(path: Path, chunks: list[_Chunk], label: str, progress: Callable[[str], None],
+def _embed_chunks(path: Path, file_chunks: list[_Chunk], label: str, progress: Callable[[str], None],
                   cancel: threading.Event) -> list[list[float]]:
     prefix = DOCUMENT_PREFIX.format(title=path.name)
     vectors = []
-    progress(f"Embedding {label}: 0/{len(chunks)} chunks")
-    for start in range(0, len(chunks), EMBED_BATCH):
+    progress(f"Embedding {label}: 0/{len(file_chunks)} chunks")
+    for start in range(0, len(file_chunks), EMBED_BATCH):
         if cancel.is_set():
             raise _Cancelled()
-        vectors += _embed([prefix + chunk.text for chunk in chunks[start:start + EMBED_BATCH]])
-        progress(f"Embedding {label}: {len(vectors)}/{len(chunks)} chunks")
+        vectors += _embed([prefix + chunk.text for chunk in file_chunks[start:start + EMBED_BATCH]])
+        progress(f"Embedding {label}: {len(vectors)}/{len(file_chunks)} chunks")
     if cancel.is_set():
         raise _Cancelled()
     return vectors
 
-def _store(path: Path, stat: os.stat_result, chunks: list[_Chunk], vectors: list[list[float]]) -> None:
+def _store(path: Path, stat: os.stat_result, file_chunks: list[_Chunk], embeddings: list[list[float]]) -> None:
     """Replace this file's data, and only this file's."""
     with _database() as db:
         db.execute("DELETE FROM files WHERE path = ?", (str(path),))
@@ -282,7 +282,7 @@ def _store(path: Path, stat: os.stat_result, chunks: list[_Chunk], vectors: list
                               clock.now().strftime("%Y-%m-%d %H:%M"))).lastrowid
         db.executemany("INSERT INTO chunks (file_id, seq, location, text, vector) VALUES (?, ?, ?, ?, ?)",
                        ((file_id, seq, chunk.where, chunk.text, np.asarray(vector, dtype=np.float32).tobytes())
-                        for seq, (chunk, vector) in enumerate(zip(chunks, vectors))))
+                        for seq, (chunk, vector) in enumerate(zip(file_chunks, embeddings))))
         _mark_changed(db)
 
 def _save(path: Path, label: str, result: AddResult, progress: Callable[[str], None], cancel: threading.Event) -> None:
@@ -305,9 +305,10 @@ def _save(path: Path, label: str, result: AddResult, progress: Callable[[str], N
 def _files_in(folder: Path) -> list[Path]:
     """The files a folder load picks up, in path order. Symlinks are left out."""
     found = []
-    for root, folders, names in os.walk(folder):
-        folders[:] = [name for name in folders if name not in SKIP_DIRS and disk_scan.is_user_facing(Path(root, name))]
-        for name in names:
+    for root, subfolders, file_names in os.walk(folder):
+        subfolders[:] = [name for name in subfolders
+                         if name not in SKIP_DIRS and disk_scan.is_user_facing(Path(root, name))]
+        for name in file_names:
             path = Path(root, name)
             if path.suffix.lower() in FOLDER_SUFFIXES and not path.is_symlink() and disk_scan.is_user_facing(path):
                 found.append(path)
@@ -319,12 +320,12 @@ def _add(path: Path, progress: Callable[[str], None], cancel: threading.Event) -
     if not path.is_dir():
         _save(path, path.name, result, progress, cancel)
         return result
-    files = _files_in(path)
-    if not files:
+    found = _files_in(path)
+    if not found:
         raise ValueError("no text files or PDFs in this folder")
-    for number, file in enumerate(files, 1):
+    for number, file in enumerate(found, 1):
         try:
-            _save(file, f"{number}/{len(files)} {file.name}", result, progress, cancel)
+            _save(file, f"{number}/{len(found)} {file.name}", result, progress, cancel)
         except _Unreadable as e:
             result.failed.append((file.name, str(e)))
     return result
@@ -349,10 +350,10 @@ def _searchable(db: sqlite3.Connection) -> _Index:
     global _index
     version = (str(config.library_path), config.rag_embed_model, db.execute("PRAGMA user_version").fetchone()[0])
     if _index is None or _index.version != version:
-        rows = db.execute("SELECT chunks.id, vector FROM chunks JOIN files ON files.id = file_id "
-                          "WHERE model = ? ORDER BY chunks.id", (config.rag_embed_model,)).fetchall()
-        ids = np.fromiter((row[0] for row in rows), dtype=np.int64, count=len(rows))
-        matrix = np.frombuffer(b"".join(row[1] for row in rows), dtype=np.float32).reshape(len(rows), -1 if rows else 0)
+        stored = db.execute("SELECT chunks.id, vector FROM chunks JOIN files ON files.id = file_id "
+                            "WHERE model = ? ORDER BY chunks.id", (config.rag_embed_model,)).fetchall()
+        ids = np.fromiter((row[0] for row in stored), dtype=np.int64, count=len(stored))
+        matrix = np.frombuffer(b"".join(row[1] for row in stored), dtype=np.float32).reshape(len(stored), -1 if stored else 0)
         norms = np.linalg.norm(matrix, axis=1, keepdims=True)
         norms[norms == 0] = 1
         _index = _Index(version, ids, matrix / norms)
@@ -377,10 +378,10 @@ def _search(query: str) -> str:
     best = [int(index.ids[i]) for i in np.argsort(-(index.matrix @ question), kind="stable")[:TOP_K]]
     with _database() as db:
         marks = ",".join("?" * len(best))
-        rows = {row[0]: row[1:] for row in db.execute(
+        by_id = {row[0]: row[1:] for row in db.execute(
             f"SELECT chunks.id, path, location, text FROM chunks JOIN files ON files.id = file_id WHERE chunks.id IN ({marks})",
             best)}
-    return _passages_text([rows[chunk_id] for chunk_id in best if chunk_id in rows])
+    return _passages_text([by_id[chunk_id] for chunk_id in best if chunk_id in by_id])
 
 async def search(query: str) -> str:
     return await asyncio.to_thread(_search, query)

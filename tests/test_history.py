@@ -97,11 +97,11 @@ class ReopenTest(HistoryTest):
 
     async def test_a_reopened_compacted_conversation_is_sent_from_its_last_summary(self):
         at = "2026-11-11 11:00"
-        saver = save("old", "answer", at, source="telegram")
-        save_summary(saver, "gist", at)
-        save("newer", "reply", at, saver=saver)
+        opened = save("old", "answer", at, source="telegram")
+        save_summary(opened, "gist", at)
+        save("newer", "reply", at, saver=opened)
         client = self.use([chunk("ok", done=True)])
-        self.conversation.open(saver.id)
+        self.conversation.open(opened.id)
         await self.reply("now")
         self.assertEqual(self.sent_contents(client), [DATE_LINE, "Summary of the conversation so far:\ngist",
                                                       "Current local time: 12:00.", "newer", "reply", TIME_LINE, "now"])

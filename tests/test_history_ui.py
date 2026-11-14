@@ -54,8 +54,8 @@ class HistoryUiTest(unittest.IsolatedAsyncioTestCase):
     def shown(self, app) -> list[str]:
         """The questions and answers on screen."""
         response = app.query_one("#response")
-        return [w.source if isinstance(w, Markdown) else str(w.render())
-                for w in response.query(".user-msg, .ai-msg, .reply Markdown")]
+        return [widget.source if isinstance(widget, Markdown) else str(widget.render())
+                for widget in response.query(".user-msg, .ai-msg, .reply Markdown")]
 
     def messages(self, app) -> list[str]:
         return [notification.message for notification in app._notifications]

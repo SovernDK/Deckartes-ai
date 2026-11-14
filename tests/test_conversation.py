@@ -61,10 +61,10 @@ class FakeClient:
     async def stream_chat(self, messages, tools=None):
         chunks = self.next_round(messages, tools)
         try:
-            for c in chunks:
-                if isinstance(c, Exception):
-                    raise c
-                yield c
+            for chunk in chunks:
+                if isinstance(chunk, Exception):
+                    raise chunk
+                yield chunk
         finally:
             self.closed += 1
 

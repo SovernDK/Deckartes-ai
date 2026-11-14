@@ -96,12 +96,12 @@ def _events_between(start: dt.datetime, end: dt.datetime) -> list:
     # run loop, which this app doesn't run, so drop its cache to see events added since
     store.reset()
     predicate = store.predicateForEventsWithStartDate_endDate_calendars_(_nsdate(start), _nsdate(end), None)
-    events = list(store.eventsMatchingPredicate_(predicate) or [])
-    return sorted(events, key=lambda e: e.startDate().timeIntervalSince1970())
+    matching = list(store.eventsMatchingPredicate_(predicate) or [])
+    return sorted(matching, key=lambda event: event.startDate().timeIntervalSince1970())
 
 def _events_on(day: dt.date) -> dict:
-    events = _events_between(_midnight(day), _midnight(day + dt.timedelta(days=1)))
-    return {"first": day, "last": day, "events": [_slim(e) for e in events[:MAX_EVENTS]]}
+    in_range = _events_between(_midnight(day), _midnight(day + dt.timedelta(days=1)))
+    return {"first": day, "last": day, "events": [_slim(event) for event in in_range[:MAX_EVENTS]]}
 
 def _month_end(first: dt.date) -> dt.date:
     next_first = (first.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
@@ -136,8 +136,8 @@ def _period(period: str) -> tuple[dt.date, dt.date, str]:
 
 def _period_events(period: str) -> dict:
     first, last, name = _period(period)
-    events = _events_between(_midnight(first), _midnight(last + dt.timedelta(days=1)))
-    return {"first": first, "last": last, "name": name, "events": [_slim(e) for e in events[:MAX_EVENTS]]}
+    in_range = _events_between(_midnight(first), _midnight(last + dt.timedelta(days=1)))
+    return {"first": first, "last": last, "name": name, "events": [_slim(event) for event in in_range[:MAX_EVENTS]]}
 
 def _find_events(query: str) -> dict:
     """Events whose title, location or notes contain query: the next MAX_FOUND and the latest past one."""
@@ -145,11 +145,11 @@ def _find_events(query: str) -> dict:
     if not needle:
         raise ValueError("Give a word to search for")
     now = clock.now()
-    events = _events_between(now - dt.timedelta(days=SEARCH_PAST_DAYS), now + dt.timedelta(days=SEARCH_FUTURE_DAYS))
-    matches = [_slim(e) for e in events
-               if any(needle in (text or "").casefold() for text in (e.title(), e.location(), e.notes()))]
-    upcoming = [e for e in matches if e["end"] > now]
-    past = [e for e in matches if e["end"] <= now]
+    in_range = _events_between(now - dt.timedelta(days=SEARCH_PAST_DAYS), now + dt.timedelta(days=SEARCH_FUTURE_DAYS))
+    matches = [_slim(event) for event in in_range
+               if any(needle in (text or "").casefold() for text in (event.title(), event.location(), event.notes()))]
+    upcoming = [event for event in matches if event["end"] > now]
+    past = [event for event in matches if event["end"] <= now]
     return {"query": query, "upcoming": upcoming[:MAX_FOUND], "last_past": past[-1] if past else None,
             "from": (now - dt.timedelta(days=SEARCH_PAST_DAYS)).date(),
             "to": (now + dt.timedelta(days=SEARCH_FUTURE_DAYS)).date()}
@@ -161,11 +161,12 @@ def _target_calendar():
         if calendar is None:
             raise ValueError("there is no default calendar for new events; set config.calendar_name")
         return calendar
-    writable = [c for c in store.calendarsForEntityType_(EventKit.EKEntityTypeEvent) if c.allowsContentModifications()]
+    writable = [calendar for calendar in store.calendarsForEntityType_(EventKit.EKEntityTypeEvent)
+                if calendar.allowsContentModifications()]
     for calendar in writable:
         if calendar.title().casefold() == config.calendar_name.casefold():
             return calendar
-    names = ", ".join(c.title() for c in writable)
+    names = ", ".join(calendar.title() for calendar in writable)
     raise ValueError(f"no calendar named {config.calendar_name!r}; calendars you can add to: {names}")
 
 DEFAULT_EVENT_LENGTH = dt.timedelta(hours=1)
@@ -208,8 +209,8 @@ def _new_event(title: str, date: str, start_time: str, end_date: str | None, end
 
 def _is_duplicate(event: dict) -> bool:
     existing = _events_between(event["start"], event["end"])
-    return any(_slim(e)["title"].casefold() == event["title"].casefold() and _slim(e)["start"] == event["start"]
-               for e in existing)
+    return any(_slim(other)["title"].casefold() == event["title"].casefold() and _slim(other)["start"] == event["start"]
+               for other in existing)
 
 def save_event(event: dict) -> None:
     store = _event_store()
@@ -250,18 +251,18 @@ def _event_line(event: dict, with_date: bool = False) -> str:
     return f"{event['title']}: {_when(event, with_date)}{extra}"
 
 def _events_text(result: dict) -> str:
-    first, last, events = result["first"], result["last"], result["events"]
+    first, last, listed = result["first"], result["last"], result["events"]
     span = _day(first) if first == last else f"{_day(first)} to {_day(last)}"
     if result.get("name"):
         span = f"{result['name']}, {span}"
-    if not events:
+    if not listed:
         return f"No events in the calendar for {span}."
     note = "local time; days not listed have no events" if first != last else "local time"
     lines = [f"Calendar events for {span} ({note}):"]
     # A multi-day event is listed under every day it covers, so an unlisted day really is free,
     # and with its full dates, since the day heading isn't the day it started
     by_day: dict[dt.date, list[str]] = {}
-    for event in events:
+    for event in listed:
         multi_day = _last_day(event) != event["start"].date()
         day = max(event["start"].date(), first)
         while day <= min(_last_day(event), last):
@@ -271,7 +272,7 @@ def _events_text(result: dict) -> str:
         if first != last:
             lines.append(f"{_day(day)}:")
         lines += by_day[day]
-    if len(events) == MAX_EVENTS:
+    if len(listed) == MAX_EVENTS:
         lines.append(f"(only the first {MAX_EVENTS} events are listed)")
     return "\n".join(lines)
 
@@ -283,7 +284,7 @@ def _found_text(result: dict) -> str:
     lines = []
     if result["upcoming"]:
         lines.append(f"Upcoming calendar events matching {query!r}, soonest first (local time):")
-        lines += [f"- {_event_line(e, with_date=True)}" for e in result["upcoming"]]
+        lines += [f"- {_event_line(event, with_date=True)}" for event in result["upcoming"]]
     else:
         lines.append(f"No upcoming calendar events matching {query!r} (searched until {_day(result['to'])}).")
     if result["last_past"]:

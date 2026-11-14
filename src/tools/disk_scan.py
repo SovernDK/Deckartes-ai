@@ -102,16 +102,16 @@ def _list_directory(path: str, max_entries: int = 100) -> dict:
                 kind = "link" if child.is_symlink() else "file"
                 entries.append({"name": child.name, "type": kind, "size": entry_size(child)})
 
-    entries.sort(key=lambda e: e["size"], reverse=True)
+    entries.sort(key=lambda entry: entry["size"], reverse=True)
     for entry in entries:
         entry["size_human"] = human_size(entry["size"])
-    total = sum(e["size"] for e in entries)
+    total = sum(entry["size"] for entry in entries)
 
     # Separate lists, so the model doesn't have to group a mixed list (and can't repeat an entry in both)
     shown = entries[:max_entries]
     return {"path": str(root), "size_human": human_size(total), "count": len(entries),
-            "folders": [e for e in shown if e["type"] == "folder"],
-            "files": [e for e in shown if e["type"] != "folder"],
+            "folders": [entry for entry in shown if entry["type"] == "folder"],
+            "files": [entry for entry in shown if entry["type"] != "folder"],
             "truncated": len(entries) > max_entries, "complete": complete}
 
 def _find_files(name_pattern: str, path: str = "~", max_results: int = 50) -> dict:

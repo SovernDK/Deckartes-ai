@@ -7,7 +7,8 @@ message() builds the text to send, or None for nothing today.
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
+from typing import Any
 
 from telegramify_markdown import split_entities
 
@@ -58,7 +59,7 @@ async def run(message: Callable[[], Awaitable[str | None]], *, settings: dict[st
     log.error("Giving up for today")
     return EXIT_FAILED
 
-def main(run_job: Callable[[], Awaitable[int]]) -> int:
+def main(run_job: Callable[[], Coroutine[Any, Any, int]]) -> int:
     # The root stays at WARNING: httpx's INFO lines print full URLs and so the token
     logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
     log.setLevel(logging.INFO)

@@ -132,6 +132,16 @@ class BankingTest(HttpTest):
         self.assertEqual(text, "Ella (EUR): no transactions from 2026-11-01 to 2026-11-14.")
         self.assertEqual(dict(server.requests[0].url.params), {"date_from": "2026-11-01", "date_to": "2026-11-14"})
 
+    async def test_a_start_past_the_banks_90_days_is_moved_up_and_the_model_told(self):
+        self.link()
+        server = self.serve({TRANSACTIONS: page()})
+
+        text = await tools.get_bank_transactions("2026-08-01")
+
+        self.assertEqual(text, "The bank gives only the last 90 days, so this starts on 2026-08-16, not 2026-08-01.\n\n"
+                               "Ella (EUR): no transactions from 2026-08-16 to 2026-11-14.")
+        self.assertEqual(server.requests[0].url.params["date_from"], "2026-08-16")
+
     async def test_each_account_gets_its_own_block(self):
         self.link(ACCOUNT, {"uid": "acc-2", "name": "Savings", "currency": "EUR"})
         self.serve({TRANSACTIONS: page(entry("DBIT", "1.00")), "/accounts/acc-2/transactions": page()})

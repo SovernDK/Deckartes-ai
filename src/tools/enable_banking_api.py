@@ -226,17 +226,26 @@ def _totals(entries: list[dict]) -> str:
     return "; ".join(f"in +{sums[currency, False]:.2f} {currency}, out -{sums[currency, True]:.2f} {currency}"
                      for currency in currencies)
 
-def date_range(date_from: str, date_to: str | None) -> tuple[dt.date, dt.date]:
-    """A tool's YYYY-MM-DD range, up to today when there's no end; a reversed range is swapped and
-    the future cut off rather than failing, since a small model retries poorly."""
+def date_range(date_from: str, date_to: str | None) -> tuple[dt.date, dt.date, str]:
+    """A tool's YYYY-MM-DD range, up to today when there's no end, and a note for the tool text
+    ("" or a paragraph). A reversed range is swapped, the future cut off and a start older than the
+    bank gives moved up, rather than failing, since a small model retries poorly."""
     start, end = sorted((clock.parse_date(date_from), clock.parse_date(date_to) if date_to else clock.today()))
     # Nothing has happened after today
     end = min(end, clock.today())
-    return min(start, end), end
+    # PSD2 makes banks give the last 90 days without the user approving again, and no more (Pekao
+    # refuses day 91 with ASPSP_ERROR). From the later of the local and UTC dates, in case the
+    # bank counts in UTC
+    days = 90
+    earliest = max(clock.today(), clock.now().astimezone(dt.UTC).date()) - dt.timedelta(days=days)
+    if start >= earliest:
+        return start, end, ""
+    note = f"The bank gives only the last {days} days, so this starts on {earliest}, not {start}.\n\n"
+    return earliest, max(end, earliest), note
 
 async def transactions(date_from: str, date_to: str | None = None) -> str:
     """Tool text: every linked account's transactions between two YYYY-MM-DD dates, newest first."""
-    start, end = date_range(date_from, date_to)
+    start, end, note = date_range(date_from, date_to)
     blocks = []
     for account in _live_link()["accounts"]:
         entries, complete = await _get_transactions(account["uid"], start, end)
@@ -253,7 +262,7 @@ async def transactions(date_from: str, date_to: str | None = None) -> str:
                          "from this list and the totals")
         blocks.append(f"{title}, {len(entries)} transactions from {start} to {end}, newest first:\n"
                       + "\n".join(lines) + f"\nTotal: {_totals(entries)}")
-    return "\n\n".join(blocks)
+    return note + "\n\n".join(blocks)
 
 @dataclass(frozen=True)
 class Payment:

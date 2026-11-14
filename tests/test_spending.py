@@ -126,6 +126,13 @@ class SpendingTest(HttpTest):
         self.assertEqual(await tools.get_spending_by_category("2026-11-01"),
                          "No payments out in 2026-11-01 to 2026-11-14.")
 
+    async def test_a_start_past_the_banks_90_days_is_moved_up_and_the_model_told(self):
+        self.serve({TRANSACTIONS: page()})
+
+        self.assertEqual(await tools.get_spending_by_category("2026-08-14"),
+                         "The bank gives only the last 90 days, so this starts on 2026-08-16, not 2026-08-14.\n\n"
+                         "No payments out in 2026-08-16 to 2026-11-14.")
+
 class DigestJobTest(HttpTest):
     def setUp(self):
         # Monday: last week (26 October to 1 November) and October are both finished

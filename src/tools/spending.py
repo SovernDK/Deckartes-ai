@@ -299,10 +299,10 @@ def _report(title: str, totals: Totals, baselines: list[_Baseline], *, notes: bo
 async def by_category(date_from: str, date_to: str | None = None) -> str:
     """Tool text: spending per category between two YYYY-MM-DD dates; for exactly a week or a
     month, compared with the saved totals of the ones before."""
-    start, end = bank.date_range(date_from, date_to)
+    start, end, note = bank.date_range(date_from, date_to)
     period = _exact_period(start, end)
     title = period.title() if period else f"{start} to {end}"
-    return _report(title, await _totals(start, end), _baselines(period) if period else [], notes=True)
+    return note + _report(title, await _totals(start, end), _baselines(period) if period else [], notes=True)
 
 def set_category(payee: str, category: str) -> str:
     """Tool text: from now on, payments whose payee has these words count as this category."""

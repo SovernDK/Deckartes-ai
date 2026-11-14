@@ -17,7 +17,7 @@ It asks for a country (two letters), lists that country's banks and prints a lin
 
 ## The redirect URL
 
-Production applications need an https redirect URL that isn't localhost, and Enable Banking refuses one that isn't registered (`REDIRECT_URI_NOT_ALLOWED`). Nothing has to run there: the code in the address is pasted back by hand, and is useless without the application's private key. `pages/callback/index.html` is a static page that only shows the address. `.github/workflows/pages.yml` publishes `pages/` (and nothing else) to GitHub Pages on each push that changes it; it needs Settings > Pages > Source set to *GitHub Actions* once. Changing the URL means changing it in the Control Panel and in `config.enable_banking_redirect_url` together.
+Production applications need an https redirect URL that isn't localhost, and Enable Banking refuses one that isn't registered (`REDIRECT_URI_NOT_ALLOWED`). Nothing has to run there: the code in the address is pasted back by hand, and is useless without the application's private key. `pages/callback/index.html` is a static page that only shows the address. The application's privacy URL is `pages/privacy/` (`https://soverndk.github.io/Deckartes-ai/privacy/`), a short notice of what the app reads and where it goes; update it if that changes. `.github/workflows/pages.yml` publishes `pages/` (and nothing else) to GitHub Pages on each push that changes it; it needs Settings > Pages > Source set to *GitHub Actions* once. Changing the URL means changing it in the Control Panel and in `config.enable_banking_redirect_url` together.
 
 ## Signing requests
 

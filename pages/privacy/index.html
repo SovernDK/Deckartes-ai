@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deckartes privacy</title>
+<style>
+  :root { --bg: #f7f7f5; --fg: #1d1d1b; --muted: #66665f; --accent: #2f6f4f; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161615; --fg: #ecece8; --muted: #a3a39b; --accent: #7cc49d; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, sans-serif; }
+  main { max-width: 680px; margin: 0 auto; padding: 48px 16px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h2 { font-size: 1.1rem; margin: 28px 0 6px; }
+  p, li { margin: 0 0 10px; }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Deckartes privacy notice</h1>
+  <p class="muted">Last updated 14 November 2026</p>
+
+  <p>Deckartes is a personal, non-commercial assistant that runs on its owner's own computer. Its bank connection,
+  through Enable Banking, is used only by the owner, for the owner's own accounts. It is not offered to anyone else.</p>
+
+  <h2>What is read</h2>
+  <ul>
+    <li>The accounts the owner approves at their bank: account names and currencies.</li>
+    <li>Their transactions for the dates asked about: date, amount, direction, counterparty name, description and status.</li>
+  </ul>
+  <p>Nothing is ever changed at the bank: the access is read-only and no payments can be made.</p>
+
+  <h2>Where it goes</h2>
+  <ul>
+    <li>Transactions are fetched only when the owner asks a question that needs them, and are read by a language model
+    running locally on the owner's computer. They are not sent to any AI provider.</li>
+    <li>The answers are kept in the owner's local chat history on the same computer.</li>
+    <li>If the owner asks through their own Telegram bot, the answer passes through Telegram's servers to the owner's phone.</li>
+    <li>The bank link (Enable Banking's session id and the account list) is stored on the owner's computer, readable only by them.</li>
+    <li>Nothing is sold, shared, used for advertising or sent to any other party.</li>
+  </ul>
+
+  <h2>How long</h2>
+  <p>The bank's approval lasts until it expires (at most 180 days) or is withdrawn at the bank or in Enable Banking.
+  Local chat history can be deleted at any time from the app.</p>
+
+  <h2>Contact</h2>
+  <p>Questions go to the owner through the project's
+  <a href="https://github.com/SovernDK/Deckartes-ai/issues">GitHub page</a>.</p>
+</main>
+</body>
+</html>

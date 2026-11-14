@@ -65,15 +65,23 @@ class Config:
     ollama_api_key: str = field(default_factory=lambda: read_env("OLLAMA_API_KEY"), repr=False)
     animeschedule_token: str = field(default_factory=lambda: read_env("ANIMESCHEDULE_TOKEN"), repr=False)
     pandascore_token: str = field(default_factory=lambda: read_env("PANDA_SCORE_API_TOKEN"), repr=False)
-    # Enable Banking application id and the path of the private key (.pem) downloaded with it
+    # Enable Banking production application id and the path of the private key (.pem) downloaded with it
     enable_banking_app_id: str = field(default_factory=lambda: read_env("ENABLE_BANKING_APP_ID"), repr=False)
     enable_banking_key_path: str = field(default_factory=lambda: read_env("ENABLE_BANKING_KEY_PATH"), repr=False)
+    # The same for the sandbox application (made-up banks), used instead when enable_banking_sandbox is on
+    enable_banking_sandbox_id: str = field(default_factory=lambda: read_env("ENABLE_BANKING_SANDBOX_ID"), repr=False)
+    enable_banking_sandbox_key_path: str = field(default_factory=lambda: read_env("ENABLE_BANKING_SANDBOX_KEY_PATH"),
+                                                 repr=False)
+    # Test against the sandbox app and its own bank link: ENABLE_BANKING_SANDBOX=1, or link with --sandbox
+    enable_banking_sandbox: bool = field(default_factory=lambda: read_env("ENABLE_BANKING_SANDBOX") == "1")
     # Must match a redirect URL registered for the Enable Banking application. Production apps need
     # https and not localhost: this page (pages/callback, on GitHub Pages) only shows the address
     # to paste back into the linking command
     enable_banking_redirect_url: str = "https://soverndk.github.io/Deckartes-ai/callback/"
     # The bank link: Enable Banking's session and accounts (enable_banking_api.py); not in ~/.cache, since linking needs the user
     banking_session_path: Path = Path.home() / ".local" / "share" / "deckartes" / "banking_session.json"
+    # The sandbox app's bank link, kept apart so testing never replaces the real one
+    banking_sandbox_session_path: Path = Path.home() / ".local" / "share" / "deckartes" / "banking_sandbox_session.json"
     # Transactions listed per account by get_bank_transactions; keeps a long range inside the
     # context window, while the totals still count every transaction
     bank_max_transactions: int = 100

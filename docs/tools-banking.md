@@ -1,6 +1,6 @@
 # Bank tools (`enable_banking_api.py`)
 
-`get_bank_transactions(date_from, date_to=None)` lists every linked account's transactions between two dates. The data comes from [Enable Banking](https://enablebanking.com/docs/api/reference/), an open-banking (PSD2) API that reads accounts at many European banks. The app uses a production application in restricted mode, which can read only the accounts its owner linked; that is free for personal use, and a contract is needed only to offer it to others. A sandbox application works the same way, with made-up banks.
+`get_bank_transactions(date_from, date_to=None)` lists every linked account's transactions between two dates. The data comes from [Enable Banking](https://enablebanking.com/docs/api/reference/), an open-banking (PSD2) API that reads accounts at many European banks. The app uses a production application in restricted mode, which can read only the accounts its owner linked; that is free for personal use, and a contract is needed only to offer it to others. A sandbox application stays available for testing (see below).
 
 ## Setup
 
@@ -14,6 +14,17 @@
 ```
 
 It asks for a country (two letters), lists that country's banks and prints a link. Approve access at the bank in a browser, choosing the same accounts as in step 2. The bank then sends the browser to the callback page, which shows its own address with a Copy button; paste that into the terminal. The bank link (Enable Banking's session id, the accounts and when access ends) is saved to `config.banking_session_path` (`~/.local/share/deckartes/banking_session.json`), readable only by the user. It isn't kept in `~/.cache`, because making it again needs the user.
+
+## Sandbox for testing
+
+The sandbox application (made-up banks such as Mock ASPSP, no real money) stays available next to production. Its id and key are `ENABLE_BANKING_SANDBOX_ID` and `ENABLE_BANKING_SANDBOX_KEY_PATH`. `config.enable_banking_sandbox` switches every request to it and to its own bank link, `config.banking_sandbox_session_path`, so testing never replaces the real link:
+
+```bash
+cd src && ../venv/bin/python -m tools.enable_banking_api --sandbox   # link a mock bank
+ENABLE_BANKING_SANDBOX=1 venv/bin/python src/main.py                  # the app on the sandbox (from the repo folder)
+```
+
+Messages that say how to link name the `--sandbox` command while it's on. Register the same redirect URL in the sandbox application too. `_app()` is the one place that picks the application; everything else asks it.
 
 ## The redirect URL
 

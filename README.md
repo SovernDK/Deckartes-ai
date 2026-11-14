@@ -52,6 +52,8 @@ ANIMESCHEDULE_TOKEN=...     # anime tools
 PANDA_SCORE_API_TOKEN=...   # Counter-Strike tools (free plan works)
 ENABLE_BANKING_APP_ID=...   # bank tools
 ENABLE_BANKING_KEY_PATH=... # bank tools: the application's private key (.pem)
+ENABLE_BANKING_SANDBOX_ID=...        # optional: the sandbox app, for testing
+ENABLE_BANKING_SANDBOX_KEY_PATH=...  # with ENABLE_BANKING_SANDBOX=1
 TELEGRAM_BOT_TOKEN=...      # Telegram bot
 TELEGRAM_USER_ID=...        # your numeric Telegram id
 ```

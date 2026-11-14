@@ -45,9 +45,12 @@ class BankingTest(HttpTest):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         (Path(folder.name) / "key.pem").write_bytes(PEM)
-        for name, value in [("enable_banking_app_id", "app-1"),
+        for name, value in [("enable_banking_sandbox", False), ("enable_banking_app_id", "app-1"),
                             ("enable_banking_key_path", str(Path(folder.name) / "key.pem")),
-                            ("banking_session_path", Path(folder.name) / "link" / "session.json")]:
+                            ("banking_session_path", Path(folder.name) / "link" / "session.json"),
+                            ("enable_banking_sandbox_id", "sandbox-1"),
+                            ("enable_banking_sandbox_key_path", str(Path(folder.name) / "key.pem")),
+                            ("banking_sandbox_session_path", Path(folder.name) / "link" / "sandbox.json")]:
             patcher = mock.patch.object(config, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -141,7 +144,7 @@ class BankingTest(HttpTest):
              f"The bank link expired on 2026-11-14: {RELINK}"),
             ("damaged", damaged, f"The saved bank link is damaged: {RELINK}"),
             ("no credentials", lambda: (self.link(), config.__setattr__("enable_banking_app_id", "")),
-             "No Enable Banking credentials: set ENABLE_BANKING_APP_ID and ENABLE_BANKING_KEY_PATH in .env"),
+             "No Enable Banking production credentials: set ENABLE_BANKING_APP_ID and ENABLE_BANKING_KEY_PATH in .env"),
         ]
         for name, setup, message in cases:
             with self.subTest(name):
@@ -199,6 +202,26 @@ class BankingTest(HttpTest):
         await self.run_linking(server)
 
         self.assertEqual(json.loads(server.requests[1].content)["access"], {"valid_until": "2027-02-12T11:00:00+00:00"})
+
+    async def test_sandbox_mode_uses_the_sandbox_app_and_its_own_link(self):
+        real = {"uid": "real-1", "name": "Real", "currency": "PLN"}
+        self.link(real)
+        server = self.serve_bank({"name": "Mock ASPSP", "country": "FI"})
+
+        with mock.patch.object(config, "enable_banking_sandbox", True):
+            printed = await self.run_linking(server)
+            self.serve({TRANSACTIONS: page(entry("DBIT", "1.00"))})
+            self.assertIn("1 transactions", await tools.get_bank_transactions("2026-11-13"))
+            config.banking_sandbox_session_path.unlink()
+            self.assertEqual(await tools.run_tool("get_bank_transactions", {"date_from": "2026-11-13"}),
+                             "Tool get_bank_transactions failed: No bank is linked: link one with "
+                             "`python -m tools.enable_banking_api --sandbox` from src/")
+
+        self.assertTrue(printed.startswith("Linking a bank to the Enable Banking sandbox app\n"), printed)
+        token = server.requests[0].headers["authorization"].removeprefix("Bearer ")
+        self.assertEqual(jwt.get_unverified_header(token)["kid"], "sandbox-1")
+        # The production link is untouched
+        self.assertEqual(json.loads(config.banking_session_path.read_text())["accounts"], [real])
 
     async def test_linking_refuses_a_redirect_from_another_authorisation(self):
         server = self.serve_bank({"name": "MockASPSP", "country": "FI"})

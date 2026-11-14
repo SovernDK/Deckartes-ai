@@ -506,6 +506,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
     <li>Add: end is optional (one hour by default); refuses past or backwards events, skips duplicates, asks you first.</li></ul></div>
   <div class="card"><h4>Bank <small>enable_banking_api.py</small></h4><ul>
     <li>Enable Banking (PSD2); every request signed with a fresh RS256 JWT from the app's private key.</li>
+    <li>Production app by default; <code>ENABLE_BANKING_SANDBOX=1</code> (or linking with <code>--sandbox</code>) uses the sandbox app and its own bank link, for testing.</li>
     <li>A production app in restricted mode (only your own linked accounts); its redirect URL is a static GitHub Pages page (<code>pages/callback</code>) that shows the address to paste back.</li>
     <li>A bank link is made once in a browser (<code>python -m tools.enable_banking_api</code>) and lasts as long as the bank allows, at most 180 days.</li>
     <li>Every page read, newest first, at most <code>bank_max_transactions</code> (100) listed per account; totals count all.</li>

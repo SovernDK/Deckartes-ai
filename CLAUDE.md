@@ -27,14 +27,14 @@ venv/bin/python src/main.py             # run the app
 ./deckartes-telegram.command            # run the Telegram bot (in Terminal, see docs/telegram.md)
 (cd src && ../venv/bin/python -m jobs.anime_digest)   # send today's anime digest now (launchd runs it at 09:00)
 (cd src && ../venv/bin/python -m jobs.schedule)       # apply the jobs list (jobs/schedule.py) to launchd
-(cd src && ../venv/bin/python -m tools.enable_banking_api)   # link a bank in a browser (bank tools)
+(cd src && ../venv/bin/python -m tools.enable_banking_api)   # link a bank in a browser (bank tools); --sandbox for a mock bank
 PYTHONPATH=src venv/bin/textual run --dev src/main.py   # run with devtools; pair with `venv/bin/textual console` in another terminal to see logs/print output
 PYTHONPATH=src venv/bin/python -m unittest discover tests   # tests; live tests skip unless LIVE=1
 LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_live_*.py'   # live tests only, on the running chat server
 venv/bin/ruff check .                   # lint; add --fix for the automatic fixes
 ```
 
-Runtime requirements: Rapid-MLX at `config.mlx_server_command` (the app starts it and downloads the models on first use), Glances on `http://thinkpad:61208` (only for the server tools), `OLLAMA_API_KEY` (web tools) `ANIMESCHEDULE_TOKEN` (anime tools) and `PANDA_SCORE_API_TOKEN` (CS tools), `ENABLE_BANKING_APP_ID` and `ENABLE_BANKING_KEY_PATH` plus a linked bank (bank tools) in the environment or `.env` (`.env.example` lists them), macOS calendar access for the terminal app (calendar tools), and `TELEGRAM_BOT_TOKEN` and `TELEGRAM_USER_ID` (Telegram bot).
+Runtime requirements: Rapid-MLX at `config.mlx_server_command` (the app starts it and downloads the models on first use), Glances on `http://thinkpad:61208` (only for the server tools), `OLLAMA_API_KEY` (web tools) `ANIMESCHEDULE_TOKEN` (anime tools) and `PANDA_SCORE_API_TOKEN` (CS tools), `ENABLE_BANKING_APP_ID` and `ENABLE_BANKING_KEY_PATH` plus a linked bank (bank tools; `ENABLE_BANKING_SANDBOX_ID`, `ENABLE_BANKING_SANDBOX_KEY_PATH` and `ENABLE_BANKING_SANDBOX=1` for the sandbox) in the environment or `.env` (`.env.example` lists them), macOS calendar access for the terminal app (calendar tools), and `TELEGRAM_BOT_TOKEN` and `TELEGRAM_USER_ID` (Telegram bot).
 
 Verify UI changes headlessly with Textual's pilot instead of launching the app: recipe in [docs/ui.md](docs/ui.md).
 

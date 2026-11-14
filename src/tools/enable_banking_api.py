@@ -3,21 +3,26 @@
 Docs: https://enablebanking.com/docs/api/reference/
 Every request carries a JWT signed with the application's private key (RS256), which
 Enable Banking checks against the public key registered for the application. Needs
-ENABLE_BANKING_APP_ID and ENABLE_BANKING_KEY_PATH (the .pem file) in .env.
+ENABLE_BANKING_APP_ID and ENABLE_BANKING_KEY_PATH (the .pem file) in .env for the production app.
+With config.enable_banking_sandbox (ENABLE_BANKING_SANDBOX=1, or linking with --sandbox) the
+sandbox app is used instead, with ENABLE_BANKING_SANDBOX_ID and ENABLE_BANKING_SANDBOX_KEY_PATH
+and its own bank link, for testing against made-up banks.
 
 Reading an account needs a bank link, which the user makes by approving access at their bank
 in a browser. `python -m tools.enable_banking_api` (from src/) walks through it and saves the
-link (Enable Banking's session and its accounts) to config.banking_session_path. It lasts as
+link (Enable Banking's session and its accounts) to the app's file in config. It lasts as
 long as the bank allows (at most 180 days under PSD2), then the user links again;
 jobs/bank_digest.py reminds them 7 days and 1 day before.
 """
 
+import argparse
 import asyncio
 import datetime as dt
 import json
 import secrets
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -28,18 +33,39 @@ from core import clock, http_client
 from core.config import PROJECT_ROOT, config
 
 API_URL = "https://api.enablebanking.com"
-RELINK = "relink with `python -m tools.enable_banking_api` from src/"
 
 class BankingError(Exception):
     pass
 
+@dataclass(frozen=True)
+class _App:
+    """One Enable Banking application: production, or the sandbox for testing."""
+    name: str
+    app_id: str
+    key_path: str
+    link_path: Path
+    # The .env names of app_id and key_path, for the error when they're missing
+    settings: str
+    # The linking command for this app
+    command: str
+
+def _app() -> _App:
+    if config.enable_banking_sandbox:
+        return _App("sandbox", config.enable_banking_sandbox_id, config.enable_banking_sandbox_key_path,
+                    config.banking_sandbox_session_path, "ENABLE_BANKING_SANDBOX_ID and ENABLE_BANKING_SANDBOX_KEY_PATH",
+                    "`python -m tools.enable_banking_api --sandbox` from src/")
+    return _App("production", config.enable_banking_app_id, config.enable_banking_key_path,
+                config.banking_session_path, "ENABLE_BANKING_APP_ID and ENABLE_BANKING_KEY_PATH",
+                "`python -m tools.enable_banking_api` from src/")
+
 def _auth() -> str:
     """A fresh JWT for one request, signed with the app's private key."""
-    if not config.enable_banking_app_id or not config.enable_banking_key_path:
-        raise BankingError("No Enable Banking credentials: set ENABLE_BANKING_APP_ID and ENABLE_BANKING_KEY_PATH in .env")
+    app = _app()
+    if not app.app_id or not app.key_path:
+        raise BankingError(f"No Enable Banking {app.name} credentials: set {app.settings} in .env")
     try:
         # Relative paths are relative to the repo folder, whatever the working directory is
-        key = (PROJECT_ROOT / Path(config.enable_banking_key_path).expanduser()).read_bytes()
+        key = (PROJECT_ROOT / Path(app.key_path).expanduser()).read_bytes()
     except OSError as e:
         raise BankingError(f"Could not read the Enable Banking private key: {e}") from e
     now = int(time.time())
@@ -47,7 +73,7 @@ def _auth() -> str:
     lifetime = 3600
     return jwt.encode(
         {"iss": "enablebanking.com", "aud": "api.enablebanking.com", "iat": now, "exp": now + lifetime},
-        key, algorithm="RS256", headers={"kid": config.enable_banking_app_id})
+        key, algorithm="RS256", headers={"kid": app.app_id})
 
 async def _request(method: str, path: str, *, params: dict | None = None, body: dict | None = None):
     res = await http_client.request(
@@ -100,7 +126,7 @@ async def _session(code: str) -> dict:
     data = await _request("POST", "/sessions", body={"code": code})
     link = {"session_id": data["session_id"], "accounts": data["accounts"],
             "valid_until": data["access"]["valid_until"]}
-    path = config.banking_session_path
+    path = _app().link_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(link, indent=2))
     # The session id reads the user's accounts, so only the user may read it
@@ -109,14 +135,15 @@ async def _session(code: str) -> dict:
 
 def _saved_link() -> dict:
     """The saved bank link, or a BankingError saying how to make one."""
+    app = _app()
     try:
-        link = json.loads(config.banking_session_path.read_text())
+        link = json.loads(app.link_path.read_text())
     except OSError as e:
-        raise BankingError("No bank is linked: link one with `python -m tools.enable_banking_api` from src/") from e
+        raise BankingError(f"No bank is linked: link one with {app.command}") from e
     except ValueError as e:
-        raise BankingError(f"The saved bank link is damaged: {RELINK}") from e
+        raise BankingError(f"The saved bank link is damaged: relink with {app.command}") from e
     if not isinstance(link, dict) or not isinstance(link.get("accounts"), list) or not link.get("valid_until"):
-        raise BankingError(f"The saved bank link is damaged: {RELINK}")
+        raise BankingError(f"The saved bank link is damaged: relink with {app.command}")
     return link
 
 def _expiry(link: dict) -> dt.datetime:
@@ -126,7 +153,7 @@ def _live_link() -> dict:
     """The saved bank link, if it hasn't expired."""
     link = _saved_link()
     if _expiry(link) <= clock.now():
-        raise BankingError(f"The bank link expired on {_expiry(link):%Y-%m-%d}: {RELINK}")
+        raise BankingError(f"The bank link expired on {_expiry(link):%Y-%m-%d}: relink with {_app().command}")
     return link
 
 def link_reminder() -> str | None:
@@ -140,7 +167,7 @@ def link_reminder() -> str | None:
     if days_left not in (7, 1):
         return None
     when = "tomorrow" if days_left == 1 else "in 7 days"
-    return f"Your bank link expires {when} ({expires:%A %d %B %H:%M}). To keep the bank tools working, {RELINK}."
+    return f"Your bank link expires {when} ({expires:%A %d %B %H:%M}). To keep the bank tools working, relink with {_app().command}."
 
 async def _get_transactions(uid: str, date_from: dt.date, date_to: dt.date) -> tuple[list[dict], bool]:
     """An account's transactions in the date range, following the API's continuation keys, and
@@ -212,6 +239,7 @@ def _choose(banks: list[dict]) -> dict:
         print(f"Type a number from 1 to {len(banks)}")
 
 async def _link() -> None:
+    print(f"Linking a bank to the Enable Banking {_app().name} app")
     country = input("Country (two letters, e.g. PL): ").strip().upper()
     banks = await _banks(country)
     if not banks:
@@ -223,9 +251,13 @@ async def _link() -> None:
     redirect = input("Paste the address the page shows after you approve:\n").strip()
     link = await _session(_code_from(redirect, state))
     print(f"Linked {len(link['accounts'])} accounts, valid until {_expiry(link):%Y-%m-%d %H:%M}, "
-          f"saved to {config.banking_session_path}")
+          f"saved to {_app().link_path}")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Link a bank, so the bank tools can read its accounts")
+    parser.add_argument("--sandbox", action="store_true", help="link to the sandbox app, with made-up banks")
+    if parser.parse_args().sandbox:
+        config.enable_banking_sandbox = True
     try:
         asyncio.run(_link())
     except BankingError as e:

@@ -134,6 +134,17 @@ class BankingTest(HttpTest):
                                "Total: in +0.00 EUR, out -1.00 EUR\n\n"
                                "Savings (EUR): no transactions from 2026-11-13 to 2026-11-14.")
 
+    async def test_accounts_of_one_product_are_told_apart_by_their_number(self):
+        product = "Rachunek oszczędnościowo – rozliczeniowy"
+        self.link(*({"uid": uid, "name": "JAN KOWALSKI", "currency": "PLN", "product": product,
+                     "account_id": {"iban": iban}} for uid, iban in (("acc-1", "PL00 1240 0000 5017"),
+                                                                       ("acc-2", "PL00 1240 0000 9792"))))
+        self.serve({TRANSACTIONS: page(), "/accounts/acc-2/transactions": page()})
+
+        self.assertEqual(await tools.get_bank_transactions("2026-11-13"),
+                         f"{product} ••5017 (PLN): no transactions from 2026-11-13 to 2026-11-14.\n\n"
+                         f"{product} ••9792 (PLN): no transactions from 2026-11-13 to 2026-11-14.")
+
     async def test_failures_tell_the_model_what_to_do(self):
         def damaged():
             config.banking_session_path.parent.mkdir(parents=True, exist_ok=True)

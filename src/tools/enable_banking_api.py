@@ -187,6 +187,15 @@ async def _get_transactions(uid: str, date_from: dt.date, date_to: dt.date) -> t
         params["continuation_key"] = data["continuation_key"]
     return entries, False
 
+def _account_title(account: dict) -> str:
+    """'<product> ••<last 4 of the IBAN> (<currency>)'. The product before the name, since some banks
+    (Pekao) fill the name with the holder's, the same for every account; the IBAN's end then tells
+    accounts of one product apart."""
+    iban = (account.get("account_id") or {}).get("iban") or ""
+    label = account.get("product") or account.get("name") or "Account"
+    number = f" ••{iban[-4:]}" if iban else ""
+    return f"{label}{number} ({account.get('currency') or 'unknown currency'})"
+
 def _date(entry: dict) -> str:
     return entry.get("booking_date") or entry.get("value_date") or entry.get("transaction_date") or ""
 
@@ -220,7 +229,7 @@ async def transactions(date_from: str, date_to: str | None = None) -> str:
     blocks = []
     for account in _live_link()["accounts"]:
         entries, complete = await _get_transactions(account["uid"], start, end)
-        title = f"{account.get('name') or 'Account'} ({account.get('currency') or 'unknown currency'})"
+        title = _account_title(account)
         if not entries:
             blocks.append(f"{title}: no transactions from {start} to {end}.")
             continue

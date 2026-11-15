@@ -36,8 +36,6 @@ Undo every patch with `addCleanup`. Wait with `await pilot.pause()`, never `slee
 - One test per distinct behaviour. Cover the happy path, each error the user or model sees, and the boundary that actually broke or could break; skip permutations that run the same code path.
 - A bug fix gets one regression test, written first and seen failing.
 - Name tests as behaviour sentences: `test_score_is_from_the_teams_side_when_listed_second`.
-- Prefer the smallest testable unit. For bridge VSCode API behavior, use the existing extension test harness only when the logic cannot be isolated.
-
 ## Run
 
 ```bash

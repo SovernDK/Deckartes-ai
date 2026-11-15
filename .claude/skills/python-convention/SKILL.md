@@ -18,6 +18,4 @@ description: Conventions for python code. Load before writing or editing any Pyt
 
 - Before writing a helper, a checker or a test fixture, look for an existing
   one to reuse or generalize: a near-copy of something already there is two
-  things to keep in step. E.g. a test needing cameras generalized the
-  fixture's own `_add_camera` rather than adding its own, and the
-  configuration page's rule warnings reuse the expression library's.
+  things to keep in step.

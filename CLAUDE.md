@@ -50,7 +50,6 @@ venv/bin/ruff format . # format; --check only reports unformatted files
 ### Unit tests
 - **Always load the `writing-tests` skill before writing or changing unit tests** and follow it.
 - Every new feature or bug fix comes with unit tests; a bug fix starts with a failing test that reproduces it.
-- Run `PYTHONPATH=src venv/bin/python -m unittest discover tests` before declaring a task done.
 
 ### UI and live tests
 - UI flows are tested headlessly with Textual's pilot (recipe in [docs/ui.md](docs/ui.md)), in `tests/test_<feature>.py`; live tests against the running chat server go in `tests/test_live_<feature>.py` and skip unless `LIVE=1`.
@@ -59,9 +58,9 @@ venv/bin/ruff format . # format; --check only reports unformatted files
 - Each test is independent and sets up and cleans up its own data (tests that mount `Chat` call `temp_history(self)`).
 - Cover the happy path plus key failure paths (tool errors, failed turns, empty results).
 
-## BUG Fixing
+## Bug fixing
 
-- ALWAYS fix root cause of the bugs, DONT create workarounds.
+- Fix a bug at its root cause, not by patching the symptom. When a workaround can't be avoided (a bug in a library or an external API), say so in your summary and comment why at the workaround.
 
 ## Input validation
 
@@ -101,14 +100,13 @@ venv/bin/ruff format . # format; --check only reports unformatted files
 
 ## Wiki
 
-- Save project architecture and use instructions in /docs/wiki.html
-use /project-wiki skill
+- Architecture and usage docs for human developers live in `docs/wiki.html`. Update it with the `project-wiki` skill whenever a change adds, removes or alters a feature.
 
 ---
 
 ## Definition of done
 
-- [ ] Formatting, lint, Pylance diagnostics and all tests pass`
+- [ ] Formatting, lint, Pylance diagnostics and all tests pass
 - [ ] No diagnostics errors in touched files (VS Code MCP)
 - [ ] New/changed logic covered by unit tests; UI flows covered by pilot tests where relevant
 - [ ] No unnecessary comments, no dead code
@@ -131,5 +129,3 @@ Read the matching doc before working in that area:
 - [docs/telegram.md](docs/telegram.md): the Telegram bot, its setup, access check, confirmations and how it runs, and the scheduled jobs (`jobs/`).
 - [docs/validation.md](docs/validation.md): the `/validate` command, its case file, scoring and saved results.
 - [docs/ui.md](docs/ui.md): widgets, screens, bindings, styles, the config popup, Default/Detailed mode, thinking and the usage line, plus the headless pilot recipe for verifying UI changes.
-
-All architecture is kept in docs/wiki.html for human developers, any bigger change in logic should be updated there.

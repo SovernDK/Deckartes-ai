@@ -13,7 +13,7 @@
       "Bash(curl http://127.0.0.1:8001/*)"
     ],
     
-    "deny": [
+    "ask": [
       "Edit(/CLAUDE.md)",
       "Edit(**/CLAUDE.md)"
     ]

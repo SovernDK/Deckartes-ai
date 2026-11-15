@@ -26,6 +26,7 @@ class ConversationItem(ListItem):
         details = self.listed.updated_at + (" · Telegram" if self.listed.source == "telegram" else "")
         yield Static(Text.assemble((self.listed.title or "(no question)", "bold"), "\n", (details, "dim")))
 
+
 class HistoryPanel(VerticalGroup):
     BINDINGS = [("d", "delete", "Delete")]
 
@@ -64,16 +65,20 @@ class HistoryPanel(VerticalGroup):
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         event.stop()
-        if isinstance(event.item, ConversationItem) and await self.app.query_one(Chat).open_conversation(event.item.listed.id):
+        if isinstance(event.item, ConversationItem) and await self.app.query_one(Chat).open_conversation(
+            event.item.listed.id
+        ):
             self.hide()
 
     def action_delete(self) -> None:
         listed = self.highlighted()
         if listed is None:
             return
+
         def answered(yes: bool | None) -> None:
             if yes:
                 self.delete(listed)
+
         self.app.push_screen(ConfirmScreen(f"Delete '{listed.title}'?"), answered)
 
     @work(group="history-delete")

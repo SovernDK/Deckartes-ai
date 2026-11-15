@@ -5,8 +5,9 @@ import unittest
 from model.tool_schema import tool_definition
 
 
-async def everything(name: str, count: int, ratio: float, flag: bool, items: list[str],
-                     maybe: str | None = None, defaulted: int = 3) -> str:
+async def everything(
+    name: str, count: int, ratio: float, flag: bool, items: list[str], maybe: str | None = None, defaulted: int = 3
+) -> str:
     """Do everything.
 
     Second line of the description.
@@ -26,9 +27,11 @@ async def everything(name: str, count: int, ratio: float, flag: bool, items: lis
     """
     return name
 
+
 async def no_arguments() -> str:
     """Nothing needed."""
     return ""
+
 
 async def changes_something(title: str, *, confirm) -> str:
     """Change something after asking.
@@ -38,34 +41,49 @@ async def changes_something(title: str, *, confirm) -> str:
     """
     return title
 
+
 class ToolDefinitionTest(unittest.TestCase):
     def test_definition_has_the_docstring_types_and_required(self):
-        self.assertEqual(tool_definition(everything), {"type": "function", "function": {
-            "name": "everything",
-            "description": "Do everything.\n\nSecond line of the description.",
-            "parameters": {
-                "type": "object",
-                "required": ["name", "count", "ratio", "flag", "items", "defaulted"],
-                "properties": {
-                    "name": {"description": "The name", "type": "string"},
-                    "count": {"description": "How many, continued here", "type": "integer"},
-                    "ratio": {"description": "A ratio", "type": "number"},
-                    "flag": {"description": "A flag", "type": "boolean"},
-                    "items": {"description": "Some items", "type": "array"},
-                    "maybe": {"description": "Optional text", "type": "string"},
-                    "defaulted": {"description": "Has a default", "type": "integer"},
+        self.assertEqual(
+            tool_definition(everything),
+            {
+                "type": "function",
+                "function": {
+                    "name": "everything",
+                    "description": "Do everything.\n\nSecond line of the description.",
+                    "parameters": {
+                        "type": "object",
+                        "required": ["name", "count", "ratio", "flag", "items", "defaulted"],
+                        "properties": {
+                            "name": {"description": "The name", "type": "string"},
+                            "count": {"description": "How many, continued here", "type": "integer"},
+                            "ratio": {"description": "A ratio", "type": "number"},
+                            "flag": {"description": "A flag", "type": "boolean"},
+                            "items": {"description": "Some items", "type": "array"},
+                            "maybe": {"description": "Optional text", "type": "string"},
+                            "defaulted": {"description": "Has a default", "type": "integer"},
+                        },
+                    },
                 },
             },
-        }})
+        )
 
     def test_tool_without_arguments_gets_empty_parameters(self):
-        self.assertEqual(tool_definition(no_arguments)["function"]["parameters"],
-                         {"type": "object", "required": [], "properties": {}})
+        self.assertEqual(
+            tool_definition(no_arguments)["function"]["parameters"],
+            {"type": "object", "required": [], "properties": {}},
+        )
 
     def test_the_confirm_parameter_is_not_shown_to_the_model(self):
-        self.assertEqual(tool_definition(changes_something)["function"]["parameters"],
-                         {"type": "object", "required": ["title"],
-                          "properties": {"title": {"description": "What to change", "type": "string"}}})
+        self.assertEqual(
+            tool_definition(changes_something)["function"]["parameters"],
+            {
+                "type": "object",
+                "required": ["title"],
+                "properties": {"title": {"description": "What to change", "type": "string"}},
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

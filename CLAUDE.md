@@ -25,6 +25,7 @@ PYTHONPATH=src venv/bin/textual run --dev src/main.py   # run with devtools; pai
 PYTHONPATH=src venv/bin/python -m unittest discover tests   # tests; live tests skip unless LIVE=1
 LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_live_*.py'   # live tests only, on the running chat server
 venv/bin/ruff check .                   # lint; add --fix for the automatic fixes
+venv/bin/ruff format . # format; --check only reports unformatted files
 ```
 ---
 
@@ -95,7 +96,7 @@ venv/bin/ruff check .                   # lint; add --fix for the automatic fixe
 
 - **Always follow the `python-conventions` skill** for naming and style. Load it before writing code.
 - If the skill and existing code disagree, follow the skill and flag the inconsistency instead of silently spreading the old pattern.
-- No formatter is enforced yet (Ruff is used for lint only); match the surrounding style and don't run `ruff format` over the repo.
+- Formatting is handled by `ruff format` — don't hand-format.
 - Never hardcode values that someone might want to change without editing code. Put them in one central configuration location and read them from there.
 
 ## Wiki
@@ -107,7 +108,7 @@ use /project-wiki skill
 
 ## Definition of done
 
-- [ ] Lint, Pylance diagnostics and all tests pass
+- [ ] Formatting, lint, Pylance diagnostics and all tests pass`
 - [ ] No diagnostics errors in touched files (VS Code MCP)
 - [ ] New/changed logic covered by unit tests; UI flows covered by pilot tests where relevant
 - [ ] No unnecessary comments, no dead code

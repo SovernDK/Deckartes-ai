@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS synced_days (
 );
 """
 
+
 @contextmanager
 def database(schema: str) -> Generator[sqlite3.Connection, None, None]:
     """A connection to the spending database with schema applied, whose changes are committed
@@ -62,19 +63,25 @@ def database(schema: str) -> Generator[sqlite3.Connection, None, None]:
     finally:
         connection.close()
 
+
 def _days(start: dt.date, end: dt.date) -> list[str]:
     return [(start + dt.timedelta(days=offset)).isoformat() for offset in range((end - start).days + 1)]
+
 
 def synced(account: str, start: dt.date, end: dt.date) -> dict[dt.date, dt.datetime]:
     """When each synced day between start and end was last read from the bank."""
     with database("") as db:
-        rows = db.execute("SELECT day, synced_at FROM synced_days WHERE account = ? AND day BETWEEN ? AND ?",
-                          (account, start.isoformat(), end.isoformat()))
+        rows = db.execute(
+            "SELECT day, synced_at FROM synced_days WHERE account = ? AND day BETWEEN ? AND ?",
+            (account, start.isoformat(), end.isoformat()),
+        )
         return {dt.date.fromisoformat(day): dt.datetime.fromisoformat(at) for day, at in rows}
+
 
 def has_any(account: str) -> bool:
     with database("") as db:
         return db.execute("SELECT 1 FROM synced_days WHERE account = ? LIMIT 1", (account,)).fetchone() is not None
+
 
 def replace(account: str, start: dt.date, end: dt.date, entries: list[tuple[str, dict]], *, complete: bool) -> None:
     """Store what the bank returned for an account's days start to end, as (date, entry) pairs,
@@ -85,20 +92,36 @@ def replace(account: str, start: dt.date, end: dt.date, entries: list[tuple[str,
         money = entry.get("transaction_amount") or {}
         outgoing = entry.get("credit_debit_indicator") == "DBIT"
         party = (entry.get("creditor") if outgoing else entry.get("debtor")) or {}
-        rows.append((account, day or first, min(max(day or first, first), last), entry.get("status"),
-                     entry.get("credit_debit_indicator"), money.get("amount"), money.get("currency"),
-                     party.get("name"), " ".join(entry.get("remittance_information") or []), json.dumps(entry)))
+        rows.append(
+            (
+                account,
+                day or first,
+                min(max(day or first, first), last),
+                entry.get("status"),
+                entry.get("credit_debit_indicator"),
+                money.get("amount"),
+                money.get("currency"),
+                party.get("name"),
+                " ".join(entry.get("remittance_information") or []),
+                json.dumps(entry),
+            )
+        )
     with database("") as db:
         db.execute("DELETE FROM transactions WHERE account = ? AND slot BETWEEN ? AND ?", (account, first, last))
         db.executemany("INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
         if complete:
             stamp = clock.now().isoformat(timespec="seconds")
-            db.executemany("INSERT OR REPLACE INTO synced_days VALUES (?, ?, ?)",
-                           [(account, day, stamp) for day in _days(start, end)])
+            db.executemany(
+                "INSERT OR REPLACE INTO synced_days VALUES (?, ?, ?)",
+                [(account, day, stamp) for day in _days(start, end)],
+            )
+
 
 def entries(account: str, start: dt.date, end: dt.date) -> list[dict]:
     """The stored entries of an account dated start to end, as the bank gave them."""
     with database("") as db:
-        rows = db.execute("SELECT raw FROM transactions WHERE account = ? AND day BETWEEN ? AND ?",
-                          (account, start.isoformat(), end.isoformat()))
+        rows = db.execute(
+            "SELECT raw FROM transactions WHERE account = ? AND day BETWEEN ? AND ?",
+            (account, start.isoformat(), end.isoformat()),
+        )
         return [json.loads(raw) for (raw,) in rows]

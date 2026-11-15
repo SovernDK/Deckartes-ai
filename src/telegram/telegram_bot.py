@@ -41,21 +41,27 @@ COMMANDS = {
     "clear": "Forget this conversation",
     "stop": "Stop the current answer",
 }
-HELP = ("Ask me anything, and I'll answer with the tools on your Mac.\n\n"
-        "/clear forgets this conversation\n/stop stops the current answer")
+HELP = (
+    "Ask me anything, and I'll answer with the tools on your Mac.\n\n"
+    "/clear forgets this conversation\n/stop stops the current answer"
+)
 BUSY = "Still answering, /stop cancels it"
 TEXT_ONLY = "I can only read text messages for now."
 EXPIRED = "Expired"
 TIMED_OUT = "No answer after 5 minutes, so nothing was changed."
 
+
 class SetupError(Exception):
     """The bot can't start. The message says what to set."""
+
 
 @dataclass
 class _Question:
     """A yes-or-no question waiting for a button press."""
+
     id: str
     answer: asyncio.Future
+
 
 class Bot:
     def __init__(self, conversation: Conversation | None = None) -> None:
@@ -211,8 +217,9 @@ class Bot:
         """Ask the user yes or no with buttons, for tools that change something. If the question
         can't be sent, the error fails the tool, so nothing changes."""
         pending = _Question(secrets.token_hex(4), asyncio.get_running_loop().create_future())
-        sent = await telegram_api.send_message(self.owner, question, [("Yes", f"{pending.id}:yes"),
-                                                                      ("No", f"{pending.id}:no")])
+        sent = await telegram_api.send_message(
+            self.owner, question, [("Yes", f"{pending.id}:yes"), ("No", f"{pending.id}:no")]
+        )
         self.pending = pending
         outcome = "Stopped"
         try:
@@ -247,6 +254,7 @@ class Bot:
             pending.answer.set_result(data.endswith(":yes"))
         await telegram_api.answer_callback(press["id"])
 
+
 def setup_logging() -> None:
     """Log to the terminal and a small file. Never message text, and never httpx's INFO lines,
     which print full URLs and so the token."""
@@ -257,6 +265,7 @@ def setup_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", handlers=handlers)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 
 async def serve() -> None:
     loop = asyncio.get_running_loop()
@@ -275,6 +284,7 @@ async def serve() -> None:
         # Here and not left to atexit, which runs too late to end a model start still waiting
         await asyncio.to_thread(mlx_server.stop_all)
 
+
 def main() -> int:
     setup_logging()
     try:
@@ -283,6 +293,7 @@ def main() -> int:
         log.error("%s", e)
         return EXIT_SETUP_ERROR
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

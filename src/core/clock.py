@@ -12,10 +12,13 @@ from core.config import config
 def zone() -> ZoneInfo:
     return ZoneInfo(config.timezone)
 
+
 _frozen: dt.datetime | None = None
+
 
 def now() -> dt.datetime:
     return _frozen if _frozen is not None else dt.datetime.now(zone())
+
 
 @contextmanager
 def frozen_at(moment: dt.datetime) -> Generator[None, None, None]:
@@ -26,8 +29,10 @@ def frozen_at(moment: dt.datetime) -> Generator[None, None, None]:
     finally:
         _frozen = None
 
+
 def today() -> dt.date:
     return now().date()
+
 
 def parse_date(text: str) -> dt.date:
     """A date the model gives as YYYY-MM-DD. The model works out "tomorrow" or "friday" itself
@@ -35,8 +40,11 @@ def parse_date(text: str) -> dt.date:
     try:
         return dt.date.fromisoformat(text.strip())
     except ValueError:
-        raise ValueError(f"Date {text!r} must be YYYY-MM-DD; today is {today():%A %Y-%m-%d}, "
-                         f"so work out the date the user means from that")
+        raise ValueError(
+            f"Date {text!r} must be YYYY-MM-DD; today is {today():%A %Y-%m-%d}, "
+            f"so work out the date the user means from that"
+        )
+
 
 def to_local(timestamp: str) -> dt.datetime:
     return dt.datetime.fromisoformat(timestamp).astimezone(zone())

@@ -14,13 +14,23 @@ MAX_PAGE_CHARS = 8000
 MAX_SNIPPET_CHARS = 1500
 MAX_LINKS = 20
 
+
 class WebSearchError(Exception):
     pass
 
+
 async def _post(endpoint: str, payload: dict) -> dict:
-    res = await http_client.request("POST", f"{API_URL}/{endpoint}", name="Ollama web API", error=WebSearchError,
-                                    json=payload, token=config.ollama_api_key, token_env="OLLAMA_API_KEY")
+    res = await http_client.request(
+        "POST",
+        f"{API_URL}/{endpoint}",
+        name="Ollama web API",
+        error=WebSearchError,
+        json=payload,
+        token=config.ollama_api_key,
+        token_env="OLLAMA_API_KEY",
+    )
     return res.json()
+
 
 async def web_search(query: str) -> list[dict]:
     """Search the web; returns up to MAX_RESULTS of {title, url, content}, long snippets cut."""
@@ -31,6 +41,7 @@ async def web_search(query: str) -> list[dict]:
         if len(content) > MAX_SNIPPET_CHARS:
             result["content"] = content[:MAX_SNIPPET_CHARS] + " [...]"
     return found
+
 
 async def web_fetch(url: str) -> dict:
     """Fetch a web page; returns {title, content, links}, long text and link lists cut."""

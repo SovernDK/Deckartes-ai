@@ -53,17 +53,21 @@ class LiveTurnTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_saved_file_is_searched_through_the_second_server(self):
         self.addCleanup(mlx_server.stop_all)
-        filler = "\n\n".join(f"Akapit {i} opowiada o pogodzie, drogach i zwyklych sprawach w miescie numer {i}. " * 12
-                             for i in range(12))
+        filler = "\n\n".join(
+            f"Akapit {i} opowiada o pogodzie, drogach i zwyklych sprawach w miescie numer {i}. " * 12 for i in range(12)
+        )
         secret = "Kod do sejfu w piwnicy to 4417."
-        with tempfile.TemporaryDirectory() as folder, \
-             mock.patch.object(config, "library_path", Path(folder) / "library.db"):
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            mock.patch.object(config, "library_path", Path(folder) / "library.db"),
+        ):
             path = Path(folder) / "notatki.txt"
             path.write_text(f"{filler}\n\n{secret}\n\n{filler}")
             await library.add(path)
             events = await self.turn("Sprawdz w moich zapisanych plikach: jaki jest kod do sejfu w piwnicy?")
         self.assertIn(ToolStarted("search_library"), events)
         self.assertIn("4417", self.text(events))
+
 
 if __name__ == "__main__":
     unittest.main()

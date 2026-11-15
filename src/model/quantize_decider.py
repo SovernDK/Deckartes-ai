@@ -27,14 +27,21 @@ REVISION = "acbae4ecce4dbcc0aea8c5a501c9f54008458a70"
 BITS = 4
 GROUP_SIZE = 64
 
+
 def main(target: Path) -> None:
     source = Path(snapshot_download(REPOSITORY, revision=REVISION))
     # Loaded the way Rapid-MLX loads it: a Qwen3.5 text model whose config says model_type decider2
-    model, _ = load_model(source, model_config={"model_file": None, "auto_map": None},
-                          get_model_classes=lambda config: (qwen3_5.Model, qwen3_5.ModelArgs))
-    nn.quantize(model, group_size=GROUP_SIZE, bits=BITS,
-                class_predicate=lambda _, layer: hasattr(layer, "to_quantized")
-                and layer.weight.shape[-1] % GROUP_SIZE == 0)
+    model, _ = load_model(
+        source,
+        model_config={"model_file": None, "auto_map": None},
+        get_model_classes=lambda config: (qwen3_5.Model, qwen3_5.ModelArgs),
+    )
+    nn.quantize(
+        model,
+        group_size=GROUP_SIZE,
+        bits=BITS,
+        class_predicate=lambda _, layer: hasattr(layer, "to_quantized") and layer.weight.shape[-1] % GROUP_SIZE == 0,
+    )
     target.mkdir(parents=True, exist_ok=True)
     # The tokenizer, chat template and the release's calibration (decision_config in config.json)
     for file in source.iterdir():
@@ -46,6 +53,7 @@ def main(target: Path) -> None:
     (target / "config.json").write_text(json.dumps(config, indent=2, ensure_ascii=False))
     size = sum(file.stat().st_size for file in target.glob("*.safetensors"))
     print(f"Wrote {target}: {size / 1e9:.2f} GB of weights")
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

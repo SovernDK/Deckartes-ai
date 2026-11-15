@@ -16,8 +16,13 @@ class WebToolTest(HttpTest):
         self.addCleanup(patcher.stop)
 
     async def test_search_sends_the_query_and_cuts_long_snippets(self):
-        server = self.serve({"/api/web_search": {"results": [
-            {"title": "Textual", "url": "https://textual.textualize.io", "content": "y" * 2000}]}})
+        server = self.serve(
+            {
+                "/api/web_search": {
+                    "results": [{"title": "Textual", "url": "https://textual.textualize.io", "content": "y" * 2000}]
+                }
+            }
+        )
         results = await tools.search_web("textual")
         self.assertEqual(json.loads(server.requests[0].content), {"query": "textual", "max_results": 5})
         self.assertEqual(server.requests[0].headers["authorization"], "Bearer key")
@@ -31,9 +36,11 @@ class WebToolTest(HttpTest):
 
     async def test_search_without_a_key_says_how_to_set_it(self):
         with mock.patch.object(config, "ollama_api_key", ""):
-            self.assertEqual(await tools.run_tool("search_web", {"query": "x"}),
-                             "Tool search_web failed: No Ollama web API token: set OLLAMA_API_KEY in the environment "
-                             "or .env")
+            self.assertEqual(
+                await tools.run_tool("search_web", {"query": "x"}),
+                "Tool search_web failed: No Ollama web API token: set OLLAMA_API_KEY in the environment or .env",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

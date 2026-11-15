@@ -20,45 +20,75 @@ STREAM = "https://twitch.tv/esl"
 
 STANDINGS_FILES = "/repos/ValveSoftware/counter-strike_regional_standings/contents/live"
 STANDINGS_RAW = "/ValveSoftware/counter-strike_regional_standings/main/live"
-STANDINGS = ("| Standing | Points | Team Name | Roster |\n| --- | --- | --- | --- |\n"
-             "| 1 | 2010 | Vitality | apEX, ZywOo |\n| 2 | 1900 | MOUZ | Brollan, torzsi |\n")
+STANDINGS = (
+    "| Standing | Points | Team Name | Roster |\n| --- | --- | --- | --- |\n"
+    "| 1 | 2010 | Vitality | apEX, ZywOo |\n| 2 | 1900 | MOUZ | Brollan, torzsi |\n"
+)
+
 
 def standings(year: int = 2026) -> dict:
-    return {f"{STANDINGS_FILES}/{year}": [{"name": f"standings_global_{year}_10_06.md"}],
-            f"{STANDINGS_RAW}/{year}/standings_global_{year}_10_06.md": STANDINGS}
+    return {
+        f"{STANDINGS_FILES}/{year}": [{"name": f"standings_global_{year}_10_06.md"}],
+        f"{STANDINGS_RAW}/{year}/standings_global_{year}_10_06.md": STANDINGS,
+    }
+
 
 def found_as(name: str, item: dict):
     """A PandaScore search that finds item only by its exact name."""
     return lambda request: [item] if request.url.params.get("search[name]") == name else []
 
-def match(status: str, first: dict, second: dict, *, scores: tuple[int, int] | None = None, winner: dict | None = None,
-          tier: str = "s", **fields) -> dict:
+
+def match(
+    status: str,
+    first: dict,
+    second: dict,
+    *,
+    scores: tuple[int, int] | None = None,
+    winner: dict | None = None,
+    tier: str = "s",
+    **fields,
+) -> dict:
     """A match as PandaScore returns it."""
     payload = {
-        "name": "Grand final: match", "status": status, "number_of_games": 3,
+        "name": "Grand final: match",
+        "status": status,
+        "number_of_games": 3,
         "opponents": [{"opponent": first}, {"opponent": second}],
-        "league": {"name": "ESL"}, "serie": {"full_name": "Pro League 2026"}, "tournament": {"tier": tier},
+        "league": {"name": "ESL"},
+        "serie": {"full_name": "Pro League 2026"},
+        "tournament": {"tier": tier},
         "winner_id": winner["id"] if winner else None,
         "results": [{"team_id": first["id"], "score": scores[0]}, {"team_id": second["id"], "score": scores[1]}]
-                   if scores else [],
+        if scores
+        else [],
     }
     return payload | fields
+
 
 def finished(first: dict, second: dict, scores: tuple[int, int], winner: dict | None, **fields) -> dict:
     fields.setdefault("end_at", "2026-11-10T17:30:00Z")
     return match("finished", first, second, scores=scores, winner=winner, **fields)
 
+
 def not_started(first: dict, second: dict, **fields) -> dict:
     fields.setdefault("scheduled_at", "2026-11-13T17:00:00Z")
     return match("not_started", first, second, **fields)
 
-def running(first: dict, second: dict, **fields) -> dict:
-    return match("running", first, second, scores=(1, 0),
-                 streams_list=[{"main": True, "raw_url": STREAM}], **fields)
 
-TEAM = {"id": 1, "name": "Natus Vincere", "acronym": "NAVI", "location": "UA",
-        "players": [{"id": 9, "name": "b1t", "first_name": "Valerii", "last_name": "Vakhovskyi",
-                     "nationality": "UA", "age": 23}]}
+def running(first: dict, second: dict, **fields) -> dict:
+    return match("running", first, second, scores=(1, 0), streams_list=[{"main": True, "raw_url": STREAM}], **fields)
+
+
+TEAM = {
+    "id": 1,
+    "name": "Natus Vincere",
+    "acronym": "NAVI",
+    "location": "UA",
+    "players": [
+        {"id": 9, "name": "b1t", "first_name": "Valerii", "last_name": "Vakhovskyi", "nationality": "UA", "age": 23}
+    ],
+}
+
 
 class CsToolTest(HttpTest):
     def setUp(self):
@@ -71,6 +101,7 @@ class CsToolTest(HttpTest):
     def serve_results(self, *matches: dict):
         return self.serve({"/csgo/teams": [TEAM], "/csgo/matches/past": list(matches)})
 
+
 class TeamResultsTest(CsToolTest):
     async def line(self, result: dict) -> str:
         self.serve_results(result)
@@ -78,10 +109,12 @@ class TeamResultsTest(CsToolTest):
 
     async def test_results_are_grouped_under_their_local_day(self):
         self.serve_results(finished(NAVI, MOUZ, (2, 1), NAVI))
-        self.assertEqual(await tools.get_cs_match_results("Natus Vincere"),
-                         "Recent results of Natus Vincere, newest first (local time):\n"
-                         "Tuesday 2026-11-10:\n"
-                         f"- 18:30 won 2-1 vs MOUZ ({DETAILS})")
+        self.assertEqual(
+            await tools.get_cs_match_results("Natus Vincere"),
+            "Recent results of Natus Vincere, newest first (local time):\n"
+            "Tuesday 2026-11-10:\n"
+            f"- 18:30 won 2-1 vs MOUZ ({DETAILS})",
+        )
 
     async def test_score_is_from_the_teams_side_when_listed_second(self):
         self.assertEqual(await self.line(finished(MOUZ, NAVI, (1, 2), NAVI)), f"- 18:30 won 2-1 vs MOUZ ({DETAILS})")
@@ -93,49 +126,76 @@ class TeamResultsTest(CsToolTest):
         self.assertEqual(await self.line(finished(NAVI, MOUZ, (1, 1), None)), f"- 18:30 drew 1-1 vs MOUZ ({DETAILS})")
 
     async def test_forfeit_is_marked(self):
-        self.assertEqual(await self.line(finished(NAVI, MOUZ, (1, 0), NAVI, forfeit=True)),
-                         f"- 18:30 won 1-0 vs MOUZ ({DETAILS}, forfeit)")
+        self.assertEqual(
+            await self.line(finished(NAVI, MOUZ, (1, 0), NAVI, forfeit=True)),
+            f"- 18:30 won 1-0 vs MOUZ ({DETAILS}, forfeit)",
+        )
 
     async def test_team_without_finished_matches_says_so(self):
         self.serve_results()
-        self.assertEqual(await tools.get_cs_match_results("Natus Vincere"),
-                         "Recent results of Natus Vincere: No finished matches found")
+        self.assertEqual(
+            await tools.get_cs_match_results("Natus Vincere"),
+            "Recent results of Natus Vincere: No finished matches found",
+        )
 
     async def test_unknown_team_has_no_results(self):
         self.serve({**standings(), "/csgo/teams": []})
         self.assertEqual(await tools.get_cs_match_results("Nope"), "Nope: No team found with that name.")
 
     async def test_a_misspelt_team_gets_the_closest_match_from_valves_standings(self):
-        self.serve({**standings(), "/csgo/teams": found_as("MOUZ", MOUZ), "/csgo/matches/past": [],
-                    "/csgo/matches/running": []})
-        self.assertEqual(await tools.get_cs_match_results("Mouzz"),
-                         'No team is named "Mouzz"; the closest match is:\n'
-                         "Recent results of MOUZ: No finished matches found")
+        self.serve(
+            {
+                **standings(),
+                "/csgo/teams": found_as("MOUZ", MOUZ),
+                "/csgo/matches/past": [],
+                "/csgo/matches/running": [],
+            }
+        )
+        self.assertEqual(
+            await tools.get_cs_match_results("Mouzz"),
+            'No team is named "Mouzz"; the closest match is:\nRecent results of MOUZ: No finished matches found',
+        )
+
 
 class TeamUpcomingTest(CsToolTest):
     async def test_a_started_match_is_listed_first(self):
-        self.serve({"/csgo/teams": [TEAM], "/csgo/matches/upcoming": [not_started(NAVI, MOUZ)],
-                    "/csgo/matches/running": [running(NAVI, MOUZ)]})
-        self.assertEqual(await tools.get_cs_upcoming_matches("Natus Vincere"),
-                         "Upcoming matches of Natus Vincere, soonest first (local time):\n"
-                         f"- LIVE NOW vs MOUZ, score 1-0 ({DETAILS}, stream {STREAM})\n"
-                         "Friday 2026-11-13:\n"
-                         f"- 18:00 vs MOUZ ({DETAILS})")
+        self.serve(
+            {
+                "/csgo/teams": [TEAM],
+                "/csgo/matches/upcoming": [not_started(NAVI, MOUZ)],
+                "/csgo/matches/running": [running(NAVI, MOUZ)],
+            }
+        )
+        self.assertEqual(
+            await tools.get_cs_upcoming_matches("Natus Vincere"),
+            "Upcoming matches of Natus Vincere, soonest first (local time):\n"
+            f"- LIVE NOW vs MOUZ, score 1-0 ({DETAILS}, stream {STREAM})\n"
+            "Friday 2026-11-13:\n"
+            f"- 18:00 vs MOUZ ({DETAILS})",
+        )
+
 
 class AllMatchesTest(CsToolTest):
     async def test_results_name_the_winner_and_leave_out_small_or_stale_matches(self):
-        self.serve({**standings(), "/csgo/matches/past": [
-            finished(NAVI, MINOR, (0, 2), MINOR),
-            finished(MINOR, OTHER, (2, 0), MINOR, tier="c"),
-            finished(MINOR, MOUZ, (0, 2), MOUZ, tier="c", end_at="2026-11-09T17:30:00Z"),
-            finished(NAVI, OTHER, (2, 0), NAVI, end_at="2026-09-01T17:30:00Z"),
-        ]})
-        self.assertEqual(await tools.get_cs_match_results("all"),
-                         "Recent results in major CS events, newest first (local time):\n"
-                         "Tuesday 2026-11-10:\n"
-                         f"- 18:30 Minor Five beat Natus Vincere 2-0 ({DETAILS})\n"
-                         "Monday 2026-11-09:\n"
-                         f"- 18:30 MOUZ beat Minor Five 2-0 ({DETAILS})")
+        self.serve(
+            {
+                **standings(),
+                "/csgo/matches/past": [
+                    finished(NAVI, MINOR, (0, 2), MINOR),
+                    finished(MINOR, OTHER, (2, 0), MINOR, tier="c"),
+                    finished(MINOR, MOUZ, (0, 2), MOUZ, tier="c", end_at="2026-11-09T17:30:00Z"),
+                    finished(NAVI, OTHER, (2, 0), NAVI, end_at="2026-09-01T17:30:00Z"),
+                ],
+            }
+        )
+        self.assertEqual(
+            await tools.get_cs_match_results("all"),
+            "Recent results in major CS events, newest first (local time):\n"
+            "Tuesday 2026-11-10:\n"
+            f"- 18:30 Minor Five beat Natus Vincere 2-0 ({DETAILS})\n"
+            "Monday 2026-11-09:\n"
+            f"- 18:30 MOUZ beat Minor Five 2-0 ({DETAILS})",
+        )
 
     SMALL_PAGE = [finished(MINOR, OTHER, (2, 0), MINOR, tier="c")] * 100
 
@@ -144,8 +204,12 @@ class AllMatchesTest(CsToolTest):
 
     async def test_keeps_paging_past_small_matches_until_a_short_page(self):
         major = finished(NAVI, MOUZ, (2, 1), NAVI)
-        server = self.serve({**standings(), "/csgo/matches/past":
-                             lambda request: self.SMALL_PAGE if request.url.params["page"] == "1" else [major]})
+        server = self.serve(
+            {
+                **standings(),
+                "/csgo/matches/past": lambda request: self.SMALL_PAGE if request.url.params["page"] == "1" else [major],
+            }
+        )
         self.assertIn("Natus Vincere beat MOUZ 2-1", await tools.get_cs_match_results("all"))
         self.assertEqual(self.pages_requested(server), ["1", "2"])
 
@@ -161,119 +225,185 @@ class AllMatchesTest(CsToolTest):
 
     async def test_minor_tier_matches_are_left_out(self):
         self.serve({**standings(), "/csgo/matches/upcoming": [not_started(MINOR, OTHER, tier="c")]})
-        self.assertEqual(await tools.get_cs_upcoming_matches("all"),
-                         "Upcoming matches in major CS events: No upcoming matches scheduled in major events")
+        self.assertEqual(
+            await tools.get_cs_upcoming_matches("all"),
+            "Upcoming matches in major CS events: No upcoming matches scheduled in major events",
+        )
+
 
 class LiveTest(CsToolTest):
     async def test_major_matches_and_a_count_of_the_rest(self):
         self.serve({**standings(), "/csgo/matches/running": [running(NAVI, MOUZ), running(MINOR, OTHER, tier="c")]})
-        self.assertEqual(await tools.get_cs_live_matches(),
-                         "Live CS matches now:\n"
-                         f"- LIVE NOW Natus Vincere 1-0 MOUZ ({DETAILS}, stream {STREAM})\n"
-                         "1 smaller-league match is live but not listed.")
+        self.assertEqual(
+            await tools.get_cs_live_matches(),
+            "Live CS matches now:\n"
+            f"- LIVE NOW Natus Vincere 1-0 MOUZ ({DETAILS}, stream {STREAM})\n"
+            "1 smaller-league match is live but not listed.",
+        )
 
     async def test_several_smaller_matches_are_plural(self):
-        self.serve({**standings(), "/csgo/matches/running": [running(NAVI, MOUZ), running(MINOR, OTHER, tier="c"),
-                                                             running(OTHER, MINOR, tier="c")]})
+        self.serve(
+            {
+                **standings(),
+                "/csgo/matches/running": [
+                    running(NAVI, MOUZ),
+                    running(MINOR, OTHER, tier="c"),
+                    running(OTHER, MINOR, tier="c"),
+                ],
+            }
+        )
         self.assertIn("\n2 smaller-league matches are live but not listed.", await tools.get_cs_live_matches())
 
     async def test_says_when_no_major_match_is_live(self):
         self.serve({**standings(), "/csgo/matches/running": []})
         self.assertEqual(await tools.get_cs_live_matches(), "No major matches are being played right now.")
 
+
 class TeamTest(CsToolTest):
     def serve_team(self, *, past=(), upcoming=(), live=(), team=TEAM):
-        self.serve({**standings(), "/csgo/teams": [team], "/csgo/matches/past": list(past),
-                    "/csgo/matches/upcoming": list(upcoming), "/csgo/matches/running": list(live)})
+        self.serve(
+            {
+                **standings(),
+                "/csgo/teams": [team],
+                "/csgo/matches/past": list(past),
+                "/csgo/matches/upcoming": list(upcoming),
+                "/csgo/matches/running": list(live),
+            }
+        )
 
     async def test_team_card_shows_rank_roster_live_next_and_recent(self):
-        self.serve_team(past=[finished(MOUZ, NAVI, (1, 2), NAVI)], upcoming=[not_started(NAVI, MOUZ)],
-                        live=[running(NAVI, MOUZ)], team=TEAM | {"name": "MOUZ", "id": 2})
-        self.assertEqual(await tools.get_cs_team("MOUZ"),
-                         "MOUZ (NAVI, UA), Valve rank 2 (1900 points, as of 2026-10-06)\n"
-                         "Players: b1t (Valerii Vakhovskyi, UA, 23)\n"
-                         f"Playing now: LIVE NOW vs Natus Vincere, score 0-1 ({DETAILS}, stream {STREAM})\n"
-                         f"Next match: Friday 2026-11-13 18:00 vs Natus Vincere ({DETAILS})\n"
-                         "Recent results (newest first):\n"
-                         f"- Tuesday 2026-11-10 18:30: lost 1-2 vs Natus Vincere ({DETAILS})")
+        self.serve_team(
+            past=[finished(MOUZ, NAVI, (1, 2), NAVI)],
+            upcoming=[not_started(NAVI, MOUZ)],
+            live=[running(NAVI, MOUZ)],
+            team=TEAM | {"name": "MOUZ", "id": 2},
+        )
+        self.assertEqual(
+            await tools.get_cs_team("MOUZ"),
+            "MOUZ (NAVI, UA), Valve rank 2 (1900 points, as of 2026-10-06)\n"
+            "Players: b1t (Valerii Vakhovskyi, UA, 23)\n"
+            f"Playing now: LIVE NOW vs Natus Vincere, score 0-1 ({DETAILS}, stream {STREAM})\n"
+            f"Next match: Friday 2026-11-13 18:00 vs Natus Vincere ({DETAILS})\n"
+            "Recent results (newest first):\n"
+            f"- Tuesday 2026-11-10 18:30: lost 1-2 vs Natus Vincere ({DETAILS})",
+        )
 
     async def test_team_card_says_what_is_missing(self):
         self.serve_team(team=TEAM | {"players": []})
-        self.assertEqual(await tools.get_cs_team("Natus Vincere"),
-                         "Natus Vincere (NAVI, UA), not in Valve's global standings\n"
-                         "Players: No roster listed\n"
-                         "Playing now: Not playing right now\n"
-                         "Next match: No upcoming match scheduled\n"
-                         "Recent results: No finished matches found")
+        self.assertEqual(
+            await tools.get_cs_team("Natus Vincere"),
+            "Natus Vincere (NAVI, UA), not in Valve's global standings\n"
+            "Players: No roster listed\n"
+            "Playing now: Not playing right now\n"
+            "Next match: No upcoming match scheduled\n"
+            "Recent results: No finished matches found",
+        )
 
     async def test_next_match_without_a_time_says_so(self):
         self.serve_team(upcoming=[not_started(NAVI, MOUZ, scheduled_at=None)])
-        self.assertIn(f"\nNext match: time not announced, vs MOUZ ({DETAILS})\n",
-                      await tools.get_cs_team("Natus Vincere"))
+        self.assertIn(
+            f"\nNext match: time not announced, vs MOUZ ({DETAILS})\n", await tools.get_cs_team("Natus Vincere")
+        )
 
     async def test_a_forfeit_without_an_end_time_is_dated_by_its_schedule(self):
-        self.serve_team(past=[finished(NAVI, MOUZ, (1, 0), NAVI, forfeit=True, end_at=None,
-                                       scheduled_at="2026-11-09T17:00:00Z")])
-        self.assertIn(f"\n- Monday 2026-11-09 18:00: won 1-0 vs MOUZ ({DETAILS}, forfeit)",
-                      await tools.get_cs_team("Natus Vincere"))
+        self.serve_team(
+            past=[finished(NAVI, MOUZ, (1, 0), NAVI, forfeit=True, end_at=None, scheduled_at="2026-11-09T17:00:00Z")]
+        )
+        self.assertIn(
+            f"\n- Monday 2026-11-09 18:00: won 1-0 vs MOUZ ({DETAILS}, forfeit)",
+            await tools.get_cs_team("Natus Vincere"),
+        )
 
     async def test_a_result_with_no_time_at_all_says_so(self):
         self.serve_team(past=[finished(NAVI, MOUZ, (1, 0), NAVI, end_at=None)])
         self.assertIn(f"\n- date unknown: won 1-0 vs MOUZ ({DETAILS})", await tools.get_cs_team("Natus Vincere"))
 
     async def test_a_misspelt_team_gets_the_closest_match_from_valves_standings(self):
-        self.serve({**standings(), "/csgo/teams": found_as("Vitality", TEAM | {"name": "Vitality", "players": []}),
-                    "/csgo/matches/past": [], "/csgo/matches/upcoming": [], "/csgo/matches/running": []})
-        self.assertEqual(await tools.get_cs_team("Vitallity"),
-                         'No team is named "Vitallity"; the closest match is:\n'
-                         "Vitality (NAVI, UA), Valve rank 1 (2010 points, as of 2026-10-06)\n"
-                         "Players: No roster listed\n"
-                         "Playing now: Not playing right now\n"
-                         "Next match: No upcoming match scheduled\n"
-                         "Recent results: No finished matches found")
+        self.serve(
+            {
+                **standings(),
+                "/csgo/teams": found_as("Vitality", TEAM | {"name": "Vitality", "players": []}),
+                "/csgo/matches/past": [],
+                "/csgo/matches/upcoming": [],
+                "/csgo/matches/running": [],
+            }
+        )
+        self.assertEqual(
+            await tools.get_cs_team("Vitallity"),
+            'No team is named "Vitallity"; the closest match is:\n'
+            "Vitality (NAVI, UA), Valve rank 1 (2010 points, as of 2026-10-06)\n"
+            "Players: No roster listed\n"
+            "Playing now: Not playing right now\n"
+            "Next match: No upcoming match scheduled\n"
+            "Recent results: No finished matches found",
+        )
 
     async def test_unknown_team_gets_a_spelling_hint(self):
         self.serve({**standings(), "/csgo/teams": []})
-        self.assertEqual(await tools.get_cs_team("Nope"),
-                         "Nope: No team found with that name. Check the spelling or try the full name "
-                         "(e.g. Natus Vincere).")
+        self.assertEqual(
+            await tools.get_cs_team("Nope"),
+            "Nope: No team found with that name. Check the spelling or try the full name (e.g. Natus Vincere).",
+        )
 
     async def test_a_name_in_another_script_is_searched(self):
         self.serve({**standings(), "/csgo/teams": []})
-        self.assertEqual(await tools.get_cs_team("Вега"),
-                         "Вега: No team found with that name. Check the spelling or try the full name "
-                         "(e.g. Natus Vincere).")
+        self.assertEqual(
+            await tools.get_cs_team("Вега"),
+            "Вега: No team found with that name. Check the spelling or try the full name (e.g. Natus Vincere).",
+        )
+
 
 class PlayerTest(CsToolTest):
     async def test_age_comes_from_the_roster_and_the_clock(self):
         # Born 2000-11-12: still 25 on the frozen 2026-11-11
-        player = {"id": 5, "name": "ZywOo", "current_team": {"id": 7, "name": "Vitality"},
-                  "current_videogame": {"slug": "cs-go"}}
-        member = {"id": 5, "name": "ZywOo", "first_name": "Mathieu", "last_name": "Herbaut",
-                  "nationality": "FR", "birthday": "2000-11-12"}
+        player = {
+            "id": 5,
+            "name": "ZywOo",
+            "current_team": {"id": 7, "name": "Vitality"},
+            "current_videogame": {"slug": "cs-go"},
+        }
+        member = {
+            "id": 5,
+            "name": "ZywOo",
+            "first_name": "Mathieu",
+            "last_name": "Herbaut",
+            "nationality": "FR",
+            "birthday": "2000-11-12",
+        }
         self.serve({**standings(), "/csgo/players": [player], "/csgo/teams": [{"players": [member]}]})
-        self.assertEqual(await tools.get_cs_player("ZywOo"),
-                         "ZywOo (Mathieu Herbaut, FR, 25): plays for Vitality, "
-                         "Valve rank 1 (2010 points, as of 2026-10-06)\n"
-                         "Performance stats (rating, K/D, ADR) aren't available from this data source.")
+        self.assertEqual(
+            await tools.get_cs_player("ZywOo"),
+            "ZywOo (Mathieu Herbaut, FR, 25): plays for Vitality, "
+            "Valve rank 1 (2010 points, as of 2026-10-06)\n"
+            "Performance stats (rating, K/D, ADR) aren't available from this data source.",
+        )
 
     async def test_a_misspelt_player_gets_the_closest_match_from_valves_rosters(self):
-        player = {"id": 5, "name": "ZywOo", "age": 25, "current_team": {"id": 7, "name": "Vitality"},
-                  "current_videogame": {"slug": "cs-go"}}
+        player = {
+            "id": 5,
+            "name": "ZywOo",
+            "age": 25,
+            "current_team": {"id": 7, "name": "Vitality"},
+            "current_videogame": {"slug": "cs-go"},
+        }
         self.serve({**standings(), "/csgo/players": found_as("ZywOo", player)})
-        self.assertEqual(await tools.get_cs_player("zywo"),
-                         'No player is named "zywo"; the closest match is:\n'
-                         "ZywOo (25): plays for Vitality, Valve rank 1 (2010 points, as of 2026-10-06)\n"
-                         "Performance stats (rating, K/D, ADR) aren't available from this data source.")
+        self.assertEqual(
+            await tools.get_cs_player("zywo"),
+            'No player is named "zywo"; the closest match is:\n'
+            "ZywOo (25): plays for Vitality, Valve rank 1 (2010 points, as of 2026-10-06)\n"
+            "Performance stats (rating, K/D, ADR) aren't available from this data source.",
+        )
 
     async def test_data_outside_the_pandascore_plan_says_so(self):
         self.serve({"/csgo/players": httpx.Response(403, text="forbidden")})
-        self.assertEqual(await tools.run_tool("get_cs_player", {"name": "ZywOo"}),
-                         "Tool get_cs_player failed: Access denied: this data isn't included in the PandaScore plan")
+        self.assertEqual(
+            await tools.run_tool("get_cs_player", {"name": "ZywOo"}),
+            "Tool get_cs_player failed: Access denied: this data isn't included in the PandaScore plan",
+        )
+
 
 class RankingTest(CsToolTest):
-    EXPECTED = ("Valve Regional Standings (global), as of {year}-10-06:\n"
-                "1. Vitality: 2010 points (apEX, ZywOo)")
+    EXPECTED = "Valve Regional Standings (global), as of {year}-10-06:\n1. Vitality: 2010 points (apEX, ZywOo)"
 
     async def test_world_reads_this_years_latest_global_standings(self):
         self.serve(standings())
@@ -285,24 +415,43 @@ class RankingTest(CsToolTest):
         self.assertEqual(await tools.get_cs_ranking("global", 1), self.EXPECTED.format(year=2026))
 
     async def test_unreachable_github_is_reported(self):
-        self.serve({f"{STANDINGS_FILES}/2026": httpx.ConnectError("no route"),
-                    f"{STANDINGS_FILES}/2025": httpx.ConnectError("no route")})
-        self.assertEqual(await tools.run_tool("get_cs_ranking", {"region": "global", "count": 1}),
-                         "Tool get_cs_ranking failed: Could not reach GitHub: no route")
+        self.serve(
+            {
+                f"{STANDINGS_FILES}/2026": httpx.ConnectError("no route"),
+                f"{STANDINGS_FILES}/2025": httpx.ConnectError("no route"),
+            }
+        )
+        self.assertEqual(
+            await tools.run_tool("get_cs_ranking", {"region": "global", "count": 1}),
+            "Tool get_cs_ranking failed: Could not reach GitHub: no route",
+        )
+
 
 class TournamentsTest(CsToolTest):
     async def test_stages_are_grouped_by_event(self):
-        event = {"serie_id": 1, "tier": "s", "league": {"name": "IEM"}, "serie": {"full_name": "Cologne 2026"},
-                 "prizepool": "1000000 United States Dollar"}
-        self.serve({"/csgo/tournaments/running": [
-            event | {"name": "Groups", "begin_at": "2026-11-05T10:00:00Z", "end_at": "2026-11-08T10:00:00Z"},
-            event | {"name": "Playoffs", "begin_at": "2026-11-10T10:00:00Z", "end_at": "2026-11-15T10:00:00Z"},
-            {"serie_id": 2, "tier": "c", "name": "Small"},
-        ]})
-        self.assertEqual(await tools.get_cs_tournaments("ongoing"),
-                         "Running major CS events (tier S is the biggest):\n"
-                         "- IEM Cologne 2026 (tier S): 2026-11-05 to 2026-11-15, prize pool 1000000 USD, "
-                         "stages: Groups, Playoffs")
+        event = {
+            "serie_id": 1,
+            "tier": "s",
+            "league": {"name": "IEM"},
+            "serie": {"full_name": "Cologne 2026"},
+            "prizepool": "1000000 United States Dollar",
+        }
+        self.serve(
+            {
+                "/csgo/tournaments/running": [
+                    event | {"name": "Groups", "begin_at": "2026-11-05T10:00:00Z", "end_at": "2026-11-08T10:00:00Z"},
+                    event | {"name": "Playoffs", "begin_at": "2026-11-10T10:00:00Z", "end_at": "2026-11-15T10:00:00Z"},
+                    {"serie_id": 2, "tier": "c", "name": "Small"},
+                ]
+            }
+        )
+        self.assertEqual(
+            await tools.get_cs_tournaments("ongoing"),
+            "Running major CS events (tier S is the biggest):\n"
+            "- IEM Cologne 2026 (tier S): 2026-11-05 to 2026-11-15, prize pool 1000000 USD, "
+            "stages: Groups, Playoffs",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

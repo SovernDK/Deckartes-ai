@@ -28,14 +28,18 @@ TIME_LINE = "Current local time: 12:00."
 TIME = {"role": "system", "content": TIME_LINE}
 SEASON_TEXT = "Today is Wednesday 2026-11-11. Current anime season: Fall 2026."
 
+
 def chunk(content="", tool_calls=None, done=False):
     return mlx_client.Delta(content, tool_calls or [], mlx_client.TokenCount(10, 5, 10**9) if done else None)
+
 
 def think(text):
     return mlx_client.Delta(reasoning=text)
 
+
 def call(tool, **arguments):
     return mlx_client.ToolCall(f"call_{tool}", tool, arguments)
+
 
 class FakeClient:
     """Stands in for mlx_client's chat calls: answers each with the next round's chunks (an
@@ -67,6 +71,7 @@ class FakeClient:
                 yield chunk
         finally:
             self.closed += 1
+
 
 class TurnTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -100,14 +105,18 @@ class TurnTest(unittest.IsolatedAsyncioTestCase):
     def sent_contents(self, client, index=0):
         return [message["content"] for message in client.sent[index]["messages"]]
 
+
 class ReplacedToolFunctionsTest(TurnTest):
     async def test_a_replaced_tool_runner_answers_instead_of_the_real_tool_with_the_turns_confirm(self):
         calls = []
+
         async def runner(name, arguments, confirm):
             calls.append((name, arguments, confirm))
             return "fake result"
+
         async def confirm(question):
             return True
+
         client = self.use([chunk(tool_calls=[call("get_cs_team", name="NAVI")], done=True)], [chunk("done", done=True)])
         self.conversation = Conversation(tool_runner=runner)
         [event async for event in self.conversation.stream_reply("q", confirm)]
@@ -118,28 +127,42 @@ class ReplacedToolFunctionsTest(TurnTest):
         add = call("add_calendar_event", title="Dentist", date="2026-11-12", start_time="14:30")
         client = self.use([chunk(tool_calls=[add], done=True)], [chunk("sorry", done=True)])
         await self.reply()
-        self.assertEqual(client.sent[1]["messages"][-1]["content"],
-                         "Tool add_calendar_event needs the user's confirmation, which can't be asked for here, "
-                         "so nothing was changed")
+        self.assertEqual(
+            client.sent[1]["messages"][-1]["content"],
+            "Tool add_calendar_event needs the user's confirmation, which can't be asked for here, "
+            "so nothing was changed",
+        )
 
     async def test_a_replaced_tool_selector_decides_what_is_sent(self):
         async def selector(question, previous):
             self.assertEqual((question, previous), ("q", None))
             return tool_router.Selection(None, ["cs"])
+
         client = self.use([chunk("hi", done=True)])
         self.conversation = Conversation(tool_selector=selector)
         await self.reply()
         self.assertIsNone(client.sent[0]["tools"])
         self.assertEqual(self.conversation.last_turn.tool_groups, ["cs"])
 
+
 class ThinkingTest(TurnTest):
     async def test_thinking_is_streamed_but_never_saved_or_sent_back(self):
-        client = self.use([think("Need the team."), chunk(tool_calls=[call("get_cs_team", name="NAVI")], done=True)],
-                          [think("Got it."), chunk("NAVI is fine.", done=True)])
+        client = self.use(
+            [think("Need the team."), chunk(tool_calls=[call("get_cs_team", name="NAVI")], done=True)],
+            [think("Got it."), chunk("NAVI is fine.", done=True)],
+        )
         self.conversation = Conversation(tool_runner=mock.AsyncMock(return_value="result"))
         events = await self.reply("hi")
-        self.assertEqual(events, [Thinking("Need the team."), ToolStarted("get_cs_team"), ToolsDone(),
-                                  Thinking("Got it."), Text("NAVI is fine.")])
+        self.assertEqual(
+            events,
+            [
+                Thinking("Need the team."),
+                ToolStarted("get_cs_team"),
+                ToolsDone(),
+                Thinking("Got it."),
+                Text("NAVI is fine."),
+            ],
+        )
         self.assertEqual(self.conversation.history[-1], {"role": "assistant", "content": "NAVI is fine."})
         self.assertNotIn("Need the team.", str(client.sent[1]["messages"]))
         started = events[1]
@@ -153,12 +176,15 @@ class ThinkingTest(TurnTest):
         self.assertEqual(self.conversation.history, [])
         self.assertEqual(self.conversation.total_usage.total, 15)
 
+
 class FinishedTurnTest(TurnTest):
     async def test_reply_is_streamed_saved_and_counted(self):
         self.use([chunk("Hel"), chunk("lo", done=True)])
         self.assertEqual(await self.reply("hi"), [Text("Hel"), Text("lo")])
-        self.assertEqual(self.conversation.history, [TIME, {"role": "user", "content": "hi"},
-                                                     {"role": "assistant", "content": "Hello"}])
+        self.assertEqual(
+            self.conversation.history,
+            [TIME, {"role": "user", "content": "hi"}, {"role": "assistant", "content": "Hello"}],
+        )
         usage = self.conversation.last_turn.usage
         self.assertEqual((usage.input, usage.output), (10, 5))
         self.assertEqual(self.conversation.total_usage.total, 15)
@@ -166,8 +192,10 @@ class FinishedTurnTest(TurnTest):
     async def test_system_message_comes_first(self):
         client = self.use([chunk("ok", done=True)])
         await self.reply("hi")
-        self.assertEqual(client.sent[0]["messages"], [{"role": "system", "content": DATE_LINE}, TIME,
-                                                      {"role": "user", "content": "hi"}])
+        self.assertEqual(
+            client.sent[0]["messages"],
+            [{"role": "system", "content": DATE_LINE}, TIME, {"role": "user", "content": "hi"}],
+        )
 
     async def test_history_is_sent_with_the_next_question(self):
         client = self.use([chunk("first", done=True)], [chunk("second", done=True)])
@@ -182,7 +210,7 @@ class FinishedTurnTest(TurnTest):
         freeze(self, "2026-11-11 12:07")
         await self.reply("two")
         first, second = client.sent[0]["messages"], client.sent[1]["messages"]
-        self.assertEqual(second[:len(first)], first)
+        self.assertEqual(second[: len(first)], first)
         self.assertEqual(second[-2]["content"], "Current local time: 12:07.")
 
     async def test_empty_reply_is_not_saved(self):
@@ -212,6 +240,7 @@ class FinishedTurnTest(TurnTest):
         self.assertEqual(self.conversation.total_usage.total, 0)
         self.assertEqual(self.conversation.history, [])
 
+
 class CompactTest(TurnTest):
     def setUp(self):
         super().setUp()
@@ -224,11 +253,18 @@ class CompactTest(TurnTest):
         self.assertEqual(await self.reply("two"), [Compacting(), Compacted(), Text("second")])
         summary = "Summary of the conversation so far:\nthe gist"
         self.assertEqual(self.sent_contents(client, 2), [DATE_LINE, summary, TIME_LINE, "two"])
-        self.assertEqual(client.sent[1]["messages"][1]["content"],
-                         f"system: {TIME_LINE}\n\nuser: one\n\nassistant: first")
-        self.assertEqual(self.conversation.history, [{"role": "system", "content": summary}, TIME,
-                                                     {"role": "user", "content": "two"},
-                                                     {"role": "assistant", "content": "second"}])
+        self.assertEqual(
+            client.sent[1]["messages"][1]["content"], f"system: {TIME_LINE}\n\nuser: one\n\nassistant: first"
+        )
+        self.assertEqual(
+            self.conversation.history,
+            [
+                {"role": "system", "content": summary},
+                TIME,
+                {"role": "user", "content": "two"},
+                {"role": "assistant", "content": "second"},
+            ],
+        )
 
     async def test_small_context_is_left_alone(self):
         self.patch(config, "compact_at", 0.5)
@@ -256,24 +292,43 @@ class CompactTest(TurnTest):
         self.conversation.clear()
         self.assertFalse(self.conversation.needs_compacting())
 
+
 class ToolRoundTest(TurnTest):
     async def test_tool_result_goes_back_to_the_model(self):
-        client = self.use([chunk("Let me check."), chunk(tool_calls=[call("get_current_season")], done=True)],
-                          [chunk("It is fall.", done=True)])
-        self.assertEqual(await self.reply(), [Text("Let me check."), Text("\n\n"), ToolStarted("get_current_season"),
-                                              ToolsDone(), Text("It is fall.")])
-        self.assertEqual(client.sent[1]["messages"][-2:], [
-            {"role": "assistant", "content": "Let me check.",
-             "tool_calls": [{"id": "call_get_current_season", "type": "function",
-                             "function": {"name": "get_current_season", "arguments": "{}"}}]},
-            {"role": "tool", "tool_call_id": "call_get_current_season", "content": SEASON_TEXT},
-        ])
+        client = self.use(
+            [chunk("Let me check."), chunk(tool_calls=[call("get_current_season")], done=True)],
+            [chunk("It is fall.", done=True)],
+        )
+        self.assertEqual(
+            await self.reply(),
+            [Text("Let me check."), Text("\n\n"), ToolStarted("get_current_season"), ToolsDone(), Text("It is fall.")],
+        )
+        self.assertEqual(
+            client.sent[1]["messages"][-2:],
+            [
+                {
+                    "role": "assistant",
+                    "content": "Let me check.",
+                    "tool_calls": [
+                        {
+                            "id": "call_get_current_season",
+                            "type": "function",
+                            "function": {"name": "get_current_season", "arguments": "{}"},
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "call_get_current_season", "content": SEASON_TEXT},
+            ],
+        )
         self.assertEqual(self.conversation.history[-1]["content"], "Let me check.\n\nIt is fall.")
         self.assertEqual(self.conversation.last_turn.usage.input, 20)
 
     async def test_tool_messages_are_not_kept_between_turns(self):
-        client = self.use([chunk(tool_calls=[call("get_current_season")], done=True)], [chunk("fall", done=True)],
-                          [chunk("ok", done=True)])
+        client = self.use(
+            [chunk(tool_calls=[call("get_current_season")], done=True)],
+            [chunk("fall", done=True)],
+            [chunk("ok", done=True)],
+        )
         await self.reply("one")
         await self.reply("two")
         self.assertEqual(self.sent_contents(client, 2), [DATE_LINE, TIME_LINE, "one", "fall", TIME_LINE, "two"])
@@ -282,9 +337,14 @@ class ToolRoundTest(TurnTest):
         bad = mlx_client.ToolCall("call_1", "get_cs_team", None)
         client = self.use([chunk(tool_calls=[bad], done=True)], [chunk("sorry", done=True)])
         await self.reply()
-        self.assertEqual(client.sent[1]["messages"][-1], {
-            "role": "tool", "tool_call_id": "call_1",
-            "content": "Tool get_cs_team failed: its arguments were not valid JSON"})
+        self.assertEqual(
+            client.sent[1]["messages"][-1],
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": "Tool get_cs_team failed: its arguments were not valid JSON",
+            },
+        )
 
     async def test_round_without_text_has_no_break(self):
         self.use([chunk(tool_calls=[call("a"), call("b")], done=True)], [chunk("ok", done=True)])
@@ -296,6 +356,7 @@ class ToolRoundTest(TurnTest):
         self.assertEqual(events[-1], Failed(f"model still calling tools after {MAX_TOOL_ROUNDS} rounds"))
         self.assertEqual(events.count(ToolsDone()), MAX_TOOL_ROUNDS)
         self.assertEqual(self.conversation.history, [])
+
 
 class RoutingTest(TurnTest):
     async def test_chosen_tools_are_sent_and_recorded(self):
@@ -312,6 +373,7 @@ class RoutingTest(TurnTest):
         await self.reply("and tomorrow?")
         self.assertEqual(names(client.sent[1]["tools"]), group_tools("anime"))
         self.assertEqual(self.conversation.last_turn.tool_groups, ["anime"])
+
 
 class FailedTurnTest(TurnTest):
     async def test_failure_is_last_and_turn_is_not_saved_but_counted(self):
@@ -347,6 +409,7 @@ class FailedTurnTest(TurnTest):
                 break
         self.assertEqual(client.closed, 1)
 
+
 class SummaryTest(unittest.TestCase):
     def test_no_summary_when_nothing_was_sent(self):
         self.assertIsNone(TurnInfo().summary())
@@ -358,15 +421,18 @@ class SummaryTest(unittest.TestCase):
         self.assertEqual(TurnInfo(Usage(input=1)).summary(), "1 in · 0 out · 1 token")
 
     def test_summary_adds_the_generation_speed_when_known(self):
-        self.assertEqual(TurnInfo(Usage(input=1, output=5, output_ns=2_000_000_000)).summary(),
-                         "1 in · 5 out · 6 tokens · 2.5 tok/s")
+        self.assertEqual(
+            TurnInfo(Usage(input=1, output=5, output_ns=2_000_000_000)).summary(), "1 in · 5 out · 6 tokens · 2.5 tok/s"
+        )
 
     def test_summary_names_the_tool_groups_sent(self):
-        self.assertEqual(TurnInfo(Usage(input=1), tool_groups=["cs", "anime"]).summary(),
-                         "1 in · 0 out · 1 token · tools: cs, anime")
+        self.assertEqual(
+            TurnInfo(Usage(input=1), tool_groups=["cs", "anime"]).summary(), "1 in · 0 out · 1 token · tools: cs, anime"
+        )
 
     def test_summary_says_none_when_the_router_chose_no_tools(self):
         self.assertEqual(TurnInfo(Usage(input=1), tool_groups=[]).summary(), "1 in · 0 out · 1 token · tools: none")
+
 
 if __name__ == "__main__":
     unittest.main()

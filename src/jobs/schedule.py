@@ -19,10 +19,12 @@ PREFIX = "com.deckartes."
 LAUNCH_AGENTS = Path.home() / "Library" / "LaunchAgents"
 LOGS = Path.home() / ".cache" / "deckartes"
 
+
 @dataclass(frozen=True)
 class Job:
     """A module run with `python -m` from src/ at hour:minute local time: every day, or only on a
     weekday (0 = Sunday, as launchd counts) or a day of the month."""
+
     name: str
     module: str
     hour: int
@@ -34,10 +36,12 @@ class Job:
     def label(self) -> str:
         return PREFIX + self.name
 
+
 JOBS = [
     Job("anime-digest", "jobs.anime_digest", hour=9, minute=0),
     Job("bank-digest", "jobs.bank_digest", hour=9, minute=5),
 ]
+
 
 def launch_agent(job: Job) -> dict:
     """The job's launchd plist."""
@@ -47,16 +51,21 @@ def launch_agent(job: Job) -> dict:
     if job.day is not None:
         when["Day"] = job.day
     log = str(LOGS / f"{job.name}.log")
-    return {"Label": job.label,
-            "ProgramArguments": [str(PROJECT_ROOT / "venv" / "bin" / "python"), "-m", job.module],
-            "WorkingDirectory": str(PROJECT_ROOT / "src"),
-            # A run missed during sleep happens on wake; several missed ones count as one
-            "StartCalendarInterval": when,
-            "StandardOutPath": log, "StandardErrorPath": log}
+    return {
+        "Label": job.label,
+        "ProgramArguments": [str(PROJECT_ROOT / "venv" / "bin" / "python"), "-m", job.module],
+        "WorkingDirectory": str(PROJECT_ROOT / "src"),
+        # A run missed during sleep happens on wake; several missed ones count as one
+        "StartCalendarInterval": when,
+        "StandardOutPath": log,
+        "StandardErrorPath": log,
+    }
+
 
 def _launchctl(*arguments: str, check: bool = True) -> bool:
     """Run launchctl in the user's GUI domain; whether it succeeded."""
     return subprocess.run(["launchctl", *arguments], capture_output=True, check=check).returncode == 0
+
 
 def apply(wanted: list[Job]) -> list[str]:
     """Make launchd run exactly these jobs; returns what changed, one line each."""
@@ -82,6 +91,7 @@ def apply(wanted: list[Job]) -> list[str]:
         _launchctl("bootstrap", domain, str(path))
         changes.append(f"{'Updated' if loaded else 'Loaded'} {job.label}")
     return changes
+
 
 if __name__ == "__main__":
     print("\n".join(apply(JOBS)) or "Every job is already up to date")

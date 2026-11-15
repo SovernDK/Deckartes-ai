@@ -36,12 +36,15 @@ PARSER_FLAGS = {
     "liquidai/lfm3": ["--tool-call-parser", "nemotron", "--reasoning-parser", "qwen3"],
 }
 
+
 class ModelServerError(Exception):
     """A model server couldn't be started or reached, or refused a request. The message says why."""
 
+
 class _Server:
-    def __init__(self, name: str, url: Callable[[], str], arguments: Callable[[], list[str]],
-                 ready_path: str = READY_PATH) -> None:
+    def __init__(
+        self, name: str, url: Callable[[], str], arguments: Callable[[], list[str]], ready_path: str = READY_PATH
+    ) -> None:
         self.name = name
         self.url = url
         self.arguments = arguments
@@ -66,11 +69,17 @@ class _Server:
         try:
             with open(self.log_path, "w") as log:
                 # Its own process group, so stop() also reaches anything it starts
-                self.process = subprocess.Popen([program, *self.arguments()], stdin=subprocess.DEVNULL,
-                                                stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                self.process = subprocess.Popen(
+                    [program, *self.arguments()],
+                    stdin=subprocess.DEVNULL,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
         except OSError as e:
-            raise ModelServerError(f"Could not start {program}: {e}. "
-                                   "Install it with: uv tool install 'rapid-mlx[embeddings]'") from e
+            raise ModelServerError(
+                f"Could not start {program}: {e}. Install it with: uv tool install 'rapid-mlx[embeddings]'"
+            ) from e
 
     def _wait_until_ready(self) -> None:
         process = self.process
@@ -84,8 +93,9 @@ class _Server:
             if process is None and status is None:
                 raise ModelServerError(f"The {self.name} server at {self.url()} stopped answering")
             time.sleep(POLL_SECONDS)
-        raise ModelServerError(f"The {self.name} server wasn't ready after {START_LIMIT_SECONDS // 60} "
-                               f"minutes. See {self.log_path}")
+        raise ModelServerError(
+            f"The {self.name} server wasn't ready after {START_LIMIT_SECONDS // 60} minutes. See {self.log_path}"
+        )
 
     def ensure_running(self) -> None:
         with self.lock:
@@ -113,52 +123,75 @@ class _Server:
             process.wait()
         return True
 
+
 def _address(url: str) -> list[str]:
     parts = urlsplit(url)
     if not parts.hostname or not parts.port:
         raise ValueError(f"Model server URL {url!r} needs a host and a port")
     return ["--host", parts.hostname, "--port", str(parts.port)]
 
+
 def _chat_arguments() -> list[str]:
     model = config.model
     parsers = next((flags for start, flags in PARSER_FLAGS.items() if model.lower().startswith(start)), [])
-    return ["serve", model, *_address(config.host), "--yes", "--enable-auto-tool-choice", *parsers,
-            "--embedding-model", config.embed_model]
+    return [
+        "serve",
+        model,
+        *_address(config.host),
+        "--yes",
+        "--enable-auto-tool-choice",
+        *parsers,
+        "--embedding-model",
+        config.embed_model,
+    ]
+
 
 def _file_arguments() -> list[str]:
     return ["serve", *_address(config.file_embed_host), "--yes", "--embedding-model", config.rag_embed_model]
 
+
 def _decision_arguments() -> list[str]:
     model = config.decision_model
     if not model.is_dir():
-        raise ModelServerError(f"No decision model at {model}. Make it with: "
-                               f"~/.local/share/uv/tools/rapid-mlx/bin/python src/model/quantize_decider.py {model}")
+        raise ModelServerError(
+            f"No decision model at {model}. Make it with: "
+            f"~/.local/share/uv/tools/rapid-mlx/bin/python src/model/quantize_decider.py {model}"
+        )
     return ["system-one", str(model), "--backend", "decider", *_address(config.decision_host)]
+
 
 _chat = _Server("chat", lambda: config.host, _chat_arguments)
 _files = _Server("file search", lambda: config.file_embed_host, _file_arguments)
 _decisions = _Server("decision", lambda: config.decision_host, _decision_arguments, ready_path="/health")
 
+
 def ensure_chat() -> None:
     _chat.ensure_running()
+
 
 def ensure_files() -> None:
     _files.ensure_running()
 
+
 def ensure_decisions() -> None:
     _decisions.ensure_running()
+
 
 def stop_decisions() -> bool:
     return _decisions.stop()
 
+
 def chat_is_ready() -> bool:
     return _chat.status() == 200
+
 
 def restart_chat() -> None:
     _chat.stop()
     _chat.ensure_running()
 
+
 def stop_all() -> list[str]:
     return [server.name for server in (_chat, _files, _decisions) if server.stop()]
+
 
 atexit.register(stop_all)

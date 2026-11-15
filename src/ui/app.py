@@ -22,6 +22,7 @@ BANNER = r"""
 |____/ \___|\___|_|\_\__,_|_|   \__\___||___/
 """
 
+
 class DecartesApp(App):
     CSS_PATH = "../../chat.tcss"
     BINDINGS = [
@@ -29,29 +30,38 @@ class DecartesApp(App):
         ("m", "change_model", "Change Model"),
         ("c", "config", "Config"),
         Binding("e", "explorer", "Files", tooltip="Browse the home folder and save a file or folder to the library"),
-        Binding("r", "toggle_history", "History",
-                tooltip="Show or hide the saved conversations: enter opens one, d deletes it"),
-        Binding("s", "spending", "Spending",
-                tooltip="Label the payees of the last 30 days: the model labels them again, you pick the undecided"),
+        Binding(
+            "r",
+            "toggle_history",
+            "History",
+            tooltip="Show or hide the saved conversations: enter opens one, d deletes it",
+        ),
+        Binding(
+            "s",
+            "spending",
+            "Spending",
+            tooltip="Label the payees of the last 30 days: the model labels them again, you pick the undecided",
+        ),
         ("h", "help", "Help"),
         # Terminals report shift+t as "T" or as "shift+t"; the footer's mode label shows the key instead
-        Binding("T,shift+t", "toggle_detailed", "Mode", show=False, key_display="shift+t",
-                tooltip="Switch between Default and Detailed mode (the model's thinking and token usage)"),
+        Binding(
+            "T,shift+t",
+            "toggle_detailed",
+            "Mode",
+            show=False,
+            key_display="shift+t",
+            tooltip="Switch between Default and Detailed mode (the model's thinking and token usage)",
+        ),
         # priority: works while the input is hidden; only active while the model answers and
         # no text is selected (ctrl+c then copies the selection instead)
-        Binding("ctrl+c", "interrupt", "Stop", priority=True,
-                tooltip="Interrupt the model while it's answering"),
+        Binding("ctrl+c", "interrupt", "Stop", priority=True, tooltip="Interrupt the model while it's answering"),
     ]
 
     def compose(self) -> ComposeResult:
-            yield Header()
-            yield Horizontal(Footer(), Static(markup=False, id="mode"), id="footer_bar")
-            yield HistoryPanel()
-            yield Container(
-                Static(BANNER.strip("\n"), markup=False, id="banner"),
-                Chat(),
-                id="chat"
-            )
+        yield Header()
+        yield Horizontal(Footer(), Static(markup=False, id="mode"), id="footer_bar")
+        yield HistoryPanel()
+        yield Container(Static(BANNER.strip("\n"), markup=False, id="banner"), Chat(), id="chat")
 
     def on_mount(self) -> None:
         self.title = "Decartes"

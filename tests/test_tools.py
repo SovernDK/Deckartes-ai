@@ -28,8 +28,10 @@ class RegistryTest(unittest.TestCase):
     def test_registering_in_an_unknown_group_raises(self):
         async def new_tool() -> str:
             return ""
+
         with self.assertRaisesRegex(ValueError, "unknown tool group 'nope'"):
             tools.tool("nope")(new_tool)
+
 
 class PresetTest(unittest.TestCase):
     def test_presets_name_real_tools(self):
@@ -63,6 +65,7 @@ class PresetTest(unittest.TestCase):
     def test_tools_for_picks_named_tools_and_none_means_all(self):
         self.assertEqual(tools.tools_for(["get_cs_team"]), [tools.get_cs_team])
         self.assertIs(tools.tools_for(None), tools.TOOLS)
+
 
 if __name__ == "__main__":
     unittest.main()

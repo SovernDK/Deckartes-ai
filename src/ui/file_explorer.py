@@ -22,10 +22,11 @@ SCAN_BUDGET = 50_000
 # Wait this long after the highlight moves before scanning, so arrowing through a list is cheap
 SCAN_DELAY = 0.3
 
-class UserDirectoryTree(DirectoryTree):
 
+class UserDirectoryTree(DirectoryTree):
     def filter_paths(self, paths: Iterable[Path]) -> Iterable[Path]:
         return [entry for entry in paths if disk_scan.is_user_facing(entry)]
+
 
 class FileExplorerScreen(ModalScreen[Path | None]):
     BINDINGS = [("l", "load", "Save to library"), ("e", "close", "Close"), ("escape", "close", "Close")]

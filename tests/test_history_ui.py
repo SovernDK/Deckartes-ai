@@ -18,8 +18,12 @@ from ui.history_panel import HistoryPanel
 class HistoryUiTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.folder = temp_history(self)
-        for target, name, value in [(mlx_server, "ensure_chat", mock.Mock()), (config, "tool_routing", False),
-                                    (config, "compact_at", None), (config, "detailed", False)]:
+        for target, name, value in [
+            (mlx_server, "ensure_chat", mock.Mock()),
+            (config, "tool_routing", False),
+            (config, "compact_at", None),
+            (config, "detailed", False),
+        ]:
             patcher = mock.patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -54,8 +58,10 @@ class HistoryUiTest(unittest.IsolatedAsyncioTestCase):
     def shown(self, app) -> list[str]:
         """The questions and answers on screen."""
         response = app.query_one("#response")
-        return [widget.source if isinstance(widget, Markdown) else str(widget.render())
-                for widget in response.query(".user-msg, .ai-msg, .reply Markdown")]
+        return [
+            widget.source if isinstance(widget, Markdown) else str(widget.render())
+            for widget in response.query(".user-msg, .ai-msg, .reply Markdown")
+        ]
 
     def messages(self, app) -> list[str]:
         return [notification.message for notification in app._notifications]
@@ -68,8 +74,9 @@ class HistoryUiTest(unittest.IsolatedAsyncioTestCase):
             await self.settle(app, pilot)
             panel = await self.show_panel(app, pilot)
             self.assertTrue(panel.display)
-            self.assertEqual(self.entries(app), ["Newer question\n2026-11-11 10:00",
-                                                 "Older question\n2026-11-10 09:00 · Telegram"])
+            self.assertEqual(
+                self.entries(app), ["Newer question\n2026-11-11 10:00", "Older question\n2026-11-10 09:00 · Telegram"]
+            )
             await pilot.press("r")
             await pilot.pause()
             self.assertFalse(panel.display)

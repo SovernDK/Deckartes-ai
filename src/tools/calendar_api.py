@@ -28,22 +28,38 @@ SEARCH_FUTURE_DAYS = 365
 MAX_EVENTS = 60
 MAX_FOUND = 10
 ACCESS_TIMEOUT_SECONDS = 120
-MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august",
-          "september", "october", "november", "december"]
+MONTHS = [
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+]
 
 _store = None
 _store_lock = threading.Lock()
 
+
 def _request_access(store) -> bool:
     done = threading.Event()
     answer = {}
+
     def handler(granted, error):
         answer["granted"] = bool(granted)
         done.set()
+
     store.requestFullAccessToEventsWithCompletion_(handler)
     if not done.wait(ACCESS_TIMEOUT_SECONDS):
         raise TimeoutError("no answer to the macOS calendar permission prompt")
     return answer["granted"]
+
 
 def _event_store():
     global _store
@@ -55,27 +71,37 @@ def _event_store():
                 if not _request_access(store):
                     # Still undetermined: macOS refused without asking, which happens when the
                     # parent process isn't an app that can hold the permission
-                    if (EventKit.EKEventStore.authorizationStatusForEntityType_(EventKit.EKEntityTypeEvent)
-                            == EventKit.EKAuthorizationStatusNotDetermined):
-                        raise PermissionError("macOS refused calendar access without asking; run Deckartes "
-                                              "from a terminal app such as Terminal, iTerm or VS Code")
+                    if (
+                        EventKit.EKEventStore.authorizationStatusForEntityType_(EventKit.EKEntityTypeEvent)
+                        == EventKit.EKAuthorizationStatusNotDetermined
+                    ):
+                        raise PermissionError(
+                            "macOS refused calendar access without asking; run Deckartes "
+                            "from a terminal app such as Terminal, iTerm or VS Code"
+                        )
                     raise PermissionError("calendar access was denied")
                 # A store made before access was granted doesn't see the calendars
                 store = EventKit.EKEventStore.alloc().init()
             elif status != EventKit.EKAuthorizationStatusFullAccess:
-                raise PermissionError("no access to the calendar; allow it for this terminal app in "
-                                      "System Settings > Privacy & Security > Calendars")
+                raise PermissionError(
+                    "no access to the calendar; allow it for this terminal app in "
+                    "System Settings > Privacy & Security > Calendars"
+                )
             _store = store
     return _store
+
 
 def _nsdate(when: dt.datetime) -> NSDate:
     return NSDate.dateWithTimeIntervalSince1970_(when.timestamp())
 
+
 def _local(nsdate) -> dt.datetime:
     return dt.datetime.fromtimestamp(nsdate.timeIntervalSince1970(), clock.zone())
 
+
 def _midnight(day: dt.date) -> dt.datetime:
     return dt.datetime.combine(day, dt.time.min, tzinfo=clock.zone())
+
 
 def _slim(event) -> dict:
     item = {
@@ -89,6 +115,7 @@ def _slim(event) -> dict:
         item["location"] = event.location().replace("\n", ", ")
     return item
 
+
 def _events_between(start: dt.datetime, end: dt.datetime) -> list:
     """EKEvents overlapping start..end in every calendar, soonest first; recurring ones expanded."""
     store = _event_store()
@@ -99,13 +126,16 @@ def _events_between(start: dt.datetime, end: dt.datetime) -> list:
     matching = list(store.eventsMatchingPredicate_(predicate) or [])
     return sorted(matching, key=lambda event: event.startDate().timeIntervalSince1970())
 
+
 def _events_on(day: dt.date) -> dict:
     in_range = _events_between(_midnight(day), _midnight(day + dt.timedelta(days=1)))
     return {"first": day, "last": day, "events": [_slim(event) for event in in_range[:MAX_EVENTS]]}
 
+
 def _month_end(first: dt.date) -> dt.date:
     next_first = (first.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
     return next_first - dt.timedelta(days=1)
+
 
 def _period(period: str) -> tuple[dt.date, dt.date, str]:
     """First and last day of a period, and how to name it. "this week" / "this month" start today;
@@ -130,14 +160,17 @@ def _period(period: str) -> tuple[dt.date, dt.date, str]:
     try:
         first = dt.date.fromisoformat(f"{key}-01")
     except ValueError:
-        raise ValueError(f"Period {period!r} must be \"this week\", \"next week\", \"this month\", "
-                         f"\"next month\", a month name or YYYY-MM")
+        raise ValueError(
+            f'Period {period!r} must be "this week", "next week", "this month", "next month", a month name or YYYY-MM'
+        )
     return first, _month_end(first), f"{first:%B %Y}"
+
 
 def _period_events(period: str) -> dict:
     first, last, name = _period(period)
     in_range = _events_between(_midnight(first), _midnight(last + dt.timedelta(days=1)))
     return {"first": first, "last": last, "name": name, "events": [_slim(event) for event in in_range[:MAX_EVENTS]]}
+
 
 def _find_events(query: str) -> dict:
     """Events whose title, location or notes contain query: the next MAX_FOUND and the latest past one."""
@@ -146,13 +179,21 @@ def _find_events(query: str) -> dict:
         raise ValueError("Give a word to search for")
     now = clock.now()
     in_range = _events_between(now - dt.timedelta(days=SEARCH_PAST_DAYS), now + dt.timedelta(days=SEARCH_FUTURE_DAYS))
-    matches = [_slim(event) for event in in_range
-               if any(needle in (text or "").casefold() for text in (event.title(), event.location(), event.notes()))]
+    matches = [
+        _slim(event)
+        for event in in_range
+        if any(needle in (text or "").casefold() for text in (event.title(), event.location(), event.notes()))
+    ]
     upcoming = [event for event in matches if event["end"] > now]
     past = [event for event in matches if event["end"] <= now]
-    return {"query": query, "upcoming": upcoming[:MAX_FOUND], "last_past": past[-1] if past else None,
-            "from": (now - dt.timedelta(days=SEARCH_PAST_DAYS)).date(),
-            "to": (now + dt.timedelta(days=SEARCH_FUTURE_DAYS)).date()}
+    return {
+        "query": query,
+        "upcoming": upcoming[:MAX_FOUND],
+        "last_past": past[-1] if past else None,
+        "from": (now - dt.timedelta(days=SEARCH_PAST_DAYS)).date(),
+        "to": (now + dt.timedelta(days=SEARCH_FUTURE_DAYS)).date(),
+    }
+
 
 def _target_calendar():
     store = _event_store()
@@ -161,15 +202,20 @@ def _target_calendar():
         if calendar is None:
             raise ValueError("there is no default calendar for new events; set config.calendar_name")
         return calendar
-    writable = [calendar for calendar in store.calendarsForEntityType_(EventKit.EKEntityTypeEvent)
-                if calendar.allowsContentModifications()]
+    writable = [
+        calendar
+        for calendar in store.calendarsForEntityType_(EventKit.EKEntityTypeEvent)
+        if calendar.allowsContentModifications()
+    ]
     for calendar in writable:
         if calendar.title().casefold() == config.calendar_name.casefold():
             return calendar
     names = ", ".join(calendar.title() for calendar in writable)
     raise ValueError(f"no calendar named {config.calendar_name!r}; calendars you can add to: {names}")
 
+
 DEFAULT_EVENT_LENGTH = dt.timedelta(hours=1)
+
 
 def _new_event(title: str, date: str, start_time: str, end_date: str | None, end_time: str | None) -> dict:
     """Check and complete an event to add, without saving it. end_date is the event's last day,
@@ -187,7 +233,7 @@ def _new_event(title: str, date: str, start_time: str, end_date: str | None, end
         try:
             at = dt.time.fromisoformat(start_time.strip())
         except ValueError:
-            raise ValueError(f"Start time {start_time!r} must be HH:MM (24-hour) or \"all-day\"")
+            raise ValueError(f'Start time {start_time!r} must be HH:MM (24-hour) or "all-day"')
         start = dt.datetime.combine(day, at, tzinfo=clock.zone())
         if end_time and end_time.strip():
             try:
@@ -199,18 +245,23 @@ def _new_event(title: str, date: str, start_time: str, end_date: str | None, end
             end = start + DEFAULT_EVENT_LENGTH
         all_day = False
         if end <= start:
-            raise ValueError(f"The event would end at {end:%A %Y-%m-%d %H:%M}, not after its start at "
-                             f"{start:%A %Y-%m-%d %H:%M}; one that runs past midnight needs a later end_date")
+            raise ValueError(
+                f"The event would end at {end:%A %Y-%m-%d %H:%M}, not after its start at "
+                f"{start:%A %Y-%m-%d %H:%M}; one that runs past midnight needs a later end_date"
+            )
     # A past date is almost always a wrong year or day from the model
     if (end if all_day else start) <= clock.now():
         raise ValueError(f"{start:%A %Y-%m-%d %H:%M} is in the past; today is {clock.today():%A %Y-%m-%d}")
-    return {"title": title, "start": start, "end": end, "all_day": all_day,
-            "calendar": _target_calendar().title()}
+    return {"title": title, "start": start, "end": end, "all_day": all_day, "calendar": _target_calendar().title()}
+
 
 def _is_duplicate(event: dict) -> bool:
     existing = _events_between(event["start"], event["end"])
-    return any(_slim(other)["title"].casefold() == event["title"].casefold() and _slim(other)["start"] == event["start"]
-               for other in existing)
+    return any(
+        _slim(other)["title"].casefold() == event["title"].casefold() and _slim(other)["start"] == event["start"]
+        for other in existing
+    )
+
 
 def save_event(event: dict) -> None:
     store = _event_store()
@@ -224,8 +275,10 @@ def save_event(event: dict) -> None:
     if not saved:
         raise RuntimeError(error.localizedDescription() if error else "Calendar refused to save the event")
 
+
 def _day(day: dt.date) -> str:
     return f"{day:%A %Y-%m-%d}"
+
 
 def _when(event: dict, with_date: bool) -> str:
     start, end = event["start"], event["end"]
@@ -239,9 +292,11 @@ def _when(event: dict, with_date: bool) -> str:
         span = f"{start:%H:%M} to {_day(end.date())} {end:%H:%M}"
     return f"{_day(start.date())} {span}" if with_date else span
 
+
 def _last_day(event: dict) -> dt.date:
     # An event ending at midnight doesn't reach the day that starts then
     return max((event["end"] - dt.timedelta(seconds=1)).date(), event["start"].date())
+
 
 def _event_line(event: dict, with_date: bool = False) -> str:
     about = [f"calendar {event['calendar']}"] if event.get("calendar") else []
@@ -249,6 +304,7 @@ def _event_line(event: dict, with_date: bool = False) -> str:
         about.append(f"at {event['location']}")
     extra = f" ({'; '.join(about)})" if about else ""
     return f"{event['title']}: {_when(event, with_date)}{extra}"
+
 
 def _events_text(result: dict) -> str:
     first, last, listed = result["first"], result["last"], result["events"]
@@ -276,11 +332,11 @@ def _events_text(result: dict) -> str:
         lines.append(f"(only the first {MAX_EVENTS} events are listed)")
     return "\n".join(lines)
 
+
 def _found_text(result: dict) -> str:
     query = result["query"]
     if not result["upcoming"] and not result["last_past"]:
-        return (f"No calendar events matching {query!r} between {_day(result['from'])} "
-                f"and {_day(result['to'])}.")
+        return f"No calendar events matching {query!r} between {_day(result['from'])} and {_day(result['to'])}."
     lines = []
     if result["upcoming"]:
         lines.append(f"Upcoming calendar events matching {query!r}, soonest first (local time):")
@@ -291,17 +347,27 @@ def _found_text(result: dict) -> str:
         lines.append(f"Most recent past one: {_event_line(result['last_past'], with_date=True)}")
     return "\n".join(lines)
 
+
 async def events_on(date: str) -> str:
     return _events_text(await asyncio.to_thread(_events_on, clock.parse_date(date)))
+
 
 async def period_events(period: str) -> str:
     return _events_text(await asyncio.to_thread(_period_events, period))
 
+
 async def find_events(query: str) -> str:
     return _found_text(await asyncio.to_thread(_find_events, query))
 
-async def add_event(title: str, date: str, start_time: str, end_date: str | None, end_time: str | None,
-                    confirm: Callable[[str], Awaitable[bool]]) -> str:
+
+async def add_event(
+    title: str,
+    date: str,
+    start_time: str,
+    end_date: str | None,
+    end_time: str | None,
+    confirm: Callable[[str], Awaitable[bool]],
+) -> str:
     """Add an event unless it's already there or the user, asked through confirm, declines."""
     event = await asyncio.to_thread(_new_event, title, date, start_time, end_date, end_time)
     summary = _event_line(event, with_date=True)

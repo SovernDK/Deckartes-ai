@@ -23,5 +23,6 @@ async def run() -> int:
 
     return await runner.run(message, errors=(BankingError,), done=lambda: spending.save(outgoing))
 
+
 if __name__ == "__main__":
     sys.exit(runner.main(run))

@@ -19,15 +19,18 @@ from ui.file_explorer import FileExplorerScreen, UserDirectoryTree
 def embed(texts):
     return [[1.0, 0.0] for _ in texts]
 
+
 class LibraryUiTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         temp_history(self)
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.folder = Path(folder.name).resolve()
-        for target, name, value in [(mlx_server, "ensure_chat", mock.Mock()),
-                                    (config, "library_path", self.folder / "data" / "library.db"),
-                                    (mlx_client, "embed_file_text", embed)]:
+        for target, name, value in [
+            (mlx_server, "ensure_chat", mock.Mock()),
+            (config, "library_path", self.folder / "data" / "library.db"),
+            (mlx_client, "embed_file_text", embed),
+        ]:
             patcher = mock.patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -90,7 +93,9 @@ class LibraryUiTest(unittest.IsolatedAsyncioTestCase):
             await self.settle(app, pilot)
             app.query_one(Chat).load_file(self.docs / "bad.txt")
             await self.settle(app, pilot)
-            self.assertEqual(self.messages(app), ["this looks like a binary file; only text files and PDFs can be loaded"])
+            self.assertEqual(
+                self.messages(app), ["this looks like a binary file; only text files and PDFs can be loaded"]
+            )
             self.assertEqual(self.saved(), [])
 
     async def test_library_command_shows_the_saved_files_outside_the_conversation(self):
@@ -147,6 +152,7 @@ class LibraryUiTest(unittest.IsolatedAsyncioTestCase):
             app.query_one(Chat).run_command("forget")
             await self.settle(app, pilot)
             self.assertEqual(self.messages(app), ["Usage: /forget <path or file name>"])
+
 
 if __name__ == "__main__":
     unittest.main()

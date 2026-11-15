@@ -9,3 +9,6 @@ ignore = [
     "BLE001",  # catch-alls are the design at boundaries: a turn never raises, a tool failure becomes text for the model
     "RUF012",  # Textual's BINDINGS and similar class-level tables are plain lists by convention and never mutated
 ]
+
+[tool.ruff.format]
+docstring-code-format = true

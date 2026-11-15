@@ -31,8 +31,10 @@ class ClockTest(unittest.TestCase):
         self.in_zone("Europe/Warsaw")
         self.assertEqual(clock.to_local("2026-11-11T12:00:00+09:00").isoformat(), "2026-11-11T04:00:00+01:00")
 
+
 if __name__ == "__main__":
     unittest.main()
+
 
 class FrozenClockTest(unittest.TestCase):
     MOMENT = dt.datetime(2026, 11, 11, 19, 30, tzinfo=dt.UTC)

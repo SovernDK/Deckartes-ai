@@ -36,18 +36,31 @@ FOLLOW_UP_STARTS = ("and ", "what about ", "how about ")
 FOLLOW_UP_ANSWERS = {"yes", "yes please", "ok", "okay", "sure", "do it", "go ahead"}
 
 NO_TOOL_EXAMPLES = [
-    "hello", "thanks, that helps", "tell me a joke", "explain how recursion works", "write a poem",
-    "what is 12 times 7", "translate this sentence to Spanish", "fix this python code",
-    "what is the capital of France", "how are you?", "summarize what we talked about",
-    "give me a recipe for pancakes", "explain quantum physics simply",
-    "what is 20 percent of 150", "calculate 7% of 300", "how many minutes are in a day",
+    "hello",
+    "thanks, that helps",
+    "tell me a joke",
+    "explain how recursion works",
+    "write a poem",
+    "what is 12 times 7",
+    "translate this sentence to Spanish",
+    "fix this python code",
+    "what is the capital of France",
+    "how are you?",
+    "summarize what we talked about",
+    "give me a recipe for pancakes",
+    "explain quantum physics simply",
+    "what is 20 percent of 150",
+    "calculate 7% of 300",
+    "how many minutes are in a day",
 ]
 
 # Example embeddings per (host, model), one matrix of unit rows per group; computed once, on first use
 _examples: dict[tuple[str, str], dict[str | None, np.ndarray]] = {}
 
+
 async def _embed(texts: list[str]) -> list[list[float]]:
     return await mlx_client.embed(texts)
+
 
 def _unit(vectors: list[list[float]]) -> np.ndarray:
     """The vectors as rows scaled to length 1, so a matrix product gives their cosines."""
@@ -56,6 +69,7 @@ def _unit(vectors: list[list[float]]) -> np.ndarray:
     if not norms.all():
         raise ValueError("The embedding model returned an all-zero vector")
     return matrix / norms
+
 
 async def _example_vectors() -> dict[str | None, np.ndarray]:
     key = (config.host, config.embed_model)
@@ -68,28 +82,35 @@ async def _example_vectors() -> dict[str | None, np.ndarray]:
         _examples[key] = {name: vectors[start:end] for name, start, end in zip(groups, bounds, bounds[1:])}
     return _examples[key]
 
+
 def _scores(vector: np.ndarray, examples: dict) -> dict:
     """Best cosine similarity of a unit vector to each group's examples (None = the no-tools examples)."""
     return {name: float((matrix @ vector).max()) for name, matrix in examples.items()}
+
 
 def _is_follow_up(query: str) -> bool:
     text = query.strip().lower()
     if len(text.split()) > FOLLOW_UP_WORDS:
         return False
     # A short message with a number ("18 to 20") is the missing detail of the question before it
-    return text.startswith(FOLLOW_UP_STARTS) or text.rstrip("!. ") in FOLLOW_UP_ANSWERS \
+    return (
+        text.startswith(FOLLOW_UP_STARTS)
+        or text.rstrip("!. ") in FOLLOW_UP_ANSWERS
         or any(character.isdigit() for character in text)
+    )
+
 
 async def _route(query: str, previous: str | None, groups: list[str]) -> tuple[list[str], dict[str, float]]:
     """Names of the groups (among groups) to send for query, [] meaning no tools, and the scores
     they were chosen on: each group's, and "no_tools". Raises if the embedding model can't be reached."""
-    examples = {name: vectors for name, vectors in (await _example_vectors()).items()
-                if name is None or name in groups}
+    examples = {name: vectors for name, vectors in (await _example_vectors()).items() if name is None or name in groups}
     vectors = _unit(await _embed([query, previous] if previous else [query]))
     scores = _scores(vectors[0], examples)
     no_tools = scores.pop(None)
+
     def chosen(group_names: list[str]) -> tuple[list[str], dict[str, float]]:
         return group_names, {**scores, "no_tools": no_tools}
+
     if not scores:
         return chosen([])
     best = max(scores.values())
@@ -110,6 +131,7 @@ async def _route(query: str, previous: str | None, groups: list[str]) -> tuple[l
         return chosen([])
     return chosen(ranked[:UNSURE_GROUPS])
 
+
 @dataclass
 class Selection:
     # Tools to send with the question; None for none
@@ -118,6 +140,7 @@ class Selection:
     groups: list[str] | None
     # What it chose them on: each group's score and "no_tools"; None when it didn't run
     scores: dict[str, float] | None = None
+
 
 async def select_tools(question: str, previous: str | None) -> Selection:
     """Tools for a question (previous is the one before it, if any): those the current prompt preset allows, narrowed

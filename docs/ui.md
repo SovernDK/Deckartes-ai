@@ -7,8 +7,11 @@ Verify UI changes headlessly with Textual's pilot instead of launching the app:
 ```python
 app = DecartesApp()
 async with app.run_test(size=(100, 30)) as pilot:
-    app.query_one(Input).focus(); app.query_one(Input).value = "hi"
-    await pilot.press("enter"); await app.workers.wait_for_complete(); await pilot.pause()
+    app.query_one(Input).focus()
+    app.query_one(Input).value = "hi"
+    await pilot.press("enter")
+    await app.workers.wait_for_complete()
+    await pilot.pause()
     app.save_screenshot("shot.svg")
 ```
 

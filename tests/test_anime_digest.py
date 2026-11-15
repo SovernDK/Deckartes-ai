@@ -18,12 +18,18 @@ SEND = f"/bot{TOKEN}/sendMessage"
 SEND_OK = {"ok": True, "result": {"message_id": 7}}
 AIRING = episode("f", "Frieren", "2026-11-11T16:30:00Z", 5)
 
+
 class DigestScriptTest(HttpTest):
     def setUp(self):
         freeze(self, "2026-11-11 12:00")
-        for target, name, value in ((config, "telegram_token", TOKEN), (config, "telegram_user_id", str(OWNER)),
-                                    (config, "animeschedule_token", "token"), (config, "animeschedule_user", "tester"),
-                                    (config, "anime_air_type", "sub"), (runner, "RETRY_SECONDS", 0)):
+        for target, name, value in (
+            (config, "telegram_token", TOKEN),
+            (config, "telegram_user_id", str(OWNER)),
+            (config, "animeschedule_token", "token"),
+            (config, "animeschedule_user", "tester"),
+            (config, "anime_air_type", "sub"),
+            (runner, "RETRY_SECONDS", 0),
+        ):
             patcher = mock.patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -38,22 +44,35 @@ class DigestScriptTest(HttpTest):
     async def test_sends_the_digest_to_the_owner(self):
         server = self.serve_digest(AIRING)
         self.assertEqual(await anime_digest.run(), 0)
-        self.assertEqual(self.sent(server), [{"chat_id": OWNER, "text": "Airing today, Wednesday 11 November:\n"
-                                                                        "- Frieren: episode 5 at 17:30"}])
+        self.assertEqual(
+            self.sent(server),
+            [{"chat_id": OWNER, "text": "Airing today, Wednesday 11 November:\n- Frieren: episode 5 at 17:30"}],
+        )
 
     async def test_a_long_digest_arrives_in_parts_under_the_limit(self):
-        server = self.serve({USER_LIST: on_list(watching=["f", "b", "o"]), SEND: SEND_OK,
-                             TIMETABLE: weekly(AIRING, episode("b", "Bocchi the Rock", "2026-11-11T17:00:00Z", 2),
-                                               episode("o", "Oshi no Ko", "2026-11-11T18:00:00Z", 3))})
+        server = self.serve(
+            {
+                USER_LIST: on_list(watching=["f", "b", "o"]),
+                SEND: SEND_OK,
+                TIMETABLE: weekly(
+                    AIRING,
+                    episode("b", "Bocchi the Rock", "2026-11-11T17:00:00Z", 2),
+                    episode("o", "Oshi no Ko", "2026-11-11T18:00:00Z", 3),
+                ),
+            }
+        )
         with mock.patch.object(telegram_api, "MAX_MESSAGE", 60):
             self.assertEqual(await anime_digest.run(), 0)
         parts = [message["text"] for message in self.sent(server)]
         self.assertGreater(len(parts), 1)
         self.assertTrue(all(len(part) <= 60 for part in parts), parts)
-        self.assertEqual("\n".join(parts), "Airing today, Wednesday 11 November:\n"
-                                             "- Frieren: episode 5 at 17:30\n"
-                                             "- Bocchi the Rock: episode 2 at 18:00\n"
-                                             "- Oshi no Ko: episode 3 at 19:00")
+        self.assertEqual(
+            "\n".join(parts),
+            "Airing today, Wednesday 11 November:\n"
+            "- Frieren: episode 5 at 17:30\n"
+            "- Bocchi the Rock: episode 2 at 18:00\n"
+            "- Oshi no Ko: episode 3 at 19:00",
+        )
 
     async def test_sends_nothing_when_nothing_airs(self):
         server = self.serve_digest()

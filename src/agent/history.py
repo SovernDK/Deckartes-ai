@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS messages_by_conversation ON messages(conversation_id, id);
 """
 
+
 @dataclass
 class Message:
     role: str
@@ -48,12 +49,14 @@ class Message:
     # The model that wrote it; only for assistant messages
     model: str | None = None
 
+
 @dataclass
 class Listed:
     id: int
     title: str
     source: str
     updated_at: str
+
 
 @dataclass
 class Saved:
@@ -63,18 +66,23 @@ class Saved:
     system_prompt: str
     messages: list[Message]
 
+
 @dataclass
 class Resumed:
     """A reopened conversation: what the model is sent (the last summary, if any, and the turns
     after it) and what is shown (every question and reply)."""
+
     for_model: list[dict]
     shown: list[Message]
+
 
 def summary_message(summary: str) -> dict:
     return {"role": "system", "content": SUMMARY_PREFIX + summary}
 
+
 def _stamp(moment: dt.datetime) -> str:
     return moment.strftime("%Y-%m-%d %H:%M")
+
 
 class Saver:
     """Saves one conversation's finished turns and summaries. With no source (validation) it saves nothing.
@@ -93,10 +101,12 @@ class Saver:
         if self.source is None:
             return
         asked = _stamp(asked_at)
-        messages = [Message("system", time_line, asked), Message("user", question, asked),
-                    Message("assistant", reply, _stamp(clock.now()), config.model)]
-        self.id = _add(self.id, messages, source=self.source, preset=config.system_prompt,
-                       system_prompt=system_prompt)
+        messages = [
+            Message("system", time_line, asked),
+            Message("user", question, asked),
+            Message("assistant", reply, _stamp(clock.now()), config.model),
+        ]
+        self.id = _add(self.id, messages, source=self.source, preset=config.system_prompt, system_prompt=system_prompt)
 
     def summary(self, summary: str) -> None:
         """Save a compaction summary; the messages it replaced stay."""
@@ -106,12 +116,16 @@ class Saver:
     def resume(self, conversation_id: int) -> Resumed:
         """Continue a saved conversation; KeyError when there's no such conversation."""
         saved = load(conversation_id)
-        summaries = [i for i, m in enumerate(saved.messages)
-                     if m.role == "system" and m.content.startswith(SUMMARY_PREFIX)]
+        summaries = [
+            i for i, m in enumerate(saved.messages) if m.role == "system" and m.content.startswith(SUMMARY_PREFIX)
+        ]
         start = summaries[-1] if summaries else 0
         self.id = conversation_id
-        return Resumed([{"role": m.role, "content": m.content} for m in saved.messages[start:]],
-                       [m for m in saved.messages if m.role in ("user", "assistant")])
+        return Resumed(
+            [{"role": m.role, "content": m.content} for m in saved.messages[start:]],
+            [m for m in saved.messages if m.role in ("user", "assistant")],
+        )
+
 
 @contextmanager
 def _database() -> Generator[sqlite3.Connection, None, None]:
@@ -126,32 +140,40 @@ def _database() -> Generator[sqlite3.Connection, None, None]:
     finally:
         connection.close()
 
+
 def _insert(db: sqlite3.Connection, conversation_id: int, messages: list[Message]) -> None:
-    db.executemany("INSERT INTO messages (conversation_id, role, content, created_at, model) VALUES (?, ?, ?, ?, ?)",
-                   [(conversation_id, m.role, m.content, m.created_at, m.model) for m in messages])
+    db.executemany(
+        "INSERT INTO messages (conversation_id, role, content, created_at, model) VALUES (?, ?, ?, ?, ?)",
+        [(conversation_id, m.role, m.content, m.created_at, m.model) for m in messages],
+    )
     db.execute("UPDATE conversations SET updated_at = ? WHERE id = ?", (messages[-1].created_at, conversation_id))
 
-def _add(conversation_id: int | None, messages: list[Message], *, source: str, preset: str,
-        system_prompt: str) -> int:
+
+def _add(conversation_id: int | None, messages: list[Message], *, source: str, preset: str, system_prompt: str) -> int:
     """Save a finished turn's messages and return the conversation's id. A conversation that
     isn't saved yet, or was deleted meanwhile, is started anew with these messages."""
     with _database() as db:
-        if conversation_id is not None and db.execute(
-                "SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)).fetchone():
+        if (
+            conversation_id is not None
+            and db.execute("SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)).fetchone()
+        ):
             saved_id: int = conversation_id
         else:
             started = messages[0].created_at
             saved_id = db.execute(
                 "INSERT INTO conversations (source, preset, system_prompt, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?) RETURNING id",
-                (source, preset, system_prompt, started, started)).fetchone()[0]
+                (source, preset, system_prompt, started, started),
+            ).fetchone()[0]
         _insert(db, saved_id, messages)
         return saved_id
+
 
 def _add_summary(conversation_id: int, summary: Message) -> None:
     with _database() as db:
         if db.execute("SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)).fetchone():
             _insert(db, conversation_id, [summary])
+
 
 def list_conversations() -> list[Listed]:
     with _database() as db:
@@ -161,21 +183,29 @@ def list_conversations() -> list[Listed]:
             FROM conversations c ORDER BY c.updated_at DESC, c.id DESC""").fetchall()
     return [Listed(id, _title(question or ""), source, updated) for id, source, updated, question in rows]
 
+
 def _title(question: str) -> str:
     line = " ".join(question.split())
-    return line if len(line) <= TITLE_LENGTH else line[:TITLE_LENGTH - 1].rstrip() + "…"
+    return line if len(line) <= TITLE_LENGTH else line[: TITLE_LENGTH - 1].rstrip() + "…"
+
 
 def load(conversation_id: int) -> Saved:
     with _database() as db:
-        row = db.execute("SELECT source, preset, system_prompt FROM conversations WHERE id = ?",
-                         (conversation_id,)).fetchone()
+        row = db.execute(
+            "SELECT source, preset, system_prompt FROM conversations WHERE id = ?", (conversation_id,)
+        ).fetchone()
         if row is None:
             raise KeyError(conversation_id)
         source, preset, system_prompt = row
-        messages = [Message(*m) for m in db.execute(
-            "SELECT role, content, created_at, model FROM messages WHERE conversation_id = ? ORDER BY id",
-            (conversation_id,))]
+        messages = [
+            Message(*m)
+            for m in db.execute(
+                "SELECT role, content, created_at, model FROM messages WHERE conversation_id = ? ORDER BY id",
+                (conversation_id,),
+            )
+        ]
     return Saved(conversation_id, source, preset, system_prompt, messages)
+
 
 def delete(conversation_id: int) -> None:
     with _database() as db:

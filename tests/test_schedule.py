@@ -12,6 +12,7 @@ from jobs.schedule import Job
 
 ROOT = Path(__file__).parent.parent
 
+
 class FakeLaunchctl:
     """Keeps which labels are loaded and records each command."""
 
@@ -29,6 +30,7 @@ class FakeLaunchctl:
         elif action == "bootout":
             self.loaded.discard(label)
         return subprocess.CompletedProcess(command, 0 if found or action == "bootstrap" else 113)
+
 
 class ScheduleTest(unittest.TestCase):
     def setUp(self):
@@ -50,8 +52,10 @@ class ScheduleTest(unittest.TestCase):
     def test_the_listed_jobs_run_each_morning_from_src(self):
         launchctl = FakeLaunchctl()
 
-        self.assertEqual(self.apply(schedule.JOBS, launchctl),
-                         ["Loaded com.deckartes.anime-digest", "Loaded com.deckartes.bank-digest"])
+        self.assertEqual(
+            self.apply(schedule.JOBS, launchctl),
+            ["Loaded com.deckartes.anime-digest", "Loaded com.deckartes.bank-digest"],
+        )
 
         anime = self.saved("com.deckartes.anime-digest")
         self.assertEqual(anime["StartCalendarInterval"], {"Hour": 9, "Minute": 0})
@@ -63,14 +67,22 @@ class ScheduleTest(unittest.TestCase):
         self.assertEqual(launchctl.loaded, {"com.deckartes.anime-digest", "com.deckartes.bank-digest"})
 
     def test_a_weekly_or_monthly_job_says_its_day(self):
-        self.apply([Job("weekly", "jobs.x", hour=8, weekday=1), Job("monthly", "jobs.y", hour=8, day=1)], FakeLaunchctl())
+        self.apply(
+            [Job("weekly", "jobs.x", hour=8, weekday=1), Job("monthly", "jobs.y", hour=8, day=1)], FakeLaunchctl()
+        )
 
-        self.assertEqual(self.saved("com.deckartes.weekly")["StartCalendarInterval"], {"Hour": 8, "Minute": 0, "Weekday": 1})
-        self.assertEqual(self.saved("com.deckartes.monthly")["StartCalendarInterval"], {"Hour": 8, "Minute": 0, "Day": 1})
+        self.assertEqual(
+            self.saved("com.deckartes.weekly")["StartCalendarInterval"], {"Hour": 8, "Minute": 0, "Weekday": 1}
+        )
+        self.assertEqual(
+            self.saved("com.deckartes.monthly")["StartCalendarInterval"], {"Hour": 8, "Minute": 0, "Day": 1}
+        )
 
     def test_only_changed_jobs_are_reloaded_and_unlisted_ones_removed(self):
         launchctl = FakeLaunchctl()
-        self.apply([Job("a", "jobs.a", hour=9), Job("b", "jobs.b", hour=9), Job("gone", "jobs.gone", hour=9)], launchctl)
+        self.apply(
+            [Job("a", "jobs.a", hour=9), Job("b", "jobs.b", hour=9), Job("gone", "jobs.gone", hour=9)], launchctl
+        )
         launchctl.commands.clear()
 
         changes = self.apply([Job("a", "jobs.a", hour=9), Job("b", "jobs.b", hour=10)], launchctl)
@@ -92,6 +104,7 @@ class ScheduleTest(unittest.TestCase):
         for job in schedule.JOBS:
             with self.subTest(job.name):
                 self.assertTrue((ROOT / "src" / Path(*job.module.split("."))).with_suffix(".py").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -37,50 +37,64 @@ from tools.tools import Confirm, run_tool
 class Text:
     text: str
 
+
 @dataclass
 class Thinking:
     """Part of the model's thinking before a round's text or tool calls. Only shown, never saved."""
+
     text: str
+
 
 @dataclass
 class ToolStarted:
     """A tool the model called is about to run."""
+
     name: str
     # What the model called it with; None when they weren't valid JSON. Left out of ==, so
     # tests and checks can match a call by its name alone
     arguments: dict | None = field(default=None, compare=False)
 
+
 @dataclass
 class ToolsDone:
     """The tools of one round have run; the model is answering again."""
+
 
 @dataclass
 class Compacting:
     """The history is being summarised before the question is answered."""
 
+
 @dataclass
 class Compacted:
     """The history is now a summary; the question is being answered."""
 
+
 @dataclass
 class NotSaved:
     """The turn finished but couldn't be saved to the history; it still counts in this conversation."""
+
     message: str
+
 
 @dataclass
 class Failed:
     """The turn failed; always the last event. The reply so far isn't saved."""
+
     message: str
+
 
 Event = Text | Thinking | ToolStarted | ToolsDone | Compacting | Compacted | NotSaved | Failed
 
 # Stop a model that keeps calling tools instead of answering
 MAX_TOOL_ROUNDS = 10
 
+
 @dataclass
 class Usage:
     """Tokens the server reports for chat calls: prompt tokens (in) and generated (out).
     A reply with tool calls makes several calls, each re-sending the conversation so far."""
+
     input: int = 0
     output: int = 0
     # Nanoseconds spent generating the output tokens, without model loading or prompt evaluation
@@ -105,9 +119,11 @@ class Usage:
     def total(self) -> int:
         return self.input + self.output
 
+
 @dataclass
 class TurnInfo:
     """What one turn used and what it was sent with, for the usage line under its reply."""
+
     usage: Usage = field(default_factory=Usage)
     # Tool groups the router sent with the question; None when it didn't run
     tool_groups: list[str] | None = None
@@ -117,18 +133,21 @@ class TurnInfo:
         usage = self.usage
         if not usage.total:
             return None
-        text = f"{usage.input:,} in · {usage.output:,} out · {usage.total:,} {'token' if usage.total == 1 else 'tokens'}"
+        text = (
+            f"{usage.input:,} in · {usage.output:,} out · {usage.total:,} {'token' if usage.total == 1 else 'tokens'}"
+        )
         if usage.tokens_per_second is not None:
             text += f" · {usage.tokens_per_second:.1f} tok/s"
         if self.tool_groups is not None:
             text += f" · tools: {', '.join(self.tool_groups) or 'none'}"
         return text
 
+
 def _add_tool_results(messages, content, tool_calls, results) -> None:
-    messages.append({"role": "assistant", "content": content,
-                     "tool_calls": [call.as_message() for call in tool_calls]})
+    messages.append({"role": "assistant", "content": content, "tool_calls": [call.as_message() for call in tool_calls]})
     for call, tool_text in zip(tool_calls, results):
         messages.append({"role": "tool", "tool_call_id": call.id, "content": tool_text})
+
 
 class Conversation:
     def __init__(self, tool_runner=None, tool_selector=None, source: str | None = None) -> None:
@@ -168,8 +187,7 @@ class Conversation:
         (read fresh each turn, so a changed preset applies from the next turn), the history,
         the time and the question."""
         messages = [{"role": "system", "content": system}] if system else []
-        return [*messages, *self.history, {"role": "system", "content": time_line},
-                {"role": "user", "content": query}]
+        return [*messages, *self.history, {"role": "system", "content": time_line}, {"role": "user", "content": query}]
 
     def _remember(self, query: str, reply: str, time_line: str, asked_at: dt.datetime, system: str) -> str | None:
         """Add a finished turn to the history and save it; the reason when it couldn't be saved."""
@@ -185,13 +203,18 @@ class Conversation:
         return None
 
     def needs_compacting(self) -> bool:
-        return bool(self.history and config.compact_at
-                    and self.context_tokens >= config.compact_at * config.context_length)
+        return bool(
+            self.history and config.compact_at and self.context_tokens >= config.compact_at * config.context_length
+        )
 
     async def _compact(self, usage: Usage) -> str:
         transcript = "\n\n".join(f"{m['role']}: {m['content']}" for m in self.history)
-        response = await mlx_client.complete([{"role": "system", "content": prompt_file.task("compact_summary")},
-                                              {"role": "user", "content": transcript}])
+        response = await mlx_client.complete(
+            [
+                {"role": "system", "content": prompt_file.task("compact_summary")},
+                {"role": "user", "content": transcript},
+            ]
+        )
         usage.count(response.usage)
         summary = response.content.strip()
         if not summary:

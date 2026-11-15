@@ -16,9 +16,12 @@ from ui.chat import Chat, Spinner
 class ServerUiTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         temp_history(self)
-        for target, name, value in [(mlx_server, "ensure_chat", mock.Mock()), (mlx_server, "restart_chat", mock.Mock()),
-                                    (mlx_server, "stop_all", mock.Mock(return_value=["chat"])),
-                                    (config, "model", "some/model")]:
+        for target, name, value in [
+            (mlx_server, "ensure_chat", mock.Mock()),
+            (mlx_server, "restart_chat", mock.Mock()),
+            (mlx_server, "stop_all", mock.Mock(return_value=["chat"])),
+            (config, "model", "some/model"),
+        ]:
             patcher = mock.patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -86,6 +89,7 @@ class ServerUiTest(unittest.IsolatedAsyncioTestCase):
             await self.settle(app, pilot)
             mlx_server.stop_all.assert_called_once_with()
             self.assertEqual([n.message for n in app._notifications], ["Stopped the chat server"])
+
 
 if __name__ == "__main__":
     unittest.main()

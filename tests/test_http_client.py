@@ -15,6 +15,7 @@ from http_fake import HttpTest
 class BackendError(Exception):
     pass
 
+
 class RequestTest(HttpTest):
     async def get(self, **kwargs):
         return await http_client.request("GET", "https://api.test/items", name="Test", error=BackendError, **kwargs)
@@ -78,8 +79,10 @@ class RequestTest(HttpTest):
     async def test_rate_limit_gives_the_local_reset_time(self):
         # 2027-01-15 08:00:00 UTC
         self.serve({"/items": httpx.Response(429, headers={"x-ratelimit-reset": "1800000000"})})
-        with mock.patch.object(config, "timezone", "Asia/Tokyo"), \
-             self.assertRaisesRegex(BackendError, r"^Test rate limit reached, resets at 17:00:00$"):
+        with (
+            mock.patch.object(config, "timezone", "Asia/Tokyo"),
+            self.assertRaisesRegex(BackendError, r"^Test rate limit reached, resets at 17:00:00$"),
+        ):
             await self.get()
 
     async def test_rate_limit_without_reset_says_try_later(self):
@@ -100,19 +103,23 @@ class RequestTest(HttpTest):
 
     async def test_post_sends_the_json_body(self):
         server = self.serve({"/items": {"ok": True}})
-        res = await http_client.request("POST", "https://api.test/items", name="Test", error=BackendError,
-                                        json={"query": "hi"})
+        res = await http_client.request(
+            "POST", "https://api.test/items", name="Test", error=BackendError, json={"query": "hi"}
+        )
         self.assertEqual(res.json(), {"ok": True})
         self.assertEqual(server.requests[0].method, "POST")
         self.assertEqual(json.loads(server.requests[0].content), {"query": "hi"})
+
 
 class PagesTest(unittest.IsolatedAsyncioTestCase):
     async def collect(self, pages: list, *, total=None, page_size=2, max_pages=5):
         """The pages yielded, and the indexes fetched, from a list of pages."""
         self.fetched = []
+
         async def fetch(index):
             self.fetched.append(index)
             return pages[index], total
+
         return [page async for page in http_client.pages(fetch, page_size, max_pages)]
 
     async def test_a_short_page_is_the_last(self):
@@ -140,12 +147,15 @@ class PagesTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_breaking_out_fetches_no_more(self):
         fetched = []
+
         async def fetch(index):
             fetched.append(index)
             return [1, 2], None
+
         async for _ in http_client.pages(fetch, 2, 5):
             break
         self.assertEqual(fetched, [0])
+
 
 if __name__ == "__main__":
     unittest.main()

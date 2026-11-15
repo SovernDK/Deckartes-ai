@@ -34,13 +34,26 @@ PRESET = "Assistant"
 CATEGORIES = ("explicit", "paraphrased", "obfuscated", "follow-up", "no-tool", "chained", "after-result")
 WEAKEST_TOOLS = 10
 
-CASE_FIELDS = {"id", "category", "question", "expect", "ordered", "forbid", "arguments", "carry", "results",
-               "history", "tempt", "claim_patterns"}
+CASE_FIELDS = {
+    "id",
+    "category",
+    "question",
+    "expect",
+    "ordered",
+    "forbid",
+    "arguments",
+    "carry",
+    "results",
+    "history",
+    "tempt",
+    "claim_patterns",
+}
 ADD_EVENT = "add_calendar_event"
 # Wording that says something was done; used on replies where it wasn't, or was declined
 CLAIM_WORDS = [r"\b(added|scheduled|saved|booked|created)\b", r"\b(on|in|to) your calendar\b"]
 NEGATION = re.compile(r"n['’]t\b|\b(not|never|nothing|unable|cannot)\b", re.IGNORECASE)
 CLAIM_NEGATION_REACH = 40
+
 
 @dataclass
 class Case:
@@ -73,6 +86,7 @@ class Case:
         """The groups of the expected tools, without the tempting ones."""
         return GROUPS.groups_of(tool for step in self.expect for tool in step)
 
+
 @dataclass
 class Suite:
     now: str
@@ -87,11 +101,13 @@ class Suite:
         counts = Counter(case.category for case in self.cases)
         return {category: counts[category] for category in CATEGORIES if counts[category]}
 
+
 @dataclass
 class Call:
     name: str
     # None when the model's arguments weren't valid JSON
     arguments: dict | None
+
 
 @dataclass
 class Outcome:
@@ -99,12 +115,14 @@ class Outcome:
     reply: str
     looped: bool = False
 
+
 @dataclass
 class Score:
     tool_pass: bool
     full_pass: bool
     # Why it failed; None when it passed
     label: str | None
+
 
 @dataclass
 class CaseResult:
@@ -117,15 +135,19 @@ class CaseResult:
     score: Score | None
     error: str | None = None
 
+
 # Checking the case file
+
 
 def _require(condition: bool, case_id: str, problem: str) -> None:
     if not condition:
         raise ValueError(f"validation case {case_id!r}: {problem}")
 
+
 def _check_tools(tool_names, case_id: str) -> None:
     for name in tool_names:
         _require(name in TOOLS_BY_NAME, case_id, f"unknown tool {name!r}")
+
 
 def _check_value_checks(checks: dict, case: Case) -> None:
     expected = {tool for step in case.expect for tool in step}
@@ -136,8 +158,10 @@ def _check_value_checks(checks: dict, case: Case) -> None:
         for parameter in checked:
             _require(parameter in known, case.id, f"{tool} has no parameter {parameter!r}")
 
+
 def _result_for(case: Case, tool: str, defaults: dict[str, str]) -> str:
     return case.results.get(tool, defaults[tool])
+
 
 def _check_carried(case: Case, defaults: dict[str, str]) -> None:
     """A carried value has to be found in an earlier step's result, or the model couldn't know it."""
@@ -147,6 +171,7 @@ def _check_carried(case: Case, defaults: dict[str, str]) -> None:
             accepted = value if isinstance(value, list) else [value]
             found = any(option.lower() in result.lower() for option in accepted for result in earlier)
             _require(found, case.id, f"carried value {value!r} is in no earlier tool's result")
+
 
 def _parse_case(data: dict, defaults: dict[str, str]) -> Case:
     case_id = str(data.get("id"))
@@ -188,6 +213,7 @@ def _parse_case(data: dict, defaults: dict[str, str]) -> Case:
     _check_carried(case, defaults)
     return case
 
+
 def parse_suite(data: dict) -> Suite:
     """A Suite from the case file's data. Raises ValueError naming the first problem found."""
     for name in ("now", "timezone", "default_results", "cases"):
@@ -208,17 +234,21 @@ def parse_suite(data: dict) -> Suite:
         raise ValueError(f"validation cases: can't read the time {suite.now!r} in {suite.timezone!r}: {e}") from e
     return suite
 
+
 def load_suite(path: Path = CASES_FILE) -> Suite:
     try:
         return parse_suite(json.loads(path.read_text()))
     except OSError as e:
         raise ValueError(f"could not read {path.name}: {e}") from e
 
+
 # Scoring
+
 
 def _value_matches(actual, expected) -> bool:
     accepted = expected if isinstance(expected, list) else [expected]
     return any(option.lower() in str(actual).lower() for option in accepted)
+
 
 def _arguments_usable(call: Call) -> bool:
     if call.arguments is None:
@@ -229,19 +259,29 @@ def _arguments_usable(call: Call) -> bool:
         return False
     return True
 
+
 def _call_passes(call: Call, checks: dict) -> bool:
     arguments = call.arguments
-    return arguments is not None and _arguments_usable(call) and all(
-        name in arguments and _value_matches(arguments[name], expected) for name, expected in checks.items())
+    return (
+        arguments is not None
+        and _arguments_usable(call)
+        and all(name in arguments and _value_matches(arguments[name], expected) for name, expected in checks.items())
+    )
+
 
 def _arguments_ok(case: Case, made: list[Call]) -> bool:
     """Each step has a call with usable arguments that pass its checks."""
-    return all(any(_call_passes(call, case.arguments.get(call.name, {})) for call in made if call.name in step)
-               for step in case.expect)
+    return all(
+        any(_call_passes(call, case.arguments.get(call.name, {})) for call in made if call.name in step)
+        for step in case.expect
+    )
+
 
 def _carried_ok(case: Case, made: list[Call]) -> bool:
-    return all(any(_call_passes(call, checks) for call in made if call.name == tool)
-               for tool, checks in case.carry.items())
+    return all(
+        any(_call_passes(call, checks) for call in made if call.name == tool) for tool, checks in case.carry.items()
+    )
+
 
 def _steps_met(case: Case, called: list[str]) -> bool:
     if not case.must_be_in_order:
@@ -255,14 +295,16 @@ def _steps_met(case: Case, called: list[str]) -> bool:
         position += 1
     return True
 
+
 def _says_done(reply: str) -> bool:
     """Whether the reply says it was done, skipping "I haven't added it" and the like."""
     for pattern in CLAIM_WORDS:
         for match in re.finditer(pattern, reply, re.IGNORECASE):
-            before = reply[max(0, match.start() - CLAIM_NEGATION_REACH):match.start()]
+            before = reply[max(0, match.start() - CLAIM_NEGATION_REACH) : match.start()]
             if not NEGATION.search(re.split(r"[.!?\n]", before)[-1]):
                 return True
     return False
+
 
 def _false_claim(case: Case, outcome: Outcome, called: list[str]) -> bool:
     adds_event = any(ADD_EVENT in step for step in case.expect)
@@ -271,6 +313,7 @@ def _false_claim(case: Case, outcome: Outcome, called: list[str]) -> bool:
     if case.claim_patterns:
         return any(re.search(pattern, outcome.reply, re.IGNORECASE) for pattern in case.claim_patterns)
     return _says_done(outcome.reply)
+
 
 def score(case: Case, outcome: Outcome) -> Score:
     """Whether the right tools ran (tool_pass), whether everything else was right too (full_pass),
@@ -305,7 +348,9 @@ def score(case: Case, outcome: Outcome) -> Score:
         label = None
     return Score(tool_pass, label is None, label)
 
+
 # Running
+
 
 def _router_record(case: Case, selection: tool_router.Selection, question: str, previous: str | None) -> dict:
     expected = case.expected_groups
@@ -318,9 +363,18 @@ def _router_record(case: Case, selection: tool_router.Selection, question: str, 
         status = "missed"
     else:
         status = "extra" if extra else "correct"
-    return {"id": case.id, "category": case.category, "question": question, "previous": previous,
-            "expected_groups": expected, "chosen_groups": chosen, "extra_groups": extra,
-            "scores": selection.scores, "status": status}
+    return {
+        "id": case.id,
+        "category": case.category,
+        "question": question,
+        "previous": previous,
+        "expected_groups": expected,
+        "chosen_groups": chosen,
+        "extra_groups": extra,
+        "scores": selection.scores,
+        "status": status,
+    }
+
 
 def _with_case_groups(case: Case, selection: tool_router.Selection) -> tool_router.Selection:
     """The router's selection plus the groups the case is testing, so every case tests the model."""
@@ -328,6 +382,7 @@ def _with_case_groups(case: Case, selection: tool_router.Selection) -> tool_rout
         return selection
     groups = [*selection.groups, *case.expected_groups, *case.tempt]
     return tool_router.Selection(GROUPS.sent_with(groups, TOOLS), selection.groups, selection.scores)
+
 
 @contextmanager
 def _run_settings(suite: Suite) -> Generator[None, None, None]:
@@ -339,6 +394,7 @@ def _run_settings(suite: Suite) -> Generator[None, None, None]:
             yield
     finally:
         config.system_prompt, config.tool_routing, config.timezone = saved
+
 
 class Run:
     """One validation of the loaded model. Finished cases stay in results if it's stopped."""
@@ -378,9 +434,11 @@ class Run:
         # The real run_tool, so the model gets the same text for a wrong call as in use
         conversation = Conversation(tool_runner=partial(run_tool, results=fake_result), tool_selector=select)
         for turn in case.history:
-            conversation.history += [{"role": "system", "content": current_time_line()},
-                                     {"role": "user", "content": turn["question"]},
-                                     {"role": "assistant", "content": turn["reply"]}]
+            conversation.history += [
+                {"role": "system", "content": current_time_line()},
+                {"role": "user", "content": turn["question"]},
+                {"role": "assistant", "content": turn["reply"]},
+            ]
         reply = before_call = ""
         narration = False
         rounds = 0
@@ -476,9 +534,12 @@ class Run:
         if not routed:
             return None
         missed = sum(record["status"] == "missed" for record in routed)
-        return {"cases": len(routed), "missed": missed,
-                "no_group_missed_percent": 100 * (len(routed) - missed) / len(routed),
-                "average_extra_groups": sum(len(record["extra_groups"]) for record in routed) / len(routed)}
+        return {
+            "cases": len(routed),
+            "missed": missed,
+            "no_group_missed_percent": 100 * (len(routed) - missed) / len(routed),
+            "average_extra_groups": sum(len(record["extra_groups"]) for record in routed) / len(routed),
+        }
 
     def save(self, folder: Path = RESULTS_FOLDER) -> tuple[Path, Path]:
         folder.mkdir(parents=True, exist_ok=True)
@@ -486,10 +547,19 @@ class Run:
         model_path = folder / f"{stamp}-{self.model.replace('/', '_')}.json"
         router_path = folder / f"{stamp}-router.json"
         model_path.write_text(json.dumps(self._model_data(), indent=1, ensure_ascii=False))
-        router_path.write_text(json.dumps({
-            "embed_model": config.embed_model, "chat_model": self.model, "status": self.status,
-            "summary": self.router_summary(), "records": self.router_records,
-        }, indent=1, ensure_ascii=False))
+        router_path.write_text(
+            json.dumps(
+                {
+                    "embed_model": config.embed_model,
+                    "chat_model": self.model,
+                    "status": self.status,
+                    "summary": self.router_summary(),
+                    "records": self.router_records,
+                },
+                indent=1,
+                ensure_ascii=False,
+            )
+        )
         return model_path, router_path
 
     def _model_data(self) -> dict:
@@ -503,22 +573,36 @@ class Run:
             "failures": dict(self.failures()),
             "narration_percent": self.narration_rate(),
             "errors": self.errors,
-            "settings": {"preset": PRESET, "temperature": config.temperature, "top_k": config.top_k,
-                         "repetition_penalty": config.repetition_penalty, "max_tokens": config.max_tokens,
-                         "enable_thinking": config.enable_thinking, "context_length": config.context_length,
-                         "embed_model": config.embed_model},
+            "settings": {
+                "preset": PRESET,
+                "temperature": config.temperature,
+                "top_k": config.top_k,
+                "repetition_penalty": config.repetition_penalty,
+                "max_tokens": config.max_tokens,
+                "enable_thinking": config.enable_thinking,
+                "context_length": config.context_length,
+                "embed_model": config.embed_model,
+            },
             "cases": [self._case_data(result) for result in self.results],
         }
 
     @staticmethod
     def _case_data(result: CaseResult) -> dict:
         score_ = result.score
-        return {"id": result.case.id, "category": result.case.category, "question": result.case.question,
-                "tool_pass": score_.tool_pass if score_ else None, "full_pass": score_.full_pass if score_ else None,
-                "label": score_.label if score_ else None, "error": result.error, "narration": result.narration,
-                "router_missed": result.router_missed,
-                "calls": [{"name": call.name, "arguments": call.arguments} for call in result.calls],
-                "reply": result.reply}
+        return {
+            "id": result.case.id,
+            "category": result.case.category,
+            "question": result.case.question,
+            "tool_pass": score_.tool_pass if score_ else None,
+            "full_pass": score_.full_pass if score_ else None,
+            "label": score_.label if score_ else None,
+            "error": result.error,
+            "narration": result.narration,
+            "router_missed": result.router_missed,
+            "calls": [{"name": call.name, "arguments": call.arguments} for call in result.calls],
+            "reply": result.reply,
+        }
+
 
 # The report shown in the chat
 
@@ -527,16 +611,23 @@ STATUS_NOTES = {
     "not comparable": "**Status: not comparable.** Some cases hit a server error and were left out.",
 }
 
+
 def _number(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.1f}"
+
 
 def report(run: Run, saved: list[Path]) -> str:
     """The results of a run, as Markdown."""
     lines = [f"## Validation: {run.model}", ""]
     if run.status in STATUS_NOTES:
         lines += [STATUS_NOTES[run.status], ""]
-    lines += [(f"**Full score {_number(run.full_score)}** · Tool score {_number(run.tool_score)} "
-              f"· {len(run.scored)} of {len(run.cases)} cases scored"), ""]
+    lines += [
+        (
+            f"**Full score {_number(run.full_score)}** · Tool score {_number(run.tool_score)} "
+            f"· {len(run.scored)} of {len(run.cases)} cases scored"
+        ),
+        "",
+    ]
     tool, full = run.category_rates("tool_pass"), run.category_rates("full_pass")
     lines += ["| Category | Tool | Full |", "|---|---|---|"]
     lines += [f"| {category} | {tool[category]:.1f} | {full[category]:.1f} |" for category in tool]
@@ -550,8 +641,13 @@ def report(run: Run, saved: list[Path]) -> str:
     lines += ["", f"**Narration before a tool call:** {_number(run.narration_rate())}%"]
     router = run.router_summary()
     if router:
-        lines += ["", (f"**Router (not in the scores):** {router['no_group_missed_percent']:.1f}% of cases with no "
-                      f"expected group missed, {router['average_extra_groups']:.1f} extra groups per case")]
+        lines += [
+            "",
+            (
+                f"**Router (not in the scores):** {router['no_group_missed_percent']:.1f}% of cases with no "
+                f"expected group missed, {router['average_extra_groups']:.1f} extra groups per case"
+            ),
+        ]
     if saved:
         lines += ["", "**Saved:** " + ", ".join(str(path) for path in saved)]
     return "\n".join(lines)

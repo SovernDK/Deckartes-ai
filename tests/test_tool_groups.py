@@ -10,6 +10,7 @@ async def ask_web() -> str: ...
 async def search_saved() -> str: ...
 async def read_page() -> str: ...
 
+
 class ToolGroupsTest(unittest.TestCase):
     def setUp(self):
         self.groups = ToolGroups({"server": ["Is the server up?"], "web": ["Search the web"], "empty": []})
@@ -22,7 +23,9 @@ class ToolGroupsTest(unittest.TestCase):
         return [tool.__name__ for tool in tools]
 
     def test_the_chosen_groups_tools_and_tools_in_no_group_are_sent_in_their_order(self):
-        self.assertEqual(self.names(self.groups.sent_with(["web"], self.tools)), ["ask_web", "search_saved", "read_page"])
+        self.assertEqual(
+            self.names(self.groups.sent_with(["web"], self.tools)), ["ask_web", "search_saved", "read_page"]
+        )
 
     def test_a_tool_in_no_group_is_sent_even_when_no_group_is_chosen(self):
         self.assertEqual(self.names(self.groups.sent_with([], self.tools)), ["search_saved"])
@@ -39,6 +42,7 @@ class ToolGroupsTest(unittest.TestCase):
     def test_adding_to_an_unknown_group_raises(self):
         with self.assertRaisesRegex(ValueError, "unknown tool group 'nope'"):
             self.groups.add("nope", "ask_server")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -21,17 +21,30 @@ _transport: httpx.AsyncBaseTransport | None = None
 
 MAX_CACHED = 256
 
+
 def _expires(_key: tuple, value: tuple[float, httpx.Response], now: float) -> float:
     return now + value[0]
+
 
 # Entries are (max_age, response); the timer is looked up on each call, so tests can patch time.monotonic
 _cache: TLRUCache = TLRUCache(maxsize=MAX_CACHED, ttu=_expires, timer=lambda: time.monotonic())
 
-async def request(method: str, url: str, *, name: str, error: type[Exception],
-                  params: dict | None = None, json: dict | None = None,
-                  token: str | None = None, token_env: str = "", max_age: float = 0,
-                  timeout: float = 30, status_messages: dict[int, str] | None = None,
-                  headers: dict[str, str] | None = None) -> httpx.Response:
+
+async def request(
+    method: str,
+    url: str,
+    *,
+    name: str,
+    error: type[Exception],
+    params: dict | None = None,
+    json: dict | None = None,
+    token: str | None = None,
+    token_env: str = "",
+    max_age: float = 0,
+    timeout: float = 30,
+    status_messages: dict[int, str] | None = None,
+    headers: dict[str, str] | None = None,
+) -> httpx.Response:
     """Send a request and return the 200 response, cached for max_age seconds (0 = not cached).
     A cached response keeps the max_age it was fetched with.
 
@@ -62,7 +75,9 @@ async def request(method: str, url: str, *, name: str, error: type[Exception],
         raise error(status_messages[res.status_code])
     if res.status_code == 429:
         reset = res.headers.get("x-ratelimit-reset")
-        when = f"resets at {dt.datetime.fromtimestamp(int(reset), clock.zone()):%H:%M:%S}" if reset else "try again later"
+        when = (
+            f"resets at {dt.datetime.fromtimestamp(int(reset), clock.zone()):%H:%M:%S}" if reset else "try again later"
+        )
         raise error(f"{name} rate limit reached, {when}")
     if res.status_code != 200:
         raise error(f"{name} responded with status {res.status_code}: {res.text[:200]}")
@@ -71,8 +86,10 @@ async def request(method: str, url: str, *, name: str, error: type[Exception],
         _cache[key] = (max_age, res)
     return res
 
-async def pages(fetch: Callable[[int], Awaitable[tuple[list, int | None]]], page_size: int,
-                max_pages: int) -> AsyncGenerator[list, None]:
+
+async def pages(
+    fetch: Callable[[int], Awaitable[tuple[list, int | None]]], page_size: int, max_pages: int
+) -> AsyncGenerator[list, None]:
     """Yield a list's pages, stopping after the last one or max_pages. Break out to stop early.
 
     await fetch(index), with index counting from 0, returns (items, total). A total (the API's

@@ -17,9 +17,13 @@ from ui.chat import Chat, Reply, Spinner, tool_call_line
 class DisplayModeTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         temp_history(self)
-        for target, name, value in [(mlx_server, "ensure_chat", mock.Mock()), (config, "model", "some/model"),
-                                    (config, "tool_routing", False), (config, "compact_at", None),
-                                    (config, "detailed", False)]:
+        for target, name, value in [
+            (mlx_server, "ensure_chat", mock.Mock()),
+            (config, "model", "some/model"),
+            (config, "tool_routing", False),
+            (config, "compact_at", None),
+            (config, "detailed", False),
+        ]:
             patcher = mock.patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -70,18 +74,23 @@ class DisplayModeTest(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(thinking.display)
 
     async def test_thinking_tool_calls_and_answer_keep_their_order_across_rounds(self):
-        self.use([think("Need a tool."), chunk(tool_calls=[call("get_current_season"), call("get_cs_team", name="NAVI")],
-                                               done=True)],
-                 [think("Got it."), chunk("Fall.", done=True)])
+        self.use(
+            [
+                think("Need a tool."),
+                chunk(tool_calls=[call("get_current_season"), call("get_cs_team", name="NAVI")], done=True),
+            ],
+            [think("Got it."), chunk("Fall.", done=True)],
+        )
         app = DecartesApp()
         async with app.run_test(size=(100, 30)) as pilot:
             await self.ask(app, pilot)
             parts = list(app.query_one(Reply).children)
-            self.assertEqual([part.classes for part in parts],
-                             [{"thinking"}, {"tool-calls"}, {"thinking"}, set()])
+            self.assertEqual([part.classes for part in parts], [{"thinking"}, {"tool-calls"}, {"thinking"}, set()])
             self.assertIsInstance(parts[-1], Markdown)
-            self.assertEqual([str(part.render()) for part in parts[:3]], [
-                "Need a tool.", 'called tool: get_current_season()\ncalled tool: get_cs_team(name="NAVI")', "Got it."])
+            self.assertEqual(
+                [str(part.render()) for part in parts[:3]],
+                ["Need a tool.", 'called tool: get_current_season()\ncalled tool: get_cs_team(name="NAVI")', "Got it."],
+            )
             self.assertFalse(parts[1].display)
             app.screen.set_focus(None)
             await pilot.press("T")
@@ -99,13 +108,17 @@ class DisplayModeTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.query_one(Input).value, "T")
             self.assertFalse(config.detailed)
 
+
 class ToolCallLineTest(unittest.TestCase):
     def test_arguments_are_shown_as_json_values(self):
-        self.assertEqual(tool_call_line("search", {"query": "Frieren", "days": 7, "past": False}),
-                         'called tool: search(query="Frieren", days=7, past=false)')
+        self.assertEqual(
+            tool_call_line("search", {"query": "Frieren", "days": 7, "past": False}),
+            'called tool: search(query="Frieren", days=7, past=false)',
+        )
 
     def test_arguments_that_were_not_json(self):
         self.assertEqual(tool_call_line("search", None), "called tool: search(arguments that weren't valid JSON)")
+
 
 class SpinnerLabelTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -130,10 +143,13 @@ class SpinnerLabelTest(unittest.IsolatedAsyncioTestCase):
                 yield chunk("Done.", done=True)
 
         labels_by_round = []
-        with mock.patch.object(mlx_server, "ensure_chat", mock.Mock()), \
-             mock.patch.object(config, "tool_routing", False), mock.patch.object(config, "compact_at", None), \
-             mock.patch.object(Spinner, "MIN_TOOL_SECONDS", 0.05), \
-             mock.patch.object(mlx_client, "stream_chat", stream_chat):
+        with (
+            mock.patch.object(mlx_server, "ensure_chat", mock.Mock()),
+            mock.patch.object(config, "tool_routing", False),
+            mock.patch.object(config, "compact_at", None),
+            mock.patch.object(Spinner, "MIN_TOOL_SECONDS", 0.05),
+            mock.patch.object(mlx_client, "stream_chat", stream_chat),
+        ):
             app = DecartesApp()
             async with app.run_test(size=(100, 30)) as pilot:
                 await pilot.pause()

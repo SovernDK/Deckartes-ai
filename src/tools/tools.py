@@ -29,9 +29,11 @@ Confirm = Callable[[str], Awaitable[bool]]
 TOOLS: list = []
 TOOLS_BY_NAME: dict = {}
 
+
 def tool(group: str | None):
     """Register an async function as a tool the model can call, in a tool group (tool_groups.py;
     None = in no group, sent with every question)."""
+
     def register(function):
         # First, so a tool in an unknown group raises before it's registered
         if group is not None:
@@ -39,7 +41,9 @@ def tool(group: str | None):
         TOOLS.append(function)
         TOOLS_BY_NAME[function.__name__] = function
         return function
+
     return register
+
 
 @tool("server")
 async def get_server_overview() -> str:
@@ -48,20 +52,24 @@ async def get_server_overview() -> str:
     Use it for "how is the server doing" or whenever several of these are asked about."""
     return await glances.overview()
 
+
 @tool("server")
 async def get_server_status() -> str:
     """Check whether the home server (thinkpad) is online, and how long it has been up."""
     return await glances.status()
+
 
 @tool("server")
 async def get_cpu_usage() -> str:
     """Get current CPU usage of the home server (thinkpad) in percent and its core count."""
     return await glances.cpu()
 
+
 @tool("server")
 async def get_gpu_usage() -> str:
     """Get GPU usage of the home server (thinkpad): load, memory and temperature when known."""
     return await glances.gpu()
+
 
 @tool("server")
 async def get_system_load() -> str:
@@ -69,31 +77,37 @@ async def get_system_load() -> str:
     much of its CPU capacity that is."""
     return await glances.load()
 
+
 @tool("server")
 async def get_memory_usage() -> str:
     """Get RAM usage of the home server (thinkpad): used, total and available."""
     return await glances.mem()
+
 
 @tool("server")
 async def get_swap_usage() -> str:
     """Get swap memory usage of the home server (thinkpad)."""
     return await glances.memswap()
 
+
 @tool("server")
 async def get_disk_usage() -> str:
     """Get disk usage of the home server (thinkpad): used, total and free space per disk."""
     return await glances.fs()
+
 
 @tool("server")
 async def get_server_temperatures() -> str:
     """Get temperatures (CPU and other sensors), fan speeds and battery level of the home server (thinkpad)."""
     return await glances.sensors()
 
+
 @tool("server")
 async def get_containers() -> str:
     """List Docker containers on the home server (thinkpad): status, uptime, CPU and RAM use.
     Stopped or unhealthy ones come first, then the busiest."""
     return await glances.containers()
+
 
 @tool("disk")
 async def list_folder(path: str) -> dict:
@@ -104,6 +118,7 @@ async def list_folder(path: str) -> dict:
         path: Folder to list, e.g. "~" for the home folder, "~/Downloads" or "/Applications"
     """
     return await disk_scan.list_directory(path)
+
 
 @tool("disk")
 async def search_files(name: str, path: str) -> dict:
@@ -116,6 +131,7 @@ async def search_files(name: str, path: str) -> dict:
     """
     return await disk_scan.find_files(name, path)
 
+
 @tool("disk")
 async def get_folder_size(path: str) -> dict:
     """Get the total size and number of files of a folder on this computer,
@@ -125,6 +141,7 @@ async def get_folder_size(path: str) -> dict:
         path: Folder to measure, e.g. "~/Downloads"
     """
     return await disk_scan.measure_folder(path)
+
 
 # In no group: the router matches questions to example questions and can't know what the user's files contain
 @tool(None)
@@ -138,6 +155,7 @@ async def search_library(query: str) -> str:
     """
     return await library.search(query)
 
+
 @tool("web")
 async def search_web(query: str) -> list:
     """Search the internet. Use it for current events, facts you are unsure of, or anything
@@ -147,6 +165,7 @@ async def search_web(query: str) -> list:
         query: What to search for, e.g. "textual python latest version"
     """
     return await web.web_search(query)
+
 
 @tool("web")
 async def fetch_web_page(url: str) -> dict:
@@ -158,11 +177,13 @@ async def fetch_web_page(url: str) -> dict:
     """
     return await web.web_fetch(url)
 
+
 @tool("anime")
 async def get_current_season() -> str:
     """Get today's date, weekday and the current anime season and year (e.g. Fall 2026).
     Use it whenever you need today's date or to know which anime season is airing now."""
     return anime.current_season()
+
 
 @tool("anime")
 async def list_season_anime(season: str, year: int) -> str:
@@ -175,6 +196,7 @@ async def list_season_anime(season: str, year: int) -> str:
         year: Year of the season, e.g. 2026
     """
     return await anime.season_anime(season, year)
+
 
 @tool("anime")
 async def get_top_season_anime(season: str, count: int) -> str:
@@ -189,6 +211,7 @@ async def get_top_season_anime(season: str, count: int) -> str:
     """
     return await anime.top_season_anime(season, count)
 
+
 @tool("anime")
 async def get_anime_airing_on(date: str) -> str:
     """List anime with a new subtitled episode on a given day, best rated first. Each has its
@@ -201,6 +224,7 @@ async def get_anime_airing_on(date: str) -> str:
     """
     return await anime.airing_on(date)
 
+
 @tool("anime")
 async def get_next_episode(name: str) -> str:
     """Find when the next subtitled episode of a specific anime airs (weekday, date, local time)
@@ -211,6 +235,7 @@ async def get_next_episode(name: str) -> str:
         name: The anime's name or part of it, in English or romaji, e.g. "Apothecary Diaries"
     """
     return await anime.next_episode(name)
+
 
 @tool("anime")
 async def will_air_next_season(name: str) -> str:
@@ -223,6 +248,7 @@ async def will_air_next_season(name: str) -> str:
         name: The anime's name or part of it, in English or romaji, e.g. "Red River"
     """
     return await anime.continues_next_season(name)
+
 
 @tool("anime")
 async def get_my_anime_list(status: str) -> str:
@@ -237,6 +263,7 @@ async def get_my_anime_list(status: str) -> str:
     """
     return await anime.user_list(status)
 
+
 @tool("cs")
 async def get_cs_ranking(region: str, count: int) -> str:
     """Get Valve's official Counter-Strike (CS2) team ranking (Valve Regional Standings): place,
@@ -248,6 +275,7 @@ async def get_cs_ranking(region: str, count: int) -> str:
     """
     return await cs.ranking(region, count)
 
+
 @tool("cs")
 async def get_cs_team(name: str) -> str:
     """Get a Counter-Strike (CS2) esports team: country, current players, Valve ranking,
@@ -257,6 +285,7 @@ async def get_cs_team(name: str) -> str:
         name: Team name or acronym, e.g. "Vitality" or "NAVI"
     """
     return await cs.team_info(name)
+
 
 @tool("cs")
 async def get_cs_player(name: str) -> str:
@@ -268,12 +297,14 @@ async def get_cs_player(name: str) -> str:
     """
     return await cs.player_info(name)
 
+
 @tool("cs")
 async def get_cs_live_matches() -> str:
     """Get Counter-Strike (CS2) esports matches being played right now in major events or by
     top-ranked teams, with teams, current score in maps, event, stage, format (BO1/BO3) and
     stream link."""
     return await cs.live_matches()
+
 
 @tool("cs")
 async def get_cs_upcoming_matches(team: str) -> str:
@@ -286,6 +317,7 @@ async def get_cs_upcoming_matches(team: str) -> str:
     """
     return await cs.upcoming_matches(team)
 
+
 @tool("cs")
 async def get_cs_match_results(team: str) -> str:
     """Get recent Counter-Strike (CS2) esports match results, newest first, with teams, score in
@@ -295,6 +327,7 @@ async def get_cs_match_results(team: str) -> str:
         team: A team name to get only its results, or "all" for recent major-event results
     """
     return await cs.match_results(team)
+
 
 @tool("cs")
 async def get_cs_tournaments(status: str) -> str:
@@ -306,6 +339,7 @@ async def get_cs_tournaments(status: str) -> str:
     """
     return await cs.tournaments(status)
 
+
 @tool("calendar")
 async def get_calendar_events(date: str) -> str:
     """Get the events in the user's own calendar (Apple Calendar) on one day: title, time
@@ -315,6 +349,7 @@ async def get_calendar_events(date: str) -> str:
         date: Date as YYYY-MM-DD. Work it out from the current date: "tomorrow" or "friday" must be given as its YYYY-MM-DD
     """
     return await calendar_tools.events_on(date)
+
 
 @tool("calendar")
 async def get_calendar_period(period: str) -> str:
@@ -327,6 +362,7 @@ async def get_calendar_period(period: str) -> str:
     """
     return await calendar_tools.period_events(period)
 
+
 @tool("calendar")
 async def find_calendar_events(query: str) -> str:
     """Search the user's own calendar (Apple Calendar) for events by a word in their title,
@@ -338,9 +374,17 @@ async def find_calendar_events(query: str) -> str:
     """
     return await calendar_tools.find_events(query)
 
+
 @tool("calendar")
-async def add_calendar_event(title: str, date: str, start_time: str, end_date: str | None = None,
-                             end_time: str | None = None, *, confirm: Confirm) -> str:
+async def add_calendar_event(
+    title: str,
+    date: str,
+    start_time: str,
+    end_date: str | None = None,
+    end_time: str | None = None,
+    *,
+    confirm: Confirm,
+) -> str:
     """Add an event to the user's own calendar (Apple Calendar). Use it only when the user asks
     to add, schedule or put something in their calendar. The user confirms it before it's saved,
     so call it right away with what you know. Take the title, date and time from the user, from
@@ -356,6 +400,7 @@ async def add_calendar_event(title: str, date: str, start_time: str, end_date: s
     """
     return await calendar_tools.add_event(title, date, start_time, end_date, end_time, confirm)
 
+
 @tool("banking")
 async def get_bank_transactions(date_from: str, date_to: str | None = None) -> str:
     """Get the transactions of the user's own bank accounts between two dates, newest first: date,
@@ -367,6 +412,7 @@ async def get_bank_transactions(date_from: str, date_to: str | None = None) -> s
         date_to: Optional. Last day as YYYY-MM-DD; leave it out to go up to today
     """
     return await bank.transactions(date_from, date_to)
+
 
 @tool("banking")
 async def get_spending_by_category(date_from: str, date_to: str | None = None) -> str:
@@ -382,6 +428,7 @@ async def get_spending_by_category(date_from: str, date_to: str | None = None) -
     """
     return await spending.by_category(date_from, date_to)
 
+
 @tool("banking")
 async def set_spending_category(payee: str, category: str) -> str:
     """Put a shop or payee in a spending category from now on, when the user says one is labeled
@@ -393,13 +440,20 @@ async def set_spending_category(payee: str, category: str) -> str:
     """
     return spending.set_category(payee, category)
 
+
 def tools_for(allowed: list[str] | None) -> list:
     if allowed is None:
         return TOOLS
     return [TOOLS_BY_NAME[name] for name in allowed]
 
-async def run_tool(name: str, arguments: dict | None, confirm: Confirm | None = None, *,
-                   results: Callable[[str, dict], str] | None = None) -> str:
+
+async def run_tool(
+    name: str,
+    arguments: dict | None,
+    confirm: Confirm | None = None,
+    *,
+    results: Callable[[str, dict], str] | None = None,
+) -> str:
     """Run a tool the model asked for and return the tool text: its result, or what went wrong.
 
     arguments is None when the model's arguments weren't valid JSON. confirm asks the user before a
@@ -418,8 +472,7 @@ async def run_tool(name: str, arguments: dict | None, confirm: Confirm | None = 
         return results(name, arguments)
     needs_confirm = CONFIRM in inspect.signature(tool).parameters
     if needs_confirm and confirm is None:
-        return (f"Tool {name} needs the user's confirmation, which can't be asked for here, "
-                "so nothing was changed")
+        return f"Tool {name} needs the user's confirmation, which can't be asked for here, so nothing was changed"
     try:
         output = await (tool(**arguments, confirm=confirm) if needs_confirm else tool(**arguments))
     except Exception as e:

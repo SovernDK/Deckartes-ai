@@ -165,6 +165,7 @@ Tool definitions cost about 2,700 tokens per question. Before each question, the
 ```bash
 PYTHONPATH=src venv/bin/python -m unittest discover tests   # tests
 venv/bin/ruff check .                                       # lint
+venv/bin/ruff format .                                      # format
 PYTHONPATH=src venv/bin/textual run --dev src/main.py       # with devtools; logs in `venv/bin/textual console`
 ```
 

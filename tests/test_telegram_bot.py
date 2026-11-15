@@ -31,21 +31,29 @@ TOKEN = "123:SECRET"
 OWNER = 42
 PATH = f"/bot{TOKEN}/"
 
+
 def ok(result: object = True) -> dict:
     return {"ok": True, "result": result}
 
+
 def message(text, sender=OWNER, chat_type="private", update_id=1):
-    return {"update_id": update_id, "message": {"from": {"id": sender}, "chat": {"id": sender, "type": chat_type},
-                                                "text": text}}
+    return {
+        "update_id": update_id,
+        "message": {"from": {"id": sender}, "chat": {"id": sender, "type": chat_type}, "text": text},
+    }
+
 
 def press(data, sender=OWNER, update_id=2):
     return {"update_id": update_id, "callback_query": {"id": "press", "from": {"id": sender}, "data": data}}
 
+
 async def select_nothing(query, previous):
     return SimpleNamespace(tools=[], groups=[])
 
+
 async def run_confirmed_tool(name, arguments, confirm):
     return "saved" if await confirm("Add this event?") else "declined"
+
 
 class BotTest(HttpTest):
     def setUp(self):
@@ -57,8 +65,10 @@ class BotTest(HttpTest):
             patcher = mock.patch.object(telegram_bot, name, 0)
             patcher.start()
             self.addCleanup(patcher.stop)
-        self.routes: dict[str, Any] = {PATH + method: ok({"message_id": 7}) for method in (
-            "sendMessage", "sendChatAction", "answerCallbackQuery", "editMessageText", "setMyCommands")}
+        self.routes: dict[str, Any] = {
+            PATH + method: ok({"message_id": 7})
+            for method in ("sendMessage", "sendChatAction", "answerCallbackQuery", "editMessageText", "setMyCommands")
+        }
         self.routes[PATH + "getUpdates"] = ok([])
         self.server = self.serve(self.routes)
         self.bot = Bot(Conversation(tool_runner=run_confirmed_tool, tool_selector=select_nothing))
@@ -73,10 +83,12 @@ class BotTest(HttpTest):
     def block_model(self) -> tuple[asyncio.Event, asyncio.Event]:
         """The model call waits for the second event; the first says it has started."""
         started, release = asyncio.Event(), asyncio.Event()
+
         async def stream(messages, tools=None):
             started.set()
             await release.wait()
             yield chunk("Late answer", done=True)
+
         patcher = mock.patch.object(mlx_client, "stream_chat", stream)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -110,8 +122,7 @@ class BotTest(HttpTest):
 
     async def start_confirmation(self) -> str:
         """Run a turn up to the Yes/No question and return its Yes button's data."""
-        self.use_model([chunk(tool_calls=[call("add_event")], done=True)],
-                       [chunk("Done", done=True)])
+        self.use_model([chunk(tool_calls=[call("add_event")], done=True)], [chunk("Done", done=True)])
         await self.bot.handle(message("Add it"))
         await self.until(lambda: self.bot.pending is not None)
         await self.until(lambda: self.calls("sendMessage"))
@@ -173,9 +184,15 @@ class TurnTest(BotTest):
         sent = self.calls("sendMessage")[0]
         self.assertEqual(sent["text"], "📌 Title\nbold and x")
         # Offsets count UTF-16 units, so the emoji counts as two
-        self.assertEqual(sent["entities"], [
-            {"type": "underline", "offset": 3, "length": 5}, {"type": "bold", "offset": 3, "length": 5},
-            {"type": "bold", "offset": 9, "length": 4}, {"type": "code", "offset": 18, "length": 1}])
+        self.assertEqual(
+            sent["entities"],
+            [
+                {"type": "underline", "offset": 3, "length": 5},
+                {"type": "bold", "offset": 3, "length": 5},
+                {"type": "bold", "offset": 9, "length": 4},
+                {"type": "code", "offset": 18, "length": 1},
+            ],
+        )
         self.assertNotIn("parse_mode", sent)
 
     async def test_a_long_reply_arrives_in_parts_under_the_limit(self):
@@ -229,10 +246,11 @@ class TurnTest(BotTest):
         self.assertEqual(len(self.calls("sendMessage")), 2)
         self.assertEqual(answers, [])
 
-
     async def test_formatting_telegram_rejects_is_resent_as_plain_text(self):
-        answers = [httpx.Response(400, json={"ok": False, "description": "Bad Request: can't parse entities"}),
-                   ok({"message_id": 7})]
+        answers = [
+            httpx.Response(400, json={"ok": False, "description": "Bad Request: can't parse entities"}),
+            ok({"message_id": 7}),
+        ]
         self.routes[PATH + "sendMessage"] = lambda request: answers.pop(0)
         self.use_model([chunk("**Hello**", done=True)])
         await self.ask_and_finish()
@@ -240,6 +258,7 @@ class TurnTest(BotTest):
         self.assertIn("entities", first)
         self.assertEqual(second["text"], "Hello")
         self.assertNotIn("entities", second)
+
 
 class CommandTest(BotTest):
     async def test_help_and_start_explain_the_bot(self):
@@ -300,8 +319,9 @@ class HistoryTest(BotTest):
         await self.bot.handle(message("/clear", update_id=2))
         await self.bot.handle(message("Second", update_id=3))
         await self.current_turn()
-        self.assertEqual([(c.title, c.source) for c in history.list_conversations()],
-                         [("Second", "telegram"), ("First", "telegram")])
+        self.assertEqual(
+            [(c.title, c.source) for c in history.list_conversations()], [("Second", "telegram"), ("First", "telegram")]
+        )
 
     async def test_a_turn_that_cant_be_saved_is_still_answered_and_logged(self):
         (self.folder / "a file").write_text("")
@@ -312,6 +332,7 @@ class HistoryTest(BotTest):
         with self.assertLogs(telegram_bot.log, logging.WARNING):
             await self.ask_and_finish("First")
         self.assertEqual(self.texts(), ["Hello"])
+
 
 class ConfirmationTest(BotTest):
     async def test_yes_lets_the_change_through(self):
@@ -360,8 +381,11 @@ class ConfirmationTest(BotTest):
     async def test_a_question_that_cannot_be_sent_adds_nothing(self):
         freeze(self, "2026-11-11 12:00")
         save = mock.Mock()
-        for name, value in (("_events_between", lambda start, end: []),
-                            ("_target_calendar", lambda: FakeCalendar("Home")), ("save_event", save)):
+        for name, value in (
+            ("_events_between", lambda start, end: []),
+            ("_target_calendar", lambda: FakeCalendar("Home")),
+            ("save_event", save),
+        ):
             patcher = mock.patch.object(calendar_tools, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -402,10 +426,12 @@ class PollingTest(BotTest):
 
     async def test_polling_recovers_after_an_error(self):
         answers = [httpx.ConnectError("asleep"), ok([message("/help", update_id=9)])]
+
         def poll(request):
             if answers:
                 return answers.pop(0)
             raise asyncio.CancelledError  # A fake poll never yields, so task.cancel() wouldn't land
+
         self.routes[PATH + "getUpdates"] = poll
         task = await self.run_bot()
         with self.assertRaises(asyncio.CancelledError):
@@ -413,8 +439,9 @@ class PollingTest(BotTest):
         self.assertEqual(self.texts(), [telegram_bot.HELP])
 
     async def test_a_bad_update_does_not_stop_the_ones_after_it(self):
-        self.routes[PATH + "getUpdates"] = ok([{"update_id": 1, "message": {"text": "no sender"}},
-                                               message("/help", update_id=2)])
+        self.routes[PATH + "getUpdates"] = ok(
+            [{"update_id": 1, "message": {"text": "no sender"}}, message("/help", update_id=2)]
+        )
         with self.assertLogs(telegram_bot.log, logging.ERROR):
             await self.bot.poll_once()
         self.assertEqual(self.texts(), [telegram_bot.HELP])
@@ -426,8 +453,10 @@ class PollingTest(BotTest):
         patcher.start()
         self.addCleanup(patcher.stop)
         turn = self.current_turn()
+
         def poll(request):
             raise asyncio.CancelledError  # A fake poll never yields, so task.cancel() wouldn't land
+
         self.routes[PATH + "getUpdates"] = poll
         task = asyncio.create_task(self.bot.run())
         with self.assertRaises(asyncio.CancelledError):
@@ -461,6 +490,7 @@ class ShutdownTest(BotTest):
         async def run_forever(bot):
             started.set()
             await asyncio.Event().wait()
+
         started = asyncio.Event()
         with mock.patch.object(Bot, "run", run_forever), mock.patch.object(mlx_server, "stop_all") as stop_all:
             task = asyncio.create_task(telegram_bot.serve())

@@ -67,6 +67,7 @@ LIVE_CASES = [
     (("Add the next Frieren episode to my calendar", "yes"), ["calendar"]),
 ]
 
+
 class LiveRoutingTest(unittest.IsolatedAsyncioTestCase):
     """Real questions through config.embed_model. Rerun after changing the embedding model,
     the group examples or the thresholds."""
@@ -80,8 +81,9 @@ class LiveRoutingTest(unittest.IsolatedAsyncioTestCase):
         examples = await tool_router._example_vectors()
         vector = tool_router._unit(await mlx_client.embed([question]))[0]
         scores = tool_router._scores(vector, examples)
-        return ", ".join(f"{name or 'no tools'} {score:.2f}"
-                         for name, score in sorted(scores.items(), key=lambda s: -s[1]))
+        return ", ".join(
+            f"{name or 'no tools'} {score:.2f}" for name, score in sorted(scores.items(), key=lambda s: -s[1])
+        )
 
     async def test_questions_reach_their_groups(self):
         use_preset(self, "all")
@@ -95,6 +97,7 @@ class LiveRoutingTest(unittest.IsolatedAsyncioTestCase):
                         self.assertLessEqual(len(groups), max(len(expected), MAX_GROUPS), detail)
                     else:
                         self.assertEqual(groups, [], detail)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,6 +26,7 @@ _sync_transport: httpx.BaseTransport | None = None
 # No read limit: a request may wait for a model to load, or generate for a long time
 TIMEOUT = httpx.Timeout(None, connect=5.0)
 
+
 @dataclass
 class ToolCall:
     id: str
@@ -34,30 +35,39 @@ class ToolCall:
     arguments: dict | None
 
     def as_message(self) -> dict:
-        return {"id": self.id, "type": "function",
-                "function": {"name": self.name, "arguments": json.dumps(self.arguments or {})}}
+        return {
+            "id": self.id,
+            "type": "function",
+            "function": {"name": self.name, "arguments": json.dumps(self.arguments or {})},
+        }
+
 
 @dataclass
 class TokenCount:
     """What one chat call used. The prompt count includes tokens the server had cached."""
+
     prompt: int = 0
     completion: int = 0
     # Time spent generating the completion, without prompt evaluation; 0 when not reported
     generation_ns: int = 0
 
+
 @dataclass
 class Delta:
     """One piece of a streamed reply. Tool calls and the token count come in the last one."""
+
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: TokenCount | None = None
     # The model's thinking, which the server's reasoning parser keeps out of content
     reasoning: str = ""
 
+
 @dataclass
 class Reply:
     content: str
     usage: TokenCount | None
+
 
 def _token_count(usage: dict | None, metrics: dict | None) -> TokenCount | None:
     if not usage:
@@ -65,6 +75,7 @@ def _token_count(usage: dict | None, metrics: dict | None) -> TokenCount | None:
     completion = usage.get("completion_tokens", 0)
     token_ms = (metrics or {}).get("mean_itl_ms") or 0
     return TokenCount(usage.get("prompt_tokens", 0), completion, round(completion * token_ms * 1e6))
+
 
 def _chat_body(messages: list[dict], tools: list | None = None, thinking: bool | None = None) -> dict:
     body = {
@@ -80,6 +91,7 @@ def _chat_body(messages: list[dict], tools: list | None = None, thinking: bool |
         body["tools"] = [tool_definition(function) for function in tools]
     return body
 
+
 def _status_error(status: int, body: str) -> ModelServerError:
     try:
         detail = json.loads(body)["error"]["message"]
@@ -87,8 +99,10 @@ def _status_error(status: int, body: str) -> ModelServerError:
         detail = body[:300]
     return ModelServerError(f"The model server responded with status {status}: {detail}")
 
+
 def _unreachable(url: str) -> ModelServerError:
     return ModelServerError(f"Could not reach the model server at {url}")
+
 
 def _tool_call(parts: dict) -> ToolCall:
     try:
@@ -96,6 +110,7 @@ def _tool_call(parts: dict) -> ToolCall:
     except ValueError:
         arguments = None
     return ToolCall(parts["id"], parts["name"], arguments if isinstance(arguments, dict) else None)
+
 
 def _add_tool_call_delta(pending: dict[int, dict], delta: dict) -> None:
     """Join the pieces of a tool call, which may arrive over several chunks."""
@@ -105,6 +120,7 @@ def _add_tool_call_delta(pending: dict[int, dict], delta: dict) -> None:
     call["name"] = function.get("name") or call["name"]
     arguments = function.get("arguments") or ""
     call["arguments"] += arguments if isinstance(arguments, str) else json.dumps(arguments)
+
 
 async def stream_chat(messages: list[dict], tools: list | None = None) -> AsyncGenerator[Delta, None]:
     """Stream a reply. Closing this generator closes the connection, which stops the generation."""
@@ -122,7 +138,7 @@ async def stream_chat(messages: list[dict], tools: list | None = None) -> AsyncG
             async for line in response.aiter_lines():
                 if not line.startswith("data:"):
                     continue
-                payload = line[len("data:"):].strip()
+                payload = line[len("data:") :].strip()
                 if payload == "[DONE]":
                     break
                 data = json.loads(payload)
@@ -142,15 +158,19 @@ async def stream_chat(messages: list[dict], tools: list | None = None) -> AsyncG
                         yield Delta(content=delta["content"])
     except httpx.TransportError as e:
         raise _unreachable(config.host) from e
-    yield Delta(tool_calls=[_tool_call(pending[index]) for index in sorted(pending)], usage=_token_count(usage, metrics))
+    yield Delta(
+        tool_calls=[_tool_call(pending[index]) for index in sorted(pending)], usage=_token_count(usage, metrics)
+    )
+
 
 async def complete(messages: list[dict]) -> Reply:
     """A whole reply without tools or thinking, for compacting the conversation."""
     await asyncio.to_thread(mlx_server.ensure_chat)
     try:
         async with httpx.AsyncClient(transport=_transport, timeout=TIMEOUT) as client:
-            response = await client.post(f"{config.host}/v1/chat/completions",
-                                         json=_chat_body(messages, thinking=False))
+            response = await client.post(
+                f"{config.host}/v1/chat/completions", json=_chat_body(messages, thinking=False)
+            )
     except httpx.TransportError as e:
         raise _unreachable(config.host) from e
     if response.status_code != 200:
@@ -159,12 +179,16 @@ async def complete(messages: list[dict]) -> Reply:
     content = data["choices"][0]["message"].get("content") or ""
     return Reply(content, _token_count(data.get("usage"), data.get("metrics")))
 
+
 async def decide(state: str, question: str, options: dict[str, str]) -> dict[str, float]:
     """The decision model's probability for each option (answer -> description) of a question about
     state. It scores the options rather than writing text, so the answer is always one of them."""
     await asyncio.to_thread(mlx_server.ensure_decisions)
-    body = {"model": config.decision_model.name, "state": state,
-            "questions": {"answer": {"type": "choice", "instructions": question, "criteria": options}}}
+    body = {
+        "model": config.decision_model.name,
+        "state": state,
+        "questions": {"answer": {"type": "choice", "instructions": question, "criteria": options}},
+    }
     try:
         async with httpx.AsyncClient(transport=_transport, timeout=TIMEOUT) as client:
             response = await client.post(f"{config.decision_host}/v1/systemone", json=body)
@@ -174,37 +198,44 @@ async def decide(state: str, question: str, options: dict[str, str]) -> dict[str
         raise _status_error(response.status_code, response.text)
     return response.json()["answers"]["answer"]["probabilities"]
 
+
 def _vectors(response: httpx.Response) -> list[list[float]]:
     if response.status_code != 200:
         raise _status_error(response.status_code, response.text)
     return [item["embedding"] for item in sorted(response.json()["data"], key=lambda item: item["index"])]
+
 
 async def embed(texts: list[str]) -> list[list[float]]:
     """Embed texts with config.embed_model, for tool routing."""
     await asyncio.to_thread(mlx_server.ensure_chat)
     try:
         async with httpx.AsyncClient(transport=_transport, timeout=TIMEOUT) as client:
-            response = await client.post(f"{config.host}/v1/embeddings",
-                                         json={"model": config.embed_model, "input": texts})
+            response = await client.post(
+                f"{config.host}/v1/embeddings", json={"model": config.embed_model, "input": texts}
+            )
     except httpx.TransportError as e:
         raise _unreachable(config.host) from e
     return _vectors(response)
+
 
 def embed_file_text(texts: list[str]) -> list[list[float]]:
     """Embed texts with config.rag_embed_model, for the library. Blocks: call it in a thread."""
     mlx_server.ensure_files()
     try:
         with httpx.Client(transport=_sync_transport, timeout=TIMEOUT) as client:
-            response = client.post(f"{config.file_embed_host}/v1/embeddings",
-                                   json={"model": config.rag_embed_model, "input": texts})
+            response = client.post(
+                f"{config.file_embed_host}/v1/embeddings", json={"model": config.rag_embed_model, "input": texts}
+            )
     except httpx.TransportError as e:
         raise _unreachable(config.file_embed_host) from e
     return _vectors(response)
+
 
 def _hub_folder() -> Path:
     if os.environ.get("HF_HUB_CACHE"):
         return Path(os.environ["HF_HUB_CACHE"])
     return Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
+
 
 def list_models() -> list[str]:
     """Chat models that can be picked: the current one and the complete ones in the Hugging Face cache."""
@@ -212,7 +243,11 @@ def list_models() -> list[str]:
     hidden = {config.embed_model, config.rag_embed_model}
     for repo in _hub_folder().glob("models--*"):
         name = repo.name.removeprefix("models--").replace("--", "/")
-        if name not in hidden and "embed" not in name.lower() \
-                and any(repo.glob("snapshots/*/config.json")) and any(repo.glob("snapshots/*/*.safetensors")):
+        if (
+            name not in hidden
+            and "embed" not in name.lower()
+            and any(repo.glob("snapshots/*/config.json"))
+            and any(repo.glob("snapshots/*/*.safetensors"))
+        ):
             found.add(name)
     return sorted(found, key=str.lower)

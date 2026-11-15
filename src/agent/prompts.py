@@ -16,17 +16,21 @@ from tools.tools import TOOLS_BY_NAME
 def load_prompts() -> list[dict]:
     return prompt_file.presets()
 
+
 def current_prompt() -> dict | None:
     for prompt in load_prompts():
         if prompt["name"] == config.system_prompt:
             return prompt
     return None
 
+
 def current_date_line() -> str:
     return f"Current date: {clock.now():%A %Y-%m-%d} ({config.timezone})."
 
+
 def current_time_line() -> str:
     return f"Current local time: {clock.now():%H:%M}."
+
 
 def system_message() -> str:
     prompt = current_prompt()
@@ -35,6 +39,7 @@ def system_message() -> str:
     # Small models otherwise ask for values they already have
     rule = f" {prompt_file.task('tool_values_rule')}" if prompt.get("tools", "all") else ""
     return f"{current_date_line()}\n\n{prompt['prompt']}{rule}"
+
 
 def allowed_tool_names() -> list[str] | None:
     """Tool names the current preset allows; None means all tools.

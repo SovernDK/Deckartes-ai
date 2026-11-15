@@ -13,15 +13,19 @@ from core.config import PROJECT_ROOT
 
 PROMPTS_FILE = PROJECT_ROOT / "prompts.json"
 
+
 def _read() -> dict:
     return json.loads(PROMPTS_FILE.read_text())
+
 
 def presets() -> list[dict]:
     return _read()["presets"]
 
+
 def task(name: str, **values: str) -> str:
     """A task prompt with its {placeholders} filled in from values."""
     return _read()["tasks"][name].format(**values)
+
 
 def decision(name: str) -> dict:
     """A decision model's question: its "question", its "options" (answer -> description) and any

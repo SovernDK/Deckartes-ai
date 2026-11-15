@@ -11,6 +11,7 @@ from validation.validation import Suite
 
 class ValidationScreen(ModalScreen[list[str] | None]):
     """Dismisses with the ticked categories, or None when closed."""
+
     BINDINGS = [("r", "run", "Run"), ("escape", "close", "Close")]
 
     def __init__(self, suite: Suite) -> None:
@@ -18,11 +19,17 @@ class ValidationScreen(ModalScreen[list[str] | None]):
         self.suite = suite
 
     def compose(self) -> ComposeResult:
-        options = [(f"{category} ({count})", category, True) for category, count in self.suite.category_counts().items()]
+        options = [
+            (f"{category} ({count})", category, True) for category, count in self.suite.category_counts().items()
+        ]
         yield Vertical(
             Static(f"Validate {config.model}", markup=False),
             SelectionList(*options),
-            Static("space toggles · r runs · escape closes\nA run with anything unticked is partial and can't be compared.", markup=False, classes="hint"),
+            Static(
+                "space toggles · r runs · escape closes\nA run with anything unticked is partial and can't be compared.",
+                markup=False,
+                classes="hint",
+            ),
             id="validation",
         )
 

@@ -15,6 +15,7 @@ MIN_TEMPERATURE, MAX_TEMPERATURE = 0.0, 2.0
 # Tool definitions alone take up to ~2,700 tokens, so smaller windows leave little for the chat
 RECOMMENDED_MIN_CONTEXT = 8192
 
+
 class OutlineButton(Button):
     """A button whose label gets a background in its own colour while hovered or focused."""
 
@@ -44,16 +45,22 @@ class OutlineButton(Button):
         self.set_reactive(Button.label, Content.from_markup(markup))
         self.refresh()
 
+
 class ConfigScreen(ModalScreen[bool]):
     """Dismisses with True when settings were saved."""
+
     BINDINGS = [("escape", "cancel", "Close")]
 
     def compose(self) -> ComposeResult:
         with Vertical(id="config"):
             yield Label(f"Temperature ({MIN_TEMPERATURE:g}-{MAX_TEMPERATURE:g}, empty = model default)")
-            yield Input(value="" if config.temperature is None else f"{config.temperature:g}",
-                        placeholder="model default", type="number", select_on_focus=False,
-                        id="temperature")
+            yield Input(
+                value="" if config.temperature is None else f"{config.temperature:g}",
+                placeholder="model default",
+                type="number",
+                select_on_focus=False,
+                id="temperature",
+            )
             yield Label("Context budget (when to compact)")
             yield Select(self.context_options(), value=config.context_length, allow_blank=False, id="context")
             yield Static(id="config_error")

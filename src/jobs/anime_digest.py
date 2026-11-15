@@ -13,9 +13,12 @@ from tools.animeschedule_api import AnimeScheduleError
 
 
 async def run() -> int:
-    return await runner.run(animeschedule_api.airing_digest,
-                            settings={"ANIMESCHEDULE_TOKEN": config.animeschedule_token},
-                            errors=(AnimeScheduleError,))
+    return await runner.run(
+        animeschedule_api.airing_digest,
+        settings={"ANIMESCHEDULE_TOKEN": config.animeschedule_token},
+        errors=(AnimeScheduleError,),
+    )
+
 
 if __name__ == "__main__":
     sys.exit(runner.main(run))

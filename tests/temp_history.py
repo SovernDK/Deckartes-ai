@@ -21,6 +21,7 @@ def temp_history(test: unittest.TestCase) -> Path:
     test.addCleanup(patcher.stop)
     return Path(folder.name)
 
+
 def save(question: str, answer: str, at: str, source: str = "app", saver: history.Saver | None = None) -> history.Saver:
     """Save a finished turn at `at` ("YYYY-MM-DD HH:MM"), to a new conversation or to saver's; returns the saver."""
     saver = saver or history.Saver(source)
@@ -28,6 +29,7 @@ def save(question: str, answer: str, at: str, source: str = "app", saver: histor
     with clock.frozen_at(moment):
         saver.turn("Current local time: 12:00.", question, answer, moment, "")
     return saver
+
 
 def save_summary(saver: history.Saver, summary: str, at: str) -> None:
     with clock.frozen_at(dt.datetime.fromisoformat(at)):

@@ -21,22 +21,28 @@ from tools.tools import TOOLS
 def names(tools) -> list[str] | None:
     return None if tools is None else [tool.__name__ for tool in tools]
 
+
 def group_tools(*groups: str) -> list[str]:
     """The tools sent when the router picks these groups (the rule is tested in test_tool_groups.py)."""
     return [tool.__name__ for tool in GROUPS.sent_with(groups, TOOLS)]
+
 
 def ask(*questions: str) -> tuple[str, str | None]:
     """The arguments of select_tools for the last of these questions."""
     return questions[-1], questions[-2] if len(questions) > 1 else None
 
+
 def use_preset(test: unittest.TestCase, tools: str | list[str]) -> None:
     """Make the current preset one allowing these tools ("all" or names) for the rest of the test."""
     preset = {"name": "Test", "prompt": "", "tools": tools}
-    for target, name, value in [(prompts, "load_prompts", mock.Mock(return_value=[preset])),
-                                (config, "system_prompt", "Test")]:
+    for target, name, value in [
+        (prompts, "load_prompts", mock.Mock(return_value=[preset])),
+        (config, "system_prompt", "Test"),
+    ]:
         patcher = mock.patch.object(target, name, value)
         patcher.start()
         test.addCleanup(patcher.stop)
+
 
 class FakeEmbeddings:
     """Embeds every example as a unit vector on its group's axis (None = no-tools examples), and
@@ -66,6 +72,7 @@ class FakeEmbeddings:
 
     async def __call__(self, texts: list[str]) -> list[list[float]]:
         return [self.vector(text) for text in texts]
+
 
 class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -134,28 +141,34 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await tool_router.select_tools(*ask("18 to 20"))).groups, [])
 
     async def test_follow_up_borrows_previous_topic(self):
-        self.embed({
-            "When is NAVI's next game?": {"cs": 0.8},
-            "and the week after?": {"calendar": 0.3, "anime": 0.25, None: 0.1},
-        })
+        self.embed(
+            {
+                "When is NAVI's next game?": {"cs": 0.8},
+                "and the week after?": {"calendar": 0.3, "anime": 0.25, None: 0.1},
+            }
+        )
         selection = await tool_router.select_tools(*ask("When is NAVI's next game?", "and the week after?"))
         # cs: 0.8 * PREVIOUS_WEIGHT = 0.64, confident
         self.assertEqual(selection.groups, ["cs"])
 
     async def test_short_follow_up_borrows_even_when_confident(self):
-        self.embed({
-            "Which anime air today?": {"anime": 0.8},
-            "and tomorrow?": {"calendar": 0.5, None: 0.1},
-        })
+        self.embed(
+            {
+                "Which anime air today?": {"anime": 0.8},
+                "and tomorrow?": {"calendar": 0.5, None: 0.1},
+            }
+        )
         selection = await tool_router.select_tools(*ask("Which anime air today?", "and tomorrow?"))
         # anime: 0.8 * PREVIOUS_WEIGHT = 0.64; calendar 0.5 is within MARGIN
         self.assertEqual(selection.groups, ["anime", "calendar"])
 
     async def test_confident_question_keeps_its_own_topic(self):
-        self.embed({
-            "Which anime air today?": {"anime": 0.8},
-            "Do I have plans tomorrow?": {"calendar": 0.5, None: 0.1},
-        })
+        self.embed(
+            {
+                "Which anime air today?": {"anime": 0.8},
+                "Do I have plans tomorrow?": {"calendar": 0.5, None: 0.1},
+            }
+        )
         selection = await tool_router.select_tools(*ask("Which anime air today?", "Do I have plans tomorrow?"))
         self.assertEqual(selection.groups, ["calendar"])
 
@@ -205,6 +218,7 @@ class SelectToolsTest(unittest.IsolatedAsyncioTestCase):
             selection = await tool_router.select_tools(*ask("hello"))
         self.assertEqual(names(selection.tools), names(TOOLS))
         self.assertIsNone(selection.groups)
+
 
 if __name__ == "__main__":
     unittest.main()

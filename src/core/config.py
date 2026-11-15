@@ -12,11 +12,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # Read without loading into os.environ, so child processes (the model servers) don't get the keys
 ENV_FILE = dotenv_values(PROJECT_ROOT / ".env")
 
+
 def read_env(name: str) -> str:
     return os.environ.get(name) or ENV_FILE.get(name) or ""
 
+
 # When the system's time zone can't be found, or its settings conflict
 FALLBACK_TIMEZONE = "UTC"
+
 
 def local_timezone() -> str:
     try:
@@ -24,7 +27,9 @@ def local_timezone() -> str:
     except ZoneInfoNotFoundError:
         return FALLBACK_TIMEZONE
 
+
 CONTEXT_LENGTHS = [2048, 4096, 8192, 16384, 32768]
+
 
 @dataclass
 class Config:
@@ -75,8 +80,9 @@ class Config:
     enable_banking_key_path: str = field(default_factory=lambda: read_env("ENABLE_BANKING_KEY_PATH"), repr=False)
     # The same for the sandbox application (made-up banks), used instead when enable_banking_sandbox is on
     enable_banking_sandbox_id: str = field(default_factory=lambda: read_env("ENABLE_BANKING_SANDBOX_ID"), repr=False)
-    enable_banking_sandbox_key_path: str = field(default_factory=lambda: read_env("ENABLE_BANKING_SANDBOX_KEY_PATH"),
-                                                 repr=False)
+    enable_banking_sandbox_key_path: str = field(
+        default_factory=lambda: read_env("ENABLE_BANKING_SANDBOX_KEY_PATH"), repr=False
+    )
     # Test against the sandbox app and its own bank link: ENABLE_BANKING_SANDBOX=1, or link with --sandbox
     enable_banking_sandbox: bool = field(default_factory=lambda: read_env("ENABLE_BANKING_SANDBOX") == "1")
     # Must match a redirect URL registered for the Enable Banking application. Production apps need
@@ -118,5 +124,6 @@ class Config:
     anime_air_type: str = "sub"
     # Anime rated at or below this (0-10 scale, i.e. 6.0 = 60%) are left out; unrated ones are kept
     anime_min_rating: float = 6.0
+
 
 config = Config()

@@ -16,6 +16,7 @@ from tools import spending
 
 DAYS = 30
 
+
 class PayeeItem(ListItem):
     def __init__(self, payee: spending.Payee) -> None:
         super().__init__()
@@ -39,8 +40,10 @@ class PayeeItem(ListItem):
         self.payee.label = label
         self.query_one(Static).update(self.text())
 
+
 class CategoryScreen(ModalScreen[str | None]):
     """Pick a spending category for one payee."""
+
     BINDINGS = [("escape", "close", "Close")]
 
     def __init__(self, payee: spending.Payee) -> None:
@@ -61,6 +64,7 @@ class CategoryScreen(ModalScreen[str | None]):
 
     def action_close(self) -> None:
         self.dismiss(None)
+
 
 class SpendingScreen(ModalScreen[None]):
     BINDINGS = [("s", "close", "Close"), ("escape", "close", "Close")]
@@ -103,17 +107,21 @@ class SpendingScreen(ModalScreen[None]):
             self.show_status(f"No payments out in the last {DAYS} days.")
             return
         undecided = sum(item.payee.label is None for item in listed)
-        self.show_status(f"{undecided} of {len(listed)} payees from the last {DAYS} days are undecided "
-                         f"and count as {spending.OTHER}.")
+        self.show_status(
+            f"{undecided} of {len(listed)} payees from the last {DAYS} days are undecided "
+            f"and count as {spending.OTHER}."
+        )
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         event.stop()
         item = event.item
         if not isinstance(item, PayeeItem):
             return
+
         def chosen(category: str | None) -> None:
             if category:
                 self.label(item, category)
+
         self.app.push_screen(CategoryScreen(item.payee), chosen)
 
     def label(self, item: PayeeItem, category: str) -> None:

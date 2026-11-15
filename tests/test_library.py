@@ -17,10 +17,12 @@ from tools.library import AddResult, Entry
 
 TOPICS = 40
 
+
 def vector(text: str) -> list[float]:
     """One axis per topic word in text, and one every text shares, so no vector is zero."""
     found = {int(n) for n in re.findall(r"topic(\d+)", text)}
     return [1.0 if i in found else 0.0 for i in range(TOPICS)] + [1.0]
+
 
 class FakeEmbedder:
     def __init__(self):
@@ -36,23 +38,30 @@ class FakeEmbedder:
             raise self.error
         return [vector(text) for text in texts]
 
+
 def paragraph(i: int) -> str:
     """About 1,000 characters, so each paragraph ends up as a chunk of its own."""
     return f"topic{i} " + " ".join(["word"] * 200)
 
+
 def long_text(count=8) -> str:
     return "\n\n".join(paragraph(i) for i in range(count))
+
 
 def pdf(*pages: str) -> bytes:
     """A minimal valid PDF with one line of text per page."""
     kids = " ".join(f"{4 + 2 * i} 0 R" for i in range(len(pages)))
-    objects = ["<< /Type /Catalog /Pages 2 0 R >>",
-               f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>",
-               "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>",
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
     for i, text in enumerate(pages):
         stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET"
-        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {5 + 2 * i} 0 R "
-                       "/Resources << /Font << /F1 3 0 R >> >> >>")
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {5 + 2 * i} 0 R "
+            "/Resources << /Font << /F1 3 0 R >> >> >>"
+        )
         objects.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
     out, offsets = b"%PDF-1.4\n", []
     for number, body in enumerate(objects, 1):
@@ -64,8 +73,10 @@ def pdf(*pages: str) -> bytes:
     out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{start}\n%%EOF\n".encode()
     return out
 
+
 def labels(text: str) -> list[str]:
     return re.findall(r"^\[(.+)\]$", text, re.MULTILINE)
+
 
 class LibraryTest(TurnTest):
     def setUp(self):
@@ -92,11 +103,13 @@ class LibraryTest(TurnTest):
     def block_embedding(self, block_when):
         """Embedding pauses on texts block_when accepts, until released. Returns (started, release)."""
         started, release = threading.Event(), threading.Event()
+
         def embed(texts):
             if block_when(texts):
                 started.set()
                 release.wait(5)
             return [vector(text) for text in texts]
+
         self.embedder.embed = embed
         return started, release
 
@@ -114,6 +127,7 @@ class LibraryTest(TurnTest):
         release.set()
         await asyncio.to_thread(pool.shutdown)
 
+
 class PersistenceTest(LibraryTest):
     async def test_a_new_session_finds_a_file_saved_earlier(self):
         await library.add(self.write(long_text()))
@@ -127,6 +141,7 @@ class PersistenceTest(LibraryTest):
         await library.add(path)
         path.unlink()
         self.assertIn("topic5 secret", await library.search("topic5"))
+
 
 class OverwriteTest(LibraryTest):
     async def test_loading_a_changed_file_replaces_its_old_text(self):
@@ -194,6 +209,7 @@ class OverwriteTest(LibraryTest):
         self.embedder.embed = lambda texts: [vector(text) for text in texts]
         self.assertIn("topic1 old text", await library.search("topic1"))
 
+
 class FolderTest(LibraryTest):
     async def test_files_in_subfolders_are_saved(self):
         self.write("topic1 a", "docs/a.txt")
@@ -231,18 +247,21 @@ class FolderTest(LibraryTest):
         self.write("topic2 z", "docs/z.txt")
         result = await library.add(self.folder / "docs")
         self.assertEqual(result.saved, ["a.txt", "z.txt"])
-        self.assertEqual(result.failed[0],
-                         ("bad.txt", "this looks like a binary file; only text files and PDFs can be loaded"))
+        self.assertEqual(
+            result.failed[0], ("bad.txt", "this looks like a binary file; only text files and PDFs can be loaded")
+        )
         self.assertEqual([name for name, _ in result.failed], ["bad.txt", "broken.pdf"])
 
     async def test_an_embedding_failure_stops_the_load_and_keeps_finished_files(self):
         self.write("topic1 a", "docs/a.txt")
         self.write("topic2 b", "docs/b.txt")
         self.write("topic3 c", "docs/c.txt")
+
         def embed(texts):
             if "topic2" in texts[0]:
                 raise ConnectionError("server down")
             return [vector(text) for text in texts]
+
         self.embedder.embed = embed
         with self.assertRaisesRegex(ConnectionError, "server down"):
             await library.add(self.folder / "docs")
@@ -265,15 +284,32 @@ class FolderTest(LibraryTest):
         self.write("topic2 b", "docs/b.txt")
         progress = []
         await library.add(self.folder / "docs", progress.append)
-        self.assertEqual(progress, ["Reading 1/2 a.txt", "Embedding 1/2 a.txt: 0/1 chunks", "Embedding 1/2 a.txt: 1/1 chunks",
-                                    "Reading 2/2 b.txt", "Embedding 2/2 b.txt: 0/1 chunks", "Embedding 2/2 b.txt: 1/1 chunks"])
+        self.assertEqual(
+            progress,
+            [
+                "Reading 1/2 a.txt",
+                "Embedding 1/2 a.txt: 0/1 chunks",
+                "Embedding 1/2 a.txt: 1/1 chunks",
+                "Reading 2/2 b.txt",
+                "Embedding 2/2 b.txt: 0/1 chunks",
+                "Embedding 2/2 b.txt: 1/1 chunks",
+            ],
+        )
+
 
 class EmbeddingTest(LibraryTest):
     async def test_progress_counts_chunks_in_batches(self):
         progress = []
         await library.add(self.write(long_text(20)), progress.append)
-        self.assertEqual(progress, ["Reading notes.txt", "Embedding notes.txt: 0/20 chunks",
-                                    "Embedding notes.txt: 16/20 chunks", "Embedding notes.txt: 20/20 chunks"])
+        self.assertEqual(
+            progress,
+            [
+                "Reading notes.txt",
+                "Embedding notes.txt: 0/20 chunks",
+                "Embedding notes.txt: 16/20 chunks",
+                "Embedding notes.txt: 20/20 chunks",
+            ],
+        )
 
     async def test_chunks_are_embedded_with_their_file_name_as_title(self):
         await library.add(self.write("topic1 text", "lease.txt"))
@@ -284,15 +320,20 @@ class EmbeddingTest(LibraryTest):
         await library.search("topic1")
         self.assertEqual(self.embedder.calls[-1][1], ["task: search result | query: topic1"])
 
+
 class SearchTest(LibraryTest):
     async def test_search_returns_labelled_passages_with_answering_rules(self):
         await library.add(self.write("First part.\n\nSecond part."))
-        self.assertEqual(await library.search("q"), (
-            "Passages from the user's saved files most related to the search, best match first, each labelled with "
-            "its file and where it is in the file.\n\n[notes.txt, lines 1-3]\nFirst part.\n\nSecond part.\n\nEnd of "
-            "passages. For a question about the user's files, answer only from these passages and give the label of "
-            "the one you used. If none of them answers it, say the saved files don't mention it; don't answer from "
-            "your own knowledge or make up a file, page or line."))
+        self.assertEqual(
+            await library.search("q"),
+            (
+                "Passages from the user's saved files most related to the search, best match first, each labelled with "
+                "its file and where it is in the file.\n\n[notes.txt, lines 1-3]\nFirst part.\n\nSecond part.\n\nEnd of "
+                "passages. For a question about the user's files, answer only from these passages and give the label of "
+                "the one you used. If none of them answers it, say the saved files don't mention it; don't answer from "
+                "your own knowledge or make up a file, page or line."
+            ),
+        )
 
     async def test_empty_library_says_so_without_embedding(self):
         self.assertEqual(await library.search("q"), "The library is empty: the user hasn't saved any files yet.")
@@ -302,8 +343,10 @@ class SearchTest(LibraryTest):
         await library.add(self.write(long_text()))
         found = labels(await library.search("topic3"))
         # Topic 3 wins; the rest tie and stay in file order
-        self.assertEqual(found, ["notes.txt, line 7", "notes.txt, line 1", "notes.txt, line 3",
-                                 "notes.txt, line 5", "notes.txt, line 9"])
+        self.assertEqual(
+            found,
+            ["notes.txt, line 7", "notes.txt, line 1", "notes.txt, line 3", "notes.txt, line 5", "notes.txt, line 9"],
+        )
 
     async def test_searches_across_files(self):
         await library.add(self.write("topic1 cats", "a.txt"))
@@ -327,15 +370,18 @@ class SearchTest(LibraryTest):
     async def test_only_files_from_another_embedding_model(self):
         await library.add(self.write("topic1 text"))
         self.patch(config, "rag_embed_model", "other/model")
-        self.assertEqual(await library.search("q"),
-                         "The user's saved files were embedded with a different model. They have to load them again "
-                         "before they can be searched.")
+        self.assertEqual(
+            await library.search("q"),
+            "The user's saved files were embedded with a different model. They have to load them again "
+            "before they can be searched.",
+        )
 
     async def test_a_search_failure_is_raised_for_the_tool_runner(self):
         await library.add(self.write("topic1 text"))
         self.embedder.error = ConnectionError("server down")
         with self.assertRaisesRegex(ConnectionError, "server down"):
             await library.search("q")
+
 
 class ChunkTest(LibraryTest):
     async def found(self, content, name="notes.txt", query="q") -> str:
@@ -363,6 +409,7 @@ class ChunkTest(LibraryTest):
     async def test_cp1250_text_is_decoded(self):
         self.assertIn("zażółć", await self.found("zażółć".encode("cp1250")))
 
+
 class RefusedFileTest(LibraryTest):
     async def refused(self, path, message):
         with self.assertRaisesRegex(ValueError, message):
@@ -370,7 +417,9 @@ class RefusedFileTest(LibraryTest):
         self.assertEqual(library.entries(), [])
 
     async def test_binary_file_is_refused(self):
-        await self.refused(self.write(b"\0binary"), "this looks like a binary file; only text files and PDFs can be loaded")
+        await self.refused(
+            self.write(b"\0binary"), "this looks like a binary file; only text files and PDFs can be loaded"
+        )
 
     async def test_empty_file_is_refused(self):
         await self.refused(self.write("  \n"), "the file is empty")
@@ -383,6 +432,7 @@ class RefusedFileTest(LibraryTest):
         self.patch(library, "MAX_CHUNKS", 3)
         await self.refused(self.write(long_text(4)), r"the file is too long \(4 chunks, at most 3\)")
         self.assertEqual(self.embedder.calls, [])
+
 
 class ForgetTest(LibraryTest):
     async def save_three(self):
@@ -424,16 +474,22 @@ class ForgetTest(LibraryTest):
         result = await library.add(path)
         self.assertEqual(result.saved, ["notes.txt"])
 
+
 class ReportTest(LibraryTest):
     def test_empty_library_tells_how_to_load_files(self):
         self.assertEqual(library.report([]), "The library is empty. Press **e** to load a file or folder.")
 
     def test_lists_files_and_totals(self):
-        entries = [Entry(Path("/t/a.txt"), 8, "2026-11-11 12:00", True), Entry(Path("/t/b.txt"), 1, "2026-11-10 09:30", False)]
-        self.assertEqual(library.report(entries),
-                         "**Library:** 2 files, 9 chunks\n\n| File | Chunks | Saved |\n|---|---|---|\n"
-                         "| /t/a.txt | 8 | 2026-11-11 12:00 |\n"
-                         "| /t/b.txt (other embedding model: load it again) | 1 | 2026-11-10 09:30 |")
+        entries = [
+            Entry(Path("/t/a.txt"), 8, "2026-11-11 12:00", True),
+            Entry(Path("/t/b.txt"), 1, "2026-11-10 09:30", False),
+        ]
+        self.assertEqual(
+            library.report(entries),
+            "**Library:** 2 files, 9 chunks\n\n| File | Chunks | Saved |\n|---|---|---|\n"
+            "| /t/a.txt | 8 | 2026-11-11 12:00 |\n"
+            "| /t/b.txt (other embedding model: load it again) | 1 | 2026-11-10 09:30 |",
+        )
 
     def test_shortens_the_home_folder_and_escapes_table_bars(self):
         entries = [Entry(Path.home() / "a|b.txt", 1, "2026-11-11 12:00", True)]
@@ -443,6 +499,7 @@ class ReportTest(LibraryTest):
         await library.add(self.write("topic1 a"))
         self.assertEqual(library.entries()[0].saved_at, "2026-11-11 12:00")
 
+
 class SummaryTest(unittest.TestCase):
     def test_summary_counts_saved_files_and_chunks(self):
         self.assertEqual(AddResult(["a", "b"], [], [], 16).summary, "Saved 2 files (16 chunks) to the library.")
@@ -451,25 +508,32 @@ class SummaryTest(unittest.TestCase):
         self.assertEqual(AddResult(["a"], [], [], 1).summary, "Saved 1 file (1 chunk) to the library.")
 
     def test_summary_adds_unchanged_files(self):
-        self.assertEqual(AddResult(["a"], ["b", "c"], [], 4).summary, "Saved 1 file (4 chunks) to the library, 2 unchanged.")
+        self.assertEqual(
+            AddResult(["a"], ["b", "c"], [], 4).summary, "Saved 1 file (4 chunks) to the library, 2 unchanged."
+        )
 
     def test_summary_says_when_nothing_new_was_saved(self):
         self.assertEqual(AddResult([], ["a"], [], 0).summary, "Nothing new to save, 1 unchanged.")
 
     def test_failed_files_are_named(self):
-        self.assertEqual(AddResult(["a"], [], [("b", "bad")], 1).summary,
-                         "Saved 1 file (1 chunk) to the library. Could not read b: bad.")
+        self.assertEqual(
+            AddResult(["a"], [], [("b", "bad")], 1).summary,
+            "Saved 1 file (1 chunk) to the library. Could not read b: bad.",
+        )
 
     def test_a_long_failure_list_is_cut(self):
         failed = [("a", "x"), ("b", "x"), ("c", "x"), ("d", "x"), ("e", "x")]
-        self.assertEqual(AddResult([], [], failed, 0).summary,
-                         "Nothing new to save. Could not read a: x; b: x; c: x; and 2 more.")
+        self.assertEqual(
+            AddResult([], [], failed, 0).summary, "Nothing new to save. Could not read a: x; b: x; c: x; and 2 more."
+        )
+
 
 class ToolTurnTest(LibraryTest):
     async def test_the_model_answers_from_the_tool_result(self):
         await library.add(self.write(long_text()))
-        client = self.use([chunk(tool_calls=[call("search_library", query="topic3")], done=True)],
-                          [chunk("from the file", done=True)])
+        client = self.use(
+            [chunk(tool_calls=[call("search_library", query="topic3")], done=True)], [chunk("from the file", done=True)]
+        )
         await self.reply("what about topic3?")
         self.assertIn("search_library", [tool.__name__ for tool in client.sent[0]["tools"]])
         result = client.sent[1]["messages"][-1]
@@ -480,7 +544,8 @@ class ToolTurnTest(LibraryTest):
     async def test_a_search_failure_goes_back_to_the_model(self):
         await library.add(self.write("topic1 text"))
         self.embedder.error = ConnectionError("server down")
-        client = self.use([chunk(tool_calls=[call("search_library", query="q")], done=True)],
-                          [chunk("sorry", done=True)])
+        client = self.use(
+            [chunk(tool_calls=[call("search_library", query="q")], done=True)], [chunk("sorry", done=True)]
+        )
         await self.reply()
         self.assertIn("server down", client.sent[1]["messages"][-1]["content"])

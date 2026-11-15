@@ -21,7 +21,9 @@ PAYMENTS = page(
     entry("DBIT", "12.00", "2026-11-05", creditor="BIEDRONKA 5678 KROSNO", remittance=["TRANSAKCJA KARTĄ PŁATNICZĄ"]),
     entry("DBIT", "99.00", "2026-11-06", creditor="KOMIS U ZBYSZKA", remittance=["PŁATNOŚĆ BLIK REF 88123"]),
     # Older than 30 days: not reviewed
-    entry("DBIT", "5.00", "2026-10-01", creditor="ORLEN"))
+    entry("DBIT", "5.00", "2026-10-01", creditor="ORLEN"),
+)
+
 
 class SpendingUiTest(HttpTest):
     def setUp(self):
@@ -53,13 +55,25 @@ class SpendingUiTest(HttpTest):
         async with app.run_test(size=(100, 30)) as pilot:
             screen = await self.open(app, pilot)
 
-            self.assertEqual(self.shown(screen), ["KOMIS U ZBYSZKA  undecided\n1 payment · 99.00 EUR",
-                                                  "BIEDRONKA 5678 KROSNO  Groceries\n2 payments · 52.00 EUR"])
-            self.assertEqual(str(screen.query_one("#spending_status", Static).render()),
-                             "1 of 2 payees from the last 30 days are undecided and count as Other.")
+            self.assertEqual(
+                self.shown(screen),
+                [
+                    "KOMIS U ZBYSZKA  undecided\n1 payment · 99.00 EUR",
+                    "BIEDRONKA 5678 KROSNO  Groceries\n2 payments · 52.00 EUR",
+                ],
+            )
+            self.assertEqual(
+                str(screen.query_one("#spending_status", Static).render()),
+                "1 of 2 payees from the last 30 days are undecided and count as Other.",
+            )
             # The bank's boilerplate becomes the kind of payment
-            self.assertEqual(decisions.states, ["Odbiorca: BIEDRONKA 1234 KROSNO\nRodzaj: płatność kartą",
-                                                "Odbiorca: KOMIS U ZBYSZKA\nRodzaj: płatność BLIK"])
+            self.assertEqual(
+                decisions.states,
+                [
+                    "Odbiorca: BIEDRONKA 1234 KROSNO\nRodzaj: płatność kartą",
+                    "Odbiorca: KOMIS U ZBYSZKA\nRodzaj: płatność BLIK",
+                ],
+            )
 
             await pilot.press("enter")
             await pilot.pause()
@@ -70,8 +84,10 @@ class SpendingUiTest(HttpTest):
 
             self.assertIs(app.screen, screen)
             self.assertEqual(self.shown(screen)[0], "KOMIS U ZBYSZKA  Shopping (yours)\n1 payment · 99.00 EUR")
-            self.assertEqual(str(screen.query_one("#spending_status", Static).render()),
-                             "0 of 2 payees from the last 30 days are undecided and count as Other.")
+            self.assertEqual(
+                str(screen.query_one("#spending_status", Static).render()),
+                "0 of 2 payees from the last 30 days are undecided and count as Other.",
+            )
             self.assertEqual(screen.query_one(ListView).index, 0)
 
         self.assertIn("- Shopping: 99.00 EUR (1 payment)\n", await tools.get_spending_by_category("2026-11-01"))
@@ -86,8 +102,13 @@ class SpendingUiTest(HttpTest):
             screen = await self.open(app, pilot)
 
             # Biedronka lost the model's label when it was unsure the second time
-            self.assertEqual(self.shown(screen), ["BIEDRONKA 5678 KROSNO  undecided\n2 payments · 52.00 EUR",
-                                                  "KOMIS U ZBYSZKA  Health (yours)\n1 payment · 99.00 EUR"])
+            self.assertEqual(
+                self.shown(screen),
+                [
+                    "BIEDRONKA 5678 KROSNO  undecided\n2 payments · 52.00 EUR",
+                    "KOMIS U ZBYSZKA  Health (yours)\n1 payment · 99.00 EUR",
+                ],
+            )
         self.assertEqual(decisions.states[2:], ["Odbiorca: BIEDRONKA 1234 KROSNO\nRodzaj: płatność kartą"])
 
     async def test_without_a_bank_link_the_popup_says_so(self):
@@ -96,9 +117,12 @@ class SpendingUiTest(HttpTest):
         async with app.run_test(size=(100, 30)) as pilot:
             screen = await self.open(app, pilot)
 
-            self.assertEqual(str(screen.query_one("#spending_status", Static).render()),
-                             "Could not read the payments: No bank is linked: link one with "
-                             "`python -m tools.enable_banking_api` from src/")
+            self.assertEqual(
+                str(screen.query_one("#spending_status", Static).render()),
+                "Could not read the payments: No bank is linked: link one with "
+                "`python -m tools.enable_banking_api` from src/",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

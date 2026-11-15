@@ -24,6 +24,7 @@ T = TypeVar("T")
 def normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", anyascii(text).lower()).strip()
 
+
 def closest_by_words(name: str, candidates: Iterable[tuple[T, list[str]]]) -> T | None:
     """The candidate with a title in which every word of name has a close word (a typo or two
     each), best on average; for long titles of which the user types a few words."""
@@ -40,8 +41,10 @@ def closest_by_words(name: str, candidates: Iterable[tuple[T, list[str]]]) -> T 
                 best, best_score = option, average
     return best
 
+
 def closest_name(name: str, choices: list[str]) -> str | None:
     """The choice closest to name, the earliest on a tie; for short names like teams and players."""
-    match = process.extractOne(name, choices, scorer=fuzz.token_set_ratio, processor=normalize,
-                               score_cutoff=NAME_CUTOFF)
+    match = process.extractOne(
+        name, choices, scorer=fuzz.token_set_ratio, processor=normalize, score_cutoff=NAME_CUTOFF
+    )
     return match[0] if match else None

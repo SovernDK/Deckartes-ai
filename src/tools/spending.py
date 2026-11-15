@@ -25,8 +25,20 @@ from model.mlx_server import ModelServerError
 from tools import bank_store
 from tools import enable_banking_api as bank
 
-CATEGORIES = ("Groceries", "Restaurants & cafés", "Transport", "Fuel", "Housing & bills", "Shopping", "Health",
-              "Entertainment & subscriptions", "Travel", "Cash", "Transfers", "Other")
+CATEGORIES = (
+    "Groceries",
+    "Restaurants & cafés",
+    "Transport",
+    "Fuel",
+    "Housing & bills",
+    "Shopping",
+    "Health",
+    "Entertainment & subscriptions",
+    "Travel",
+    "Cash",
+    "Transfers",
+    "Other",
+)
 # Money moved to people or between the user's own accounts: listed, but not spending
 TRANSFERS = "Transfers"
 # Where a payee without a label counts; the model is asked about it again next time
@@ -60,21 +72,26 @@ CREATE TABLE IF NOT EXISTS totals (
 );
 """
 
+
 def _database() -> AbstractContextManager[sqlite3.Connection]:
     """A connection to the spending database, which also stores the transactions (bank_store.py)."""
     return bank_store.database(_SCHEMA)
+
 
 @dataclass
 class Total:
     amount: Decimal = Decimal(0)
     count: int = 0
 
+
 # (category, currency) -> total
 Totals = dict[tuple[str, str], Total]
+
 
 @dataclass(frozen=True)
 class Period:
     """A Monday-to-Sunday week or a calendar month."""
+
     kind: str
     start: dt.date
 
@@ -91,18 +108,22 @@ class Period:
 
     def title(self) -> str:
         if self.kind == "week":
-            first = f"{self.start:%A} {self.start.day}" + (f" {self.start:%B}" if self.start.month != self.end.month
-                                                           else "")
+            first = f"{self.start:%A} {self.start.day}" + (
+                f" {self.start:%B}" if self.start.month != self.end.month else ""
+            )
             return f"the week of {first} – {self.end:%A} {self.end.day} {self.end:%B %Y}"
         return f"{self.start:%B %Y}"
 
+
 def _next_month(day: dt.date) -> dt.date:
     return (day.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
+
 
 def _last_finished(kind: str, today: dt.date) -> Period:
     if kind == "week":
         return Period("week", today - dt.timedelta(days=today.weekday() + 7))
     return Period("month", (today.replace(day=1) - dt.timedelta(days=1)).replace(day=1))
+
 
 def _exact_period(start: dt.date, end: dt.date) -> Period | None:
     """The week or month that is exactly this range, if any."""
@@ -111,11 +132,13 @@ def _exact_period(start: dt.date, end: dt.date) -> Period | None:
             return period
     return None
 
+
 def _payee(payment: bank.Payment) -> str:
     """The payee as words to match, without store numbers and ids (words with 3 or more digits), so
     "BIEDRONKA 1234 WARSZAWA" and "Biedronka 5678 Warszawa" are one payee."""
     payee_words = names.normalize(payment.party or payment.description).split()
     return " ".join(word for word in payee_words if not re.search(r"\d{3}", word)) or "unknown"
+
 
 @dataclass(frozen=True)
 class Label:
@@ -123,19 +146,25 @@ class Label:
     # "model", or "user" for the user's own
     source: str
 
+
 def _remembered(payee: str, known: dict[str, Label]) -> Label | None:
     """The label the user's rules or an earlier model answer give the payee; the user's longest
     matching rule wins."""
     padded = f" {payee} "
-    rules = [(len(words), label.category) for words, label in known.items()
-             if label.source == "user" and f" {words} " in padded]
+    rules = [
+        (len(words), label.category)
+        for words, label in known.items()
+        if label.source == "user" and f" {words} " in padded
+    ]
     if rules:
         return Label(max(rules)[1], "user")
     return known.get(payee)
 
+
 # What the bank's description says about the kind of payment, first match wins, as a key of the
 # decision's "kinds". It's told the kind instead of Pekao's boilerplate, like "TRANSAKCJA KARTĄ PŁATNICZĄ"
 _PAYMENT_KINDS = (("PRZELEW", "transfer"), ("KART", "card"), ("CARD", "card"), ("BLIK", "blik"))
+
 
 def _state(payment: bank.Payment, decision: dict) -> str:
     """A payment as the decision model reads it: the payee, then the kind of payment or the
@@ -152,6 +181,7 @@ def _state(payment: bank.Payment, decision: dict) -> str:
         lines.append(f"{words['merchant_code']}: {payment.merchant_code}")
     return "\n".join(lines)
 
+
 async def _ask_model(to_label: list[tuple[str, bank.Payment]]) -> dict[str, str]:
     """The decision model's category for each payee it gives one at least
     config.spending_label_min_probability; the rest stay undecided, and so does every payee after
@@ -160,8 +190,9 @@ async def _ask_model(to_label: list[tuple[str, bank.Payment]]) -> dict[str, str]
     labeled = {}
     for payee, payment in to_label:
         try:
-            probabilities = await mlx_client.decide(_state(payment, decision), decision["question"],
-                                                    decision["options"])
+            probabilities = await mlx_client.decide(
+                _state(payment, decision), decision["question"], decision["options"]
+            )
         except ModelServerError:
             break
         category, probability = max(probabilities.items(), key=lambda item: item[1])
@@ -169,13 +200,16 @@ async def _ask_model(to_label: list[tuple[str, bank.Payment]]) -> dict[str, str]
             labeled[payee] = category
     return labeled
 
+
 async def _labels(to_label: list[bank.Payment], *, again: bool = False) -> dict[str, Label | None]:
     """Each payment's payee -> its label, or None when it has none (undecided). The model is asked
     about payees it hasn't labeled, or with again about every payee without the user's label, and
     what it says is remembered; a payee it's unsure of again loses its old label."""
     with _database() as db:
-        stored = {payee: Label(category, source) for payee, category, source
-                  in db.execute("SELECT payee, category, source FROM labels")}
+        stored = {
+            payee: Label(category, source)
+            for payee, category, source in db.execute("SELECT payee, category, source FROM labels")
+        }
     found: dict[str, Label] = {}
     ask: dict[str, bank.Payment] = {}
     for payment in to_label:
@@ -193,22 +227,29 @@ async def _labels(to_label: list[bank.Payment], *, again: bool = False) -> dict[
             await asyncio.to_thread(mlx_server.stop_decisions)
         stamp = clock.now().isoformat(timespec="seconds")
         with _database() as db:
-            db.executemany("DELETE FROM labels WHERE payee = ? AND source = 'model'",
-                           [(payee,) for payee in ask if payee not in labeled])
-            db.executemany("INSERT OR REPLACE INTO labels VALUES (?, ?, 'model', ?)",
-                           [(payee, category, stamp) for payee, category in labeled.items()])
+            db.executemany(
+                "DELETE FROM labels WHERE payee = ? AND source = 'model'",
+                [(payee,) for payee in ask if payee not in labeled],
+            )
+            db.executemany(
+                "INSERT OR REPLACE INTO labels VALUES (?, ?, 'model', ?)",
+                [(payee, category, stamp) for payee, category in labeled.items()],
+            )
         found |= {payee: Label(category, "model") for payee, category in labeled.items()}
     return {payee: found.get(payee) for payee in map(_payee, to_label)}
+
 
 @dataclass
 class Payee:
     """One payee of the payments under review."""
+
     payee: str
     # The name as the bank gives it, from its latest payment
     name: str
     label: Label | None
     count: int = 0
     amounts: dict[str, Decimal] = field(default_factory=lambda: defaultdict(Decimal))
+
 
 async def review(days: int = 30) -> list[Payee]:
     """The payees of the last `days` days, labeled again by the model except those the user
@@ -224,6 +265,7 @@ async def review(days: int = 30) -> list[Payee]:
         payee.amounts[payment.currency] += payment.amount
     return sorted(by_payee.values(), key=lambda payee: (payee.label is not None, -sum(payee.amounts.values())))
 
+
 async def _totals(start: dt.date, end: dt.date, *, user_present: bool) -> tuple[Totals, list[str]]:
     """The totals per category and currency, and notes about days that couldn't be read."""
     paid, notes = await bank.payments(start, end, user_present=user_present)
@@ -236,29 +278,38 @@ async def _totals(start: dt.date, end: dt.date, *, user_present: bool) -> tuple[
         total.count += 1
     return dict(by_category), notes
 
+
 def _saved(db: sqlite3.Connection, period: Period) -> Totals | None:
     """A saved period's totals; None when it wasn't saved."""
-    if not db.execute("SELECT 1 FROM periods WHERE kind = ? AND start = ?",
-                      (period.kind, period.start.isoformat())).fetchone():
+    if not db.execute(
+        "SELECT 1 FROM periods WHERE kind = ? AND start = ?", (period.kind, period.start.isoformat())
+    ).fetchone():
         return None
-    rows = db.execute("SELECT category, currency, amount, count FROM totals WHERE kind = ? AND start = ?",
-                      (period.kind, period.start.isoformat()))
+    rows = db.execute(
+        "SELECT category, currency, amount, count FROM totals WHERE kind = ? AND start = ?",
+        (period.kind, period.start.isoformat()),
+    )
     return {(category, currency): Total(Decimal(amount), count) for category, currency, amount, count in rows}
+
 
 @dataclass
 class _Baseline:
     """What a period is compared with: a name ("month on month") and its amounts, or why there are none."""
+
     name: str
     amounts: dict[tuple[str, str], Decimal] | None
     missing: str = ""
+
 
 def _baselines(period: Period) -> list[_Baseline]:
     with _database() as db:
         if period.kind == "month":
             last_month, year_ago = period.before(), Period("month", period.start.replace(year=period.start.year - 1))
-            return [_Baseline(name, None if saved is None else _amounts(saved), f"no saved totals for {other.title()}")
-                    for name, other in (("month on month", last_month), ("year on year", year_ago))
-                    for saved in [_saved(db, other)]]
+            return [
+                _Baseline(name, None if saved is None else _amounts(saved), f"no saved totals for {other.title()}")
+                for name, other in (("month on month", last_month), ("year on year", year_ago))
+                for saved in [_saved(db, other)]
+            ]
         saved_weeks = []
         other = period
         for _ in range(4):
@@ -276,6 +327,7 @@ def _baselines(period: Period) -> list[_Baseline]:
     name = "on the week before" if count == 1 else f"on the average of the {count} weeks before"
     return [_Baseline(name, {key: amount / count for key, amount in sums.items()})]
 
+
 def _amounts(period_totals: Totals) -> dict[tuple[str, str], Decimal]:
     """The amount per (category, currency), plus the total spent per currency under SPENT."""
     amounts: dict[tuple[str, str], Decimal] = defaultdict(Decimal)
@@ -285,6 +337,7 @@ def _amounts(period_totals: Totals) -> dict[tuple[str, str], Decimal]:
             amounts[SPENT, currency] += total.amount
     return dict(amounts)
 
+
 def _change(now: Decimal, before: Decimal) -> str:
     if before == 0:
         return "new"
@@ -293,9 +346,14 @@ def _change(now: Decimal, before: Decimal) -> str:
         return "unchanged"
     return f"up {percent}%" if percent > 0 else f"down {-percent}%"
 
+
 def _changes(key: tuple[str, str], now: Decimal, compared: list[_Baseline]) -> str:
-    return "".join(f", {_change(now, baseline.amounts.get(key, Decimal(0)))} {baseline.name}"
-                   for baseline in compared if baseline.amounts is not None)
+    return "".join(
+        f", {_change(now, baseline.amounts.get(key, Decimal(0)))} {baseline.name}"
+        for baseline in compared
+        if baseline.amounts is not None
+    )
+
 
 def _report(title: str, period_totals: Totals, compared: list[_Baseline], *, notes: bool) -> str:
     """The totals per category, biggest first, then the total spent per currency (transfers left
@@ -318,9 +376,11 @@ def _report(title: str, period_totals: Totals, compared: list[_Baseline], *, not
     if transfers:
         lines.append(f"{TRANSFERS}, not counted as spending: {'; '.join(transfers)}")
     if notes:
-        lines += [f"Not compared {baseline.name}: {baseline.missing}." for baseline in compared
-                  if baseline.amounts is None]
+        lines += [
+            f"Not compared {baseline.name}: {baseline.missing}." for baseline in compared if baseline.amounts is None
+        ]
     return f"Spending in {title}:\n" + "\n".join(lines)
+
 
 async def by_category(date_from: str, date_to: str | None = None) -> str:
     """Tool text: spending per category between two YYYY-MM-DD dates; for exactly a week or a
@@ -330,6 +390,7 @@ async def by_category(date_from: str, date_to: str | None = None) -> str:
     title = period.title() if period else f"{start} to {end}"
     totals, notes = await _totals(start, end, user_present=True)
     return "\n\n".join([*notes, _report(title, totals, _baselines(period) if period else [], notes=True)])
+
 
 def set_category(payee: str, category: str) -> str:
     """Tool text: from now on, payments whose payee has these words count as this category."""
@@ -341,36 +402,50 @@ def set_category(payee: str, category: str) -> str:
     if not words:
         raise ValueError("The payee's name is empty")
     with _database() as db:
-        db.execute("INSERT OR REPLACE INTO labels VALUES (?, ?, 'user', ?)",
-                   (words, chosen, clock.now().isoformat(timespec="seconds")))
-        seen = sum(1 for (other,) in db.execute("SELECT payee FROM labels WHERE source = 'model'")
-                   if f" {words} " in f" {other} ")
+        db.execute(
+            "INSERT OR REPLACE INTO labels VALUES (?, ?, 'user', ?)",
+            (words, chosen, clock.now().isoformat(timespec="seconds")),
+        )
+        seen = sum(
+            1
+            for (other,) in db.execute("SELECT payee FROM labels WHERE source = 'model'")
+            if f" {words} " in f" {other} "
+        )
     matches = f"{seen} payee seen so far matches" if seen == 1 else f"{seen} payees seen so far match"
     return f"Saved: payments to {payee} now count as {chosen} ({matches})."
+
 
 @dataclass
 class Digest:
     """A finished week's or month's digest; its totals are saved once it's been sent."""
+
     period: Period
     totals: Totals
     # "" when there was nothing to send
     text: str = field(default="")
 
+
 async def _comment(report: str) -> str:
     """The model's few sentences on what stands out; "" when the model can't be reached."""
     try:
-        reply = await mlx_client.complete([{"role": "user", "content": prompt_file.task("spending_comment", report=report)}])
+        reply = await mlx_client.complete(
+            [{"role": "user", "content": prompt_file.task("spending_comment", report=report)}]
+        )
     except ModelServerError:
         return ""
     return reply.content.strip()
+
 
 async def due_digests() -> list[Digest]:
     """The digests of the last finished week and month that haven't been saved yet: on Monday and
     the 1st, or the next morning the job runs when one was missed. Older periods are left out."""
     today = clock.today()
     with _database() as db:
-        due = [period for period in (_last_finished("week", today), _last_finished("month", today))
-               if _saved(db, period) is None]
+        due = [
+            period
+            for period in (_last_finished("week", today), _last_finished("month", today))
+            if _saved(db, period) is None
+        ]
     ready = []
     for period in due:
         totals, _ = await _totals(period.start, period.end, user_present=False)
@@ -382,6 +457,7 @@ async def due_digests() -> list[Digest]:
         ready.append(digest)
     return ready
 
+
 def save(sent: list[Digest]) -> None:
     """Keep the digests' totals, for comparing later periods with."""
     stamp = clock.now().isoformat(timespec="seconds")
@@ -390,6 +466,10 @@ def save(sent: list[Digest]) -> None:
             period = (digest.period.kind, digest.period.start.isoformat())
             db.execute("INSERT OR REPLACE INTO periods VALUES (?, ?, ?)", (*period, stamp))
             db.execute("DELETE FROM totals WHERE kind = ? AND start = ?", period)
-            db.executemany("INSERT INTO totals VALUES (?, ?, ?, ?, ?, ?)",
-                           [(*period, category, currency, str(total.amount), total.count)
-                            for (category, currency), total in digest.totals.items()])
+            db.executemany(
+                "INSERT INTO totals VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (*period, category, currency, str(total.amount), total.count)
+                    for (category, currency), total in digest.totals.items()
+                ],
+            )

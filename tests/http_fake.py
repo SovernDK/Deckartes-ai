@@ -30,6 +30,7 @@ class FakeServer:
             return httpx.Response(200, text=answer)
         return httpx.Response(200, json=answer)
 
+
 class HttpTest(unittest.IsolatedAsyncioTestCase):
     def serve(self, routes: dict) -> FakeServer:
         server = FakeServer(routes)

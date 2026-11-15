@@ -24,6 +24,7 @@ from validation.validation_screen import ValidationScreen
 
 ANSWER = [[chunk(tool_calls=[call("get_cpu_usage")], done=True)], [chunk("CPU is fine.", done=True)]]
 
+
 class ValidateCommandTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         temp_history(self)
@@ -32,14 +33,19 @@ class ValidateCommandTest(unittest.IsolatedAsyncioTestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.folder = Path(folder.name)
-        self.suite = validation.parse_suite(suite_data(
-            case_data(id="1", question="one"), case_data(id="2", question="two", category="paraphrased")))
+        self.suite = validation.parse_suite(
+            suite_data(case_data(id="1", question="one"), case_data(id="2", question="two", category="paraphrased"))
+        )
         self.client = FakeClient(*ANSWER, *ANSWER)
         for target, name, value in [
-                (mlx_server, "ensure_chat", mock.Mock()), (config, "model", "org/some-model"),
-                (validation, "RESULTS_FOLDER", self.folder), (validation, "load_suite", mock.Mock(return_value=self.suite)),
-                (mlx_client, "stream_chat", self.client.stream_chat), (mlx_client, "complete", self.client.complete),
-                (mlx_client, "embed", FakeEmbeddings({"one": {"server": 0.9}, "two": {"server": 0.9}}))]:
+            (mlx_server, "ensure_chat", mock.Mock()),
+            (config, "model", "org/some-model"),
+            (validation, "RESULTS_FOLDER", self.folder),
+            (validation, "load_suite", mock.Mock(return_value=self.suite)),
+            (mlx_client, "stream_chat", self.client.stream_chat),
+            (mlx_client, "complete", self.client.complete),
+            (mlx_client, "embed", FakeEmbeddings({"one": {"server": 0.9}, "two": {"server": 0.9}})),
+        ]:
             patcher = mock.patch.object(target, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -121,12 +127,14 @@ class ValidateCommandTest(unittest.IsolatedAsyncioTestCase):
 
     async def hang_on_second_case(self) -> asyncio.Event:
         started, hang, stream = asyncio.Event(), asyncio.Event(), self.client.stream_chat
+
         async def hanging(messages, tools=None):
             if any(m["content"] == "two" for m in messages):
                 started.set()
                 await hang.wait()
             async for delta in stream(messages, tools):
                 yield delta
+
         patcher = mock.patch.object(mlx_client, "stream_chat", hanging)
         patcher.start()
         self.addCleanup(patcher.stop)

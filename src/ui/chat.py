@@ -33,6 +33,7 @@ from validation.validation_screen import ValidationScreen
 
 class Spinner(Static):
     """Text spinner made of slashes, shown while the model is answering."""
+
     FRAMES = "|/-\\"
     DEFAULT_LABEL = "Thinking..."
     ANSWERING_LABEL = "Answering..."
@@ -102,6 +103,7 @@ class Spinner(Static):
         self.timer.pause()
         self.display = False
 
+
 def tool_call_line(name: str, arguments: dict | None) -> str:
     """'called tool: get_cs_team(name="NAVI")', how Detailed mode shows a tool call."""
     if arguments is None:
@@ -109,6 +111,7 @@ def tool_call_line(name: str, arguments: dict | None) -> str:
     else:
         shown = ", ".join(f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in arguments.items())
     return f"called tool: {name}({shown})"
+
 
 class Reply(VerticalGroup):
     """One streamed reply: thinking, answer text and tool calls in the order they came. Each change
@@ -161,6 +164,7 @@ class Reply(VerticalGroup):
             await self.markdown_stream.stop()
             self.markdown_stream = None
 
+
 class Chat(VerticalGroup):
     # Unfocusing the input lets the app's single-key shortcuts (q, m, c, h) work
     BINDINGS = [
@@ -182,11 +186,7 @@ class Chat(VerticalGroup):
     def compose(self) -> ComposeResult:
         yield VerticalScroll(id="response")
         yield OptionList(id="suggestions")
-        yield HorizontalGroup(          
-            Input(placeholder="Ask question..."),
-            Spinner(markup=False, id="spinner"),
-            id="chat_in"
-        )
+        yield HorizontalGroup(Input(placeholder="Ask question..."), Spinner(markup=False, id="spinner"), id="chat_in")
 
     def on_mount(self) -> None:
         self.query_one("#chat_in").border_title = "Input"
@@ -245,9 +245,7 @@ class Chat(VerticalGroup):
         if not matching:
             suggestions.display = False
             return
-        suggestions.add_options(
-            [Option(f"/{name}  [dim]{self.COMMANDS[name][1]}[/dim]", id=name) for name in matching]
-        )
+        suggestions.add_options([Option(f"/{name}  [dim]{self.COMMANDS[name][1]}[/dim]", id=name) for name in matching])
         suggestions.highlighted = 0
         suggestions.display = True
 
@@ -259,8 +257,9 @@ class Chat(VerticalGroup):
             return []
         typed = value[1:].lower()
         known = list(cls.COMMANDS)
-        return ([command for command in known if command.startswith(typed)]
-                + [command for command in known if typed in command and not command.startswith(typed)])
+        return [command for command in known if command.startswith(typed)] + [
+            command for command in known if typed in command and not command.startswith(typed)
+        ]
 
     def action_suggestion_move(self, step: int) -> None:
         suggestions = self.query_one("#suggestions", OptionList)
@@ -302,8 +301,11 @@ class Chat(VerticalGroup):
             return
         # Enter on a half-typed command completes it first; on a complete one it runs
         suggestions = self.query_one("#suggestions", OptionList)
-        if (suggestions.display and suggestions.highlighted is not None
-                and text[1:].lower() != suggestions.get_option_at_index(suggestions.highlighted).id):
+        if (
+            suggestions.display
+            and suggestions.highlighted is not None
+            and text[1:].lower() != suggestions.get_option_at_index(suggestions.highlighted).id
+        ):
             self.accept_suggestion()
             return
         event.input.clear()
@@ -351,8 +353,9 @@ class Chat(VerticalGroup):
         widgets = []
         for message in shown:
             if message.role == "user":
-                widgets.append(HorizontalGroup(Static(message.content, markup=False, classes="user-msg"),
-                                               classes="user-row"))
+                widgets.append(
+                    HorizontalGroup(Static(message.content, markup=False, classes="user-msg"), classes="user-row")
+                )
             else:
                 widgets.append(Markdown(message.content, classes="ai-msg"))
         await response.mount_all(widgets)
@@ -395,11 +398,13 @@ class Chat(VerticalGroup):
         except ValueError as e:
             self.notify(str(e), title="Could not read the validation cases", severity="error")
             return
+
         def chosen(categories: list[str] | None) -> None:
             if categories:
                 self.set_busy(True)
                 self.validating = True
                 self.run_validation(suite, categories)
+
         self.app.push_screen(ValidationScreen(suite), chosen)
 
     @work(exclusive=True)
@@ -407,8 +412,10 @@ class Chat(VerticalGroup):
         """Run the cases, then save and show the results, also when the run is stopped."""
         run = validation.Run(suite, categories)
         spinner = self.query_one(Spinner)
+
         def progress(done: int, total: int) -> None:
             spinner.set_label(f"Validating {done}/{total}")
+
         progress(0, len(run.cases))
         try:
             await run.execute(progress)
@@ -474,12 +481,7 @@ class Chat(VerticalGroup):
 
     async def add_user_message(self, text) -> None:
         response = self.query_one("#response", VerticalScroll)
-        await response.mount(
-            HorizontalGroup(
-                Static(text, markup=False, classes="user-msg"),
-                classes="user-row"
-            )
-        )
+        await response.mount(HorizontalGroup(Static(text, markup=False, classes="user-msg"), classes="user-row"))
 
     async def add_usage(self, after) -> None:
         """Show the latest turn's token count under its reply (hidden by CSS outside Detailed mode)."""
@@ -558,6 +560,7 @@ class Chat(VerticalGroup):
                 self.post_message(self.Saved())
             self.set_busy(False)
 
+
 class ModelChangeMenu(VerticalGroup):
     def compose(self) -> ComposeResult:
         yield ListView(ListItem(Label("Loading models...")))
@@ -577,14 +580,13 @@ class ModelChangeMenu(VerticalGroup):
 
         list_view = self.query_one(ListView)
         await list_view.clear()
-        await list_view.extend(
-            ListItem(label, name=model) for label, model in zip(widgets, available or [None])
-        )
+        await list_view.extend(ListItem(label, name=model) for label, model in zip(widgets, available or [None]))
         list_view.index = 0
 
 
 class HelpScreen(ModalScreen):
     """Pop-up listing keyboard shortcuts and /commands."""
+
     BINDINGS = [("h", "close", "Close"), ("escape", "close", "Close")]
 
     def __init__(self, shortcuts: list[tuple[str, str]], commands: list[tuple[str, str]]) -> None:
@@ -612,6 +614,7 @@ class HelpScreen(ModalScreen):
 
 class ConfirmScreen(ModalScreen[bool]):
     """Yes/no popup a tool shows before changing something, e.g. adding a calendar event."""
+
     BINDINGS = [("y", "answer(True)", "Yes"), ("n", "answer(False)", "No"), ("escape", "answer(False)", "No")]
 
     def __init__(self, question: str) -> None:

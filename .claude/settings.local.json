@@ -11,6 +11,11 @@
       "Bash(venv/bin/pip uninstall -y ollama)",
       "Bash(rm ollama_client.py ollama_api.py tests/test_ollama_client.py)",
       "Bash(curl http://127.0.0.1:8001/*)"
+    ],
+    
+    "deny": [
+      "Edit(/CLAUDE.md)",
+      "Edit(**/CLAUDE.md)"
     ]
   }
 }

@@ -1,26 +1,19 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with code in this repository.
 
 ## What this is
 
 Deckartes is a terminal chat UI (Textual) for local MLX models served by Rapid-MLX, with tool calling: the model can query a home server's Glances API, scan the local disk, search the web through Ollama's web API, look up anime seasons, timetables and ratings on AnimeSchedule.net, get Counter-Strike esports teams, players and matches from PandaScore plus Valve's ranking, read and add events in Apple Calendar, list the user's bank transactions through Enable Banking and total their spending per category, compared with earlier weeks and months, and search the files the user saved to its library.
 
-## TODO
+## Project overview
 
-[ ] Better RAG search (not just by embedded chunks)
+- **Name:** Deckartes
+- **Purpose:** a terminal chat UI and Telegram bot for local MLX models, with tool calling.
+- **Stack:** Python 3.11+, Textual 8, httpx, Rapid-MLX on macOS (Apple Silicon), SQLite, launchd jobs.
+- **Package manager:** pip, into `venv/`. There is no requirements file; check `venv/bin/pip list` for what's installed.
 
-[ ] Scanning user1 folder on homeserver
-
-[ ] Prepare fine tuning data
-
-[ ] Telegram: send files from the iPhone to the library (bots download up to 20 MB; files need a permanent inbox folder, since the library identifies them by path)
-
-[x] Extract Bank Transactions, send digest to user with analysis from week and month on telegram
-
-## Commands
-
-There is no build step or requirements file. Tests use stdlib `unittest` in `tests/`. Linting uses Ruff, configured in `pyproject.toml`. Dependencies live in `venv/` (textual 8.2.8, textual-dev, httpx, pyobjc-framework-EventKit 12.2.2, pypdf 6.20.1, cryptography 50.0.2 for AES-encrypted PDFs, numpy 2.4.6, telegramify-markdown 1.4.2 for Telegram formatting, python-dotenv 1.2.4 for `.env`, cachetools 8.0.0 for the web backends' response cache, anyascii 0.3.3 for matching names with accents or in other scripts, rapidfuzz 3.14.6 for the closest match to a misspelt name, docstring-parser 0.18.0 for reading tool docstrings, tzlocal 5.4.5 for the user's time zone, PyJWT 2.15.1 for Enable Banking's signed requests, ruff 0.17.4).
+### Key commands
 
 ```bash
 venv/bin/python src/main.py             # run the app
@@ -33,36 +26,92 @@ PYTHONPATH=src venv/bin/python -m unittest discover tests   # tests; live tests 
 LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_live_*.py'   # live tests only, on the running chat server
 venv/bin/ruff check .                   # lint; add --fix for the automatic fixes
 ```
+---
 
-Runtime requirements: Rapid-MLX at `config.mlx_server_command` (the app starts it and downloads the models on first use), Glances on `http://thinkpad:61208` (only for the server tools), `OLLAMA_API_KEY` (web tools) `ANIMESCHEDULE_TOKEN` (anime tools) and `PANDA_SCORE_API_TOKEN` (CS tools), `ENABLE_BANKING_APP_ID` and `ENABLE_BANKING_KEY_PATH` plus a linked bank (bank tools; `ENABLE_BANKING_SANDBOX_ID`, `ENABLE_BANKING_SANDBOX_KEY_PATH` and `ENABLE_BANKING_SANDBOX=1` for the sandbox) in the environment or `.env` (`.env.example` lists them), macOS calendar access for the terminal app (calendar tools), and `TELEGRAM_BOT_TOKEN` and `TELEGRAM_USER_ID` (Telegram bot).
+## Comments
 
-Verify UI changes headlessly with Textual's pilot instead of launching the app: recipe in [docs/ui.md](docs/ui.md).
+- Write self-explanatory code; do not comment what the code already says.
+- Comment only the **why**: non-obvious decisions, workarounds, business rules, links to issues/specs.
+- No commented-out code, no changelog-style comments ("added by…", "fixed…"), no section banners.
+- Docstrings only for exported/public symbols, and only when the signature isn't enough.
 
-The `vscode-mcp` tools expose Pylance and Ruff for diagnostics, references, symbol info and renames; show a file in a tab first (`open_files` with `showEditor: true`), because `get_diagnostics` reports a background-only file as clean.
+## Prefer existing libraries over custom code
 
-## Architecture
+- Before writing a utility, check (in this order):
+  1. The standard library / platform APIs.
+  2. Dependencies already in the project (`venv/bin/pip list`).
+  3. Well-maintained, widely used libraries.
+- Build a custom solution only when no suitable option exists, or the dependency cost (size, licence, maintenance) clearly outweighs the benefit. State the reason in your summary.
+- Do not add a new dependency without mentioning it explicitly in your summary. Never add two libraries that solve the same problem.
 
-Python lives in `src/`, in one package per feature: `core` (config, clock, names, http_client, prompt_file), `model` (mlx_client, mlx_server, tool_schema), `agent` (conversation, history, prompts, tool_router), `tools` (the registry `tools.py`, its groups `tool_groups.py` and its backends), `ui` (the Textual app), `telegram`, `validation` and `jobs` (scheduled scripts, listed in `schedule.py` and sharing `runner.py`). `src` is the import root (`from core.config import config`, `from tools import tools`), so scripts inside a package run with `-m` from `src/`. Data files (`.env`, `prompts.json`, `validation_cases.json`, `chat.tcss`) stay at the repo root, found through `config.PROJECT_ROOT`; tests stay in `tests/`. Modules are named below without their folder. `main.py` → `app.py` (`DecartesApp`: bindings, model-picker, help, file-explorer and spending-labels screens) → `chat.py` (widgets: bubbles, spinner, busy state, interrupt) → `conversation.py` (`Conversation`: history, the whole turn including the tool loop, no UI) → `tool_router.py` (picks tool groups per question; `tool_groups.py` says which tools go with them) → `tools.py` (tool registry) → `glances_api.py` / `disk_scan.py` / `web_search.py` / `animeschedule_api.py` / `cs_api.py` / `calendar_api.py` / `enable_banking_api.py` / `spending.py` / `library.py` (tool backends; `bank_store.py` keeps every transaction read, so the bank is asked only for missing or recent days; `spending.py` labels payments with categories and keeps each week's and month's totals; `library.py` also takes the explorer's loads and owns the saved files); the HTTP ones go through `http_client.py`). `mlx_client.py` is the only module that talks to the model servers, and `mlx_server.py` starts and stops them. `clock.py` is the one owner of the current time, of conversions to `config.timezone` and of parsing the ISO dates tools get (`parse_date`), and `names.py` of normalising names for matching. `validation.py` runs `/validate` (no UI; `validation_screen.py` is its popup). `telegram_bot.py` is a second, headless front end for `Conversation`, run as its own process, `telegram_api.py` holds its Bot API calls and `telegram_format.py` turns replies into Telegram messages. `anime_digest.py` and `bank_digest.py` are short scripts launchd runs each morning to message the user (the day's anime; the weekly and monthly spending digests and a bank link about to expire), with no model and without the bot; `schedule.py` lists the jobs and installs them.
+## Testing
 
-**Shared config.** `config.py` exposes a single mutable `config` instance (host, model, context_length, temperature, system_prompt, plus tool settings and keys). Modules read it at call time rather than taking parameters; widgets change settings by assigning to it (e.g. the model picker sets `config.model`). `context_length` is the app's own budget for compaction; the server doesn't cut prompts to it.
+### Unit tests
+- **Always load the `writing-tests` skill before writing or changing unit tests** and follow it.
+- Every new feature or bug fix comes with unit tests; a bug fix starts with a failing test that reproduces it.
+- Run `PYTHONPATH=src venv/bin/python -m unittest discover tests` before declaring a task done.
 
-**Prompts.** Every prompt the app sends a model lives in `prompts.json`, read through `core/prompt_file.py` on every use, so edits apply without a restart; don't write prompt text in code. Its `presets` (name, description, `prompt`, `tools`: `"all"`, a list of tool names, or `[]`) are the system prompts, selected by `config.system_prompt` and used by `prompts.py`. Its `tasks` are the fixed prompts of single jobs (compaction, spending labels and digest comments, the tool-values rule), got with `prompt_file.task(name, **values)`, which fills their `{placeholders}` (literal braces are doubled). `prompt_file` imports nothing from `tools`, so tool backends can use it. `system_message()` always starts with the current local date, even when no preset matches, since models don't know it otherwise, and `current_time_line()` goes just before each question to keep the prompt cache valid. Presets shouldn't repeat either. `Conversation` puts the system message first on every turn (it isn't stored in the history), and `tool_router.select_tools` sends only the tools the preset allows. A new tool must also be added to the relevant presets, unless they use `"all"`. `allowed_tool_names` raises for a name that isn't a tool, so a typo shows as an error in the reply (and fails `tests/test_tools.py`) instead of silently dropping the tool.
+### UI and live tests
+- UI flows are tested headlessly with Textual's pilot (recipe in [docs/ui.md](docs/ui.md)), in `tests/test_<feature>.py`; live tests against the running chat server go in `tests/test_live_<feature>.py` and skip unless `LIVE=1`.
+- Test **user flows**, not implementation details; query widgets by id or type, not by CSS classes or tree position.
+- No fixed sleeps; wait with `pilot.pause()` and assertions.
+- Each test is independent and sets up and cleans up its own data (tests that mount `Chat` call `temp_history(self)`).
+- Cover the happy path plus key failure paths (tool errors, failed turns, empty results).
 
-**Turn events.** `Conversation.stream_reply` yields events to `Chat`: `Text` (reply text), `Thinking` (the model's reasoning: shown only in the app's Detailed mode, never saved, sent back or sent to Telegram), `ToolStarted(name, arguments)` / `ToolsDone` (drive the spinner label; Detailed mode also lists the calls), `NotSaved(message)` (the finished turn couldn't be written to the saved history; the app warns, the bot logs) and `Failed(message)`. It never raises: any failure is a `Failed`, always last. A turn with a `Failed` isn't saved; `Chat` shows it as a `**Error:**` paragraph. `tests/test_conversation.py` drives whole turns with only `mlx_client`'s chat calls faked. Tool failures are different: `tools.run_tool` turns exceptions into a text result that goes back to the model, not the user.
+## BUG Fixing
 
-**Tool loop.** `stream_reply` sends the tools `tool_router.select_tools` picks, run any tool calls, append assistant + `role: tool` messages to a local copy of `messages`, and repeat up to `MAX_TOOL_ROUNDS`. Text before a tool round is followed by `Text("\n\n")`, so rounds are separate paragraphs in the saved reply.
+- ALWAYS fix root cause of the bugs, DONT create workarounds.
 
-**Conversation (`conversation.py`).** `Conversation.history` holds only finished turns (time line, question, reply text); tool calls and results aren't kept between turns. `stream_reply` yields the turn's events and saves the turn only after a clean finish, so a failed, cancelled or closed turn never reaches the history. There is no non-streaming path: a turn always runs as the `fetch_stream` worker on the app's loop. **Compaction:** when a finished turn's context (last prompt + reply tokens) reaches `config.compact_at` (share of `context_length`, `None` = off), the next turn first yields `Compacting`, replaces the whole history with the model's summary (one `system` message) and yields `Compacted`; a failed summary is a `Failed` and keeps the history. Model-calling logic goes here, not in widgets.
+## Input validation
 
-**Saved conversations (`history.py`).** `Conversation(source="app" | "telegram")` also saves each finished turn to `config.history_path` (SQLite), and a compaction summary as a `system` message without dropping what it replaced; no source (`/validate`) saves nothing. It writes only through its `history.Saver` (one per conversation, holding the saved id), which builds the rows, owns the summary prefix and knows where a reopened conversation resumes. `clear()` ends the conversation, so the next turn starts a new one; `open(id)` continues a saved one, sending the model the last summary and what follows it, and returns the questions and replies to show. The app's history panel (key `r`, `history_panel.py`) lists, opens and deletes them. Details in [docs/ui.md](docs/ui.md); tests that mount `Chat` must call `temp_history(self)`.
+- **Validate all outside data** at the boundary: tool arguments from the model, Telegram messages, files saved to the library, env vars, CLI args and data from external APIs.
+- Tool arguments are checked against the JSON schema built from the tool's docstring (`model/tool_schema.py`); parse dates with `clock.parse_date`.
+- Whitelist, don't blacklist: define allowed types, lengths, ranges and formats.
+- Telegram access is decided by `TELEGRAM_USER_ID` only, never by message content.
+- Use parameterized SQLite queries; never build SQL or shell commands from raw input.
+- Return clear error messages; never leak stack traces or internals.
 
-## Git
+## Git and commit policy
 
-Commit any changes unless user specifiec otherwise if:
-- You finished new feature
-- You fixed a bug
-- You optimized something
-Always commit on main unless user specifiec otherwise.
+- **Branch:** work on `main`.
+- **Commits:** an imperative summary sentence, ≤72 chars, saying what changed and why (e.g. "Label spending payees with a decision model instead of the chat model").
+- One logical change per commit; keep commits small and buildable.
+- Before committing: lint, Pylance diagnostics and tests must pass.
+- Never commit secrets, `.env` files, credentials or generated build artifacts.
+- **Do not** commit, push, rebase, force-push, reset, or delete branches unless explicitly asked.
+- Never rewrite history on shared branches. Never use `--no-verify`.
+- PRs: short description of *what* and *why*, linked issue (`#123`), notes on testing and any new dependencies.
+
+## VS Code MCP tools
+
+- When the VS Code MCP server is available, **prefer it over manual edits / grep** for:
+  - **Refactoring:** rename symbol, extract function/variable, move file, organize imports — so all references update safely.
+  - **Diagnostics:** fetch errors/warnings from the language server after every change and fix them before finishing.
+  - **Navigation:** go to definition, find references, find implementations.
+- Fall back to manual edits only when no MCP tool covers the operation.
+- A task is not done while the MCP diagnostics report errors in files you touched.
+
+## Code conventions
+
+- **Always follow the `python-conventions` skill** for naming and style. Load it before writing code.
+- If the skill and existing code disagree, follow the skill and flag the inconsistency instead of silently spreading the old pattern.
+- No formatter is enforced yet (Ruff is used for lint only); match the surrounding style and don't run `ruff format` over the repo.
+- Never hardcode values that someone might want to change without editing code. Put them in one central configuration location and read them from there.
+
+## Wiki
+
+- Save project architecture and use instructions in /docs/wiki.html
+use /project-wiki skill
+
+---
+
+## Definition of done
+
+- [ ] Lint, Pylance diagnostics and all tests pass
+- [ ] No diagnostics errors in touched files (VS Code MCP)
+- [ ] New/changed logic covered by unit tests; UI flows covered by pilot tests where relevant
+- [ ] No unnecessary comments, no dead code
+- [ ] Summary lists any new dependencies and open questions
 
 ## Reference docs
 

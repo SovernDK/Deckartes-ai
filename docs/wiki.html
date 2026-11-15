@@ -149,7 +149,7 @@
   <div><b>35</b><span>tools</span></div>
   <div><b>7</b><span>tool groups</span></div>
   <div><b>1</b><span>prompt preset</span></div>
-  <div><b>~4,100</b><span>lines of Python</span></div>
+  <div><b>~7,400</b><span>lines of Python</span></div>
 </div>
 <h3>What the model can reach</h3>
 <ol>
@@ -163,7 +163,7 @@
   <li><strong>Your files</strong>: save files or whole folders once and ask about them in any session.</li>
 </ol>
 <div class="tip">Built for <em>small</em> local models: tool text is short and carefully worded so it can't be misread, and only the tools a question needs are sent.</div>
-<p>No package, no build step, no linter, no requirements file. Dependencies live in <code>venv/</code>.</p>
+<p>No package, no build step, no requirements file; Ruff lints. Dependencies live in <code>venv/</code>. Every tool group is optional: one without its key or service returns an error and the rest keep working.</p>
 </section>
 
 <section id="setup">
@@ -171,10 +171,12 @@
 <h3>Install</h3>
 <ol>
   <li>An Apple Silicon Mac, Python 3.11+ and a virtual environment: <code>python3 -m venv venv</code>.</li>
-  <li><code>venv/bin/pip install textual textual-dev httpx pyobjc-framework-EventKit pypdf cryptography numpy</code> (cryptography is for AES-encrypted PDFs).</li>
+  <li><code>venv/bin/pip install textual textual-dev httpx pyobjc-framework-EventKit pypdf cryptography numpy telegramify-markdown python-dotenv cachetools anyascii rapidfuzz docstring-parser tzlocal pyjwt ruff</code></li>
   <li>Install Rapid-MLX: <code>uv tool install 'rapid-mlx[embeddings]'</code>. The app starts its servers and stops them on exit, and the models download the first time they're needed.</li>
-  <li>Put API keys in the environment or a <code>.env</code> at the repo root (loaded with python-dotenv).</li>
-  <li>Optional: Glances in web-server mode on the home server; macOS calendar access for your terminal app.</li>
+  <li>For spending labels, make the decision model once with <code>src/model/quantize_decider.py</code> (see <a href="#model-server">Model server</a>).</li>
+  <li>Copy <code>.env.example</code> to <code>.env</code> and fill in the keys you need (the environment works too).</li>
+  <li>Set the <a href="#config">config fields marked <span class="chip warn">yours</span></a> for your setup.</li>
+  <li>Optional: Glances in web-server mode (<code>glances -w</code>) on the home server; macOS calendar access for your terminal app.</li>
 </ol>
 <table>
   <tr><th>Key</th><th>Needed for</th></tr>
@@ -182,7 +184,16 @@
   <tr><td><code>ANIMESCHEDULE_TOKEN</code></td><td>anime tools</td></tr>
   <tr><td><code>PANDA_SCORE_API_TOKEN</code></td><td>Counter-Strike tools (free plan works)</td></tr>
   <tr><td><code>ENABLE_BANKING_APP_ID</code> · <code>ENABLE_BANKING_KEY_PATH</code></td><td>bank tools: the application id and its private key (<code>.pem</code>); then link a bank once</td></tr>
+  <tr><td><code>ENABLE_BANKING_SANDBOX_ID</code> · <code>ENABLE_BANKING_SANDBOX_KEY_PATH</code> · <code>ENABLE_BANKING_SANDBOX=1</code></td><td>optional: a sandbox bank app (made-up banks) for testing</td></tr>
+  <tr><td><code>TELEGRAM_BOT_TOKEN</code> · <code>TELEGRAM_USER_ID</code></td><td>Telegram bot and the morning jobs; the bot answers only that numeric user id</td></tr>
 </table>
+<h3>Link a bank</h3>
+<ol>
+  <li><strong>Host the redirect page.</strong> Production apps need an https, non-localhost redirect URL. Publish <code>pages/</code> (static <code>callback/</code> and <code>privacy/</code> pages) on your fork's GitHub Pages (<code>.github/workflows/pages.yml</code>; Settings &gt; Pages &gt; Source: GitHub Actions) or any https host, and set <code>enable_banking_redirect_url</code> to the callback page.</li>
+  <li><strong>Register</strong> a Production app in the Enable Banking Control Panel with that exact redirect URL and the privacy page; save its <code>.pem</code> in <code>private/</code> and fill the two <code>.env</code> keys.</li>
+  <li><strong>Activate</strong> it by linking your accounts in the Control Panel (restricted mode: only your own accounts).</li>
+  <li><strong>Link Deckartes</strong>: <code>python -m tools.enable_banking_api</code> from <code>src/</code>, approve the same accounts, paste the redirect page's address back. Repeat before the link expires (at most 180 days).</li>
+</ol>
 <h3>Run</h3>
 <pre><code>venv/bin/python src/main.py                   # the app
 PYTHONPATH=src venv/bin/textual run --dev src/main.py  # with devtools (+ `textual console` elsewhere)
@@ -191,7 +202,8 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
 ./deckartes-telegram.command                  # the Telegram bot, in Terminal (calendar access needs it)
 (cd src &amp;&amp; ../venv/bin/python -m jobs.anime_digest)  # send today's anime digest now (launchd runs it at 09:00)
 (cd src &amp;&amp; ../venv/bin/python -m jobs.schedule)      # apply the jobs list to launchd
-(cd src &amp;&amp; ../venv/bin/python -m tools.enable_banking_api)  # link a bank in a browser</code></pre>
+(cd src &amp;&amp; ../venv/bin/python -m tools.enable_banking_api)  # link a bank in a browser; --sandbox for a mock bank
+venv/bin/ruff check .                         # lint</code></pre>
 <div class="tip">If the routing embeddings fail, every allowed tool is sent with the question.</div>
 </section>
 
@@ -211,7 +223,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
 
 <section id="config">
 <h2>Configuration</h2>
-<p class="lead">One <code>Config</code> dataclass, one shared instance: <code>config.config</code>.</p>
+<p class="lead">One <code>Config</code> dataclass, one shared instance: <code>config.config</code>. Fields marked <span class="chip warn">yours</span> depend on your setup; set them in <code>src/core/config.py</code>.</p>
 <table>
   <tr><th>Field</th><th>Default</th><th>Meaning</th></tr>
   <tr><td><code>host</code></td><td><code>http://127.0.0.1:8000</code></td><td>Chat server the app starts</td></tr>
@@ -230,10 +242,12 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
   <tr><td><code>spending_path</code></td><td><code>~/.local/share/deckartes/spending.db</code></td><td>Stored transactions, payee labels and each digest's category totals (<code>spending_sandbox_path</code> for the sandbox)</td></tr>
   <tr><td><code>detailed</code></td><td><code>False</code></td><td>Detailed mode: thinking and usage lines (key <code>shift+t</code>)</td></tr>
   <tr><td><code>system_prompt</code></td><td><code>Assistant</code></td><td>Preset name</td></tr>
-  <tr><td><code>glances_host</code></td><td><code>http://thinkpad:61208</code></td><td>Home server</td></tr>
+  <tr><td><code>glances_host</code> <span class="chip warn">yours</span></td><td><code>http://thinkpad:61208</code></td><td>Your Glances server</td></tr>
   <tr><td><code>cs_min_tier</code></td><td><code>b</code></td><td>Min PandaScore tier in "all" lists (s–d)</td></tr>
-  <tr><td><code>animeschedule_user</code></td><td><code>SeggyX</code></td><td>Whose public list is read</td></tr>
-  <tr><td><code>calendar_name</code></td><td><code>""</code></td><td>Target calendar; empty = default</td></tr>
+  <tr><td><code>animeschedule_user</code> <span class="chip warn">yours</span></td><td>the author's</td><td>Your AnimeSchedule.net user; the list must be public</td></tr>
+  <tr><td><code>enable_banking_redirect_url</code> <span class="chip warn">yours</span></td><td>the author's GitHub Pages</td><td>Your hosted <code>pages/callback/</code>; must match the Enable Banking app</td></tr>
+  <tr><td><code>decision_model</code></td><td><code>~/.local/share/deckartes/models/decider-2b-4bit</code></td><td>Spending-label model, made by <code>quantize_decider.py</code></td></tr>
+  <tr><td><code>calendar_name</code> <span class="chip warn">yours</span></td><td><code>""</code></td><td>Target calendar; empty = default</td></tr>
   <tr><td><code>timezone</code></td><td>machine's</td><td>Basis of "today" and all times</td></tr>
   <tr><td><code>anime_air_type</code></td><td><code>sub</code></td><td><code>sub</code> / <code>raw</code> / <code>dub</code></td></tr>
   <tr><td><code>anime_min_rating</code></td><td><code>6.0</code></td><td>Hide anime at or below (0–10); unrated kept</td></tr>
@@ -241,6 +255,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
 <ul>
   <li>The model is a launch argument of the chat server, so changing it restarts the server.</li>
   <li>The popup (key <code>c</code>) edits only <code>temperature</code>, <code>context_length</code>.</li>
+  <li>The spending categories and their prompt in <code>prompts.json</code> are in Polish; translate them for another language.</li>
 </ul>
 </section>
 
@@ -523,7 +538,7 @@ LIVE=1 PYTHONPATH=src:tests venv/bin/python -m unittest discover tests -p 'test_
   <div class="card"><h4>Bank <small>enable_banking_api.py</small></h4><ul>
     <li>Enable Banking (PSD2); every request signed with a fresh RS256 JWT from the app's private key.</li>
     <li>Production app by default; <code>ENABLE_BANKING_SANDBOX=1</code> (or linking with <code>--sandbox</code>) uses the sandbox app and its own bank link, for testing.</li>
-    <li>A production app in restricted mode (only your own linked accounts); its redirect URL is a static GitHub Pages page (<code>pages/callback</code>) that shows the address to paste back.</li>
+    <li>A production app in restricted mode (only your own linked accounts); its redirect URL (<code>enable_banking_redirect_url</code>) is the static <code>pages/callback</code> page, hosted on any https site, that shows the address to paste back.</li>
     <li>A bank link is made once in a browser (<code>python -m tools.enable_banking_api</code>) and lasts as long as the bank allows, at most 180 days.</li>
     <li>Every page read, newest first, at most <code>bank_max_transactions</code> (100) listed per account; totals count all.</li>
     <li>Reversed ranges swapped, future ends cut to today, starts at most 90 days back; an expired link says how to relink.</li>

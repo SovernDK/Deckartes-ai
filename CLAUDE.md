@@ -71,32 +71,17 @@ venv/bin/ruff format . # format; --check only reports unformatted files
 - Use parameterized SQLite queries; never build SQL or shell commands from raw input.
 - Return clear error messages; never leak stack traces or internals.
 
-## Git and commit policy
-
-- **Branch:** work on `main`.
-- **Commits:** an imperative summary sentence, ≤72 chars, saying what changed and why (e.g. "Label spending payees with a decision model instead of the chat model").
-- One logical change per commit; keep commits small and buildable.
-- Before committing: lint, Pylance diagnostics and tests must pass.
-- Never commit secrets, `.env` files, credentials or generated build artifacts.
-- **Do not** commit, push, rebase, force-push, reset, or delete branches unless explicitly asked.
-- Never rewrite history on shared branches. Never use `--no-verify`.
-- PRs: short description of *what* and *why*, linked issue (`#123`), notes on testing and any new dependencies.
-
-## VS Code MCP tools
-
-- When the VS Code MCP server is available, **prefer it over manual edits / grep** for:
-  - **Refactoring:** rename symbol, extract function/variable, move file, organize imports — so all references update safely.
-  - **Diagnostics:** fetch errors/warnings from the language server after every change and fix them before finishing.
-  - **Navigation:** go to definition, find references, find implementations.
-- Fall back to manual edits only when no MCP tool covers the operation.
-- A task is not done while the MCP diagnostics report errors in files you touched.
-
 ## Code conventions
 
 - **Always follow the `python-conventions` skill** for naming and style. Load it before writing code.
 - If the skill and existing code disagree, follow the skill and flag the inconsistency instead of silently spreading the old pattern.
+- Load the `vscode-mcp` skill before renaming symbols, looking up definitions or references, or checking diagnostics.
 - Formatting is handled by `ruff format` — don't hand-format.
 - Never hardcode values that someone might want to change without editing code. Put them in one central configuration location and read them from there.
+
+## Git
+
+- Load the `committing` skill before committing, pushing or opening a PR. Commit, push, rebase, reset or delete branches only when asked.
 
 ## Wiki
 

@@ -32,16 +32,6 @@ A chat app built with [Textual](https://textual.textualize.io/). The model can c
 
 Long conversations are summarised automatically when they near the context limit. Every tool group is optional: one without its key or service reports an error, and the rest keep working.
 
-## TODO
-
-[ ] Better RAG search (not just by embedded chunks)
-
-[ ] Scanning folders on the home server
-
-[ ] Prepare fine tuning data
-
-[ ] Telegram: send files from the phone to the library (bots download up to 20 MB; files need a permanent inbox folder, since the library identifies them by path)
-
 ## Setup
 
 You need an Apple Silicon Mac, Python 3.11+ and [uv](https://docs.astral.sh/uv/) (to install Rapid-MLX):
@@ -110,7 +100,15 @@ venv/bin/python src/main.py
 | `/forget <path or name>` | Remove files from the library |
 | `/validate` | Score the model's tool use on test cases |
 
+<p align="center">
+  <img src="screnshots/4.png" alt="Inputting '/' shows command suggestions" width="800">
+<p>
+
 ## Library
+
+<p align="center">
+  <img src="screnshots/5.png" alt="RAG - pulling data from library of embedded documents" width="800">
+<p>
 
 Press `e`, then `Enter` on a file or `l` on a file or folder to save it. Text files, code and PDFs with a text layer work. Saved files stay between sessions, and answers name the file and the page or line.
 

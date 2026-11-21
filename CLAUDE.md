@@ -27,13 +27,6 @@ venv/bin/ruff format . # format; --check only reports unformatted files
 ```
 ---
 
-## Comments
-
-- Write self-explanatory code; do not comment what the code already says.
-- Comment only the **why**: non-obvious decisions, workarounds, business rules, links to issues/specs.
-- No commented-out code, no changelog-style comments ("added by…", "fixed…"), no section banners.
-- Docstrings only for exported/public symbols, and only when the signature isn't enough.
-
 ## Prefer existing libraries over custom code
 
 - Before writing a utility, check (in this order):
@@ -71,11 +64,7 @@ venv/bin/ruff format . # format; --check only reports unformatted files
 
 ## Code conventions
 
-- **Always follow the `python-conventions` skill** for naming and style. Load it before writing code.
-- If the skill and existing code disagree, follow the skill and flag the inconsistency instead of silently spreading the old pattern.
-- Load the `vscode-mcp` skill before renaming symbols, looking up definitions or references, or checking diagnostics.
-- Formatting is handled by `ruff format` — don't hand-format.
-- Never hardcode values that someone might want to change without editing code. Put them in one central configuration location and read them from there.
+- **Load the `python-conventions` skill before writing or editing any Python** and follow it: naming, comments, docstrings, configuration and formatting live there.
 
 ## Git
 

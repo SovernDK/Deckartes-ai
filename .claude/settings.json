@@ -36,9 +36,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/run-tests.py",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-code.py",
             "timeout": 300,
-            "statusMessage": "Running test suite..."
+            "statusMessage": "Formatting, linting and testing..."
           }
         ]
       }
